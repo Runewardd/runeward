@@ -18,6 +18,7 @@ var reserved = map[string]bool{
 	"version":    true,
 	"enter":      true,
 	"export":     true,
+	"fleet":      true,
 	"audit":      true,
 	"bundle":     true,
 	"controller": true,
@@ -79,6 +80,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newEnterCmd(&configDir),
 		newExportCmd(),
+		newFleetCmd(),
 		newPrintCmd(&configDir),
 		newListCmd(&configDir),
 		newServeCmd(&configDir),

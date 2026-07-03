@@ -52,6 +52,11 @@ jobs:
 
   images:
     runs-on: ubuntu-latest
+    # Don't upload the build-record (*.dockerbuild) artifacts; the release job
+    # downloads all artifacts and those records can flake the download step.
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
+      DOCKER_BUILD_SUMMARY: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3

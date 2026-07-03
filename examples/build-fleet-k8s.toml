@@ -1,0 +1,119 @@
+# The Kubernetes twin of build-fleet.toml: a prompt-driven fleet where each
+# replica is its own Pod (+ workspace PVC) sharing one board. Same multi-agent,
+# multi-key model - Cursor, Codex (OpenAI), or Claude - picked by the driver.
+# The SAME examples/fleet.sh drives it (it only speaks REST):
+#
+#   docker build -f deploy/Dockerfile.agent  -t runeward-agent:dev     .
+#   docker build -f deploy/Dockerfile.egress -t runeward-egress:latest .
+#   printf '%s' "$OPENAI_API_KEY"    > ~/.runeward-openai.key       # only the ones you use
+#   printf '%s' "$ANTHROPIC_API_KEY" > ~/.runeward-anthropic.key
+#   printf '%s' "$CURSOR_API_KEY"    > ~/.runeward-cursor.key
+#   export RUNEWARD_KUBE_CONTEXT=orbstack RUNEWARD_K8S_NAMESPACE=runeward
+#   runeward --config-dir examples serve
+#   AGENT=claude MODEL=sonnet ./examples/fleet.sh build "Build a FastAPI todo API with tests"
+#
+# `serve` reads the key files locally (where it runs) and injects them into every
+# Pod's env - missing files are skipped - so multiple keys work exactly as in Docker.
+
+[host]
+type    = "k8s"
+image   = "runeward-agent:dev"
+workdir = "/workspace"
+# copy_from = "~/Documents/my-app-scaffold"
+
+[fleet]
+replicas   = 3
+task_board = []
+
+[network]
+default = "deny"
+# For bypass-proof L3 enforcement (a process can't skip it), add:
+# enforce = "strict"
+
+# --- OpenAI / Codex ---
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+# --- Anthropic / Claude ---
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.anthropic.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.anthropic.com"
+
+# --- Cursor ---
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor.sh"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "cursor.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor-cdn.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursorapi.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "anysphere-binaries.s3.us-east-1.amazonaws.com"
+
+# --- Local LLM (optional) ---
+# In a cluster there is no host.docker.internal. Two clean options:
+#   1. Run the model as an in-cluster Service (e.g. an Ollama Deployment+Service),
+#      allow its DNS name below, and point the agent at it via
+#      OPENAI_BASE_URL=http://ollama.runeward.svc.cluster.local:11434/v1
+#   2. Fully air-gapped: run the model INSIDE the pod and keep default="deny"
+#      with NO allow rules - the fleet then builds with zero internet egress.
+# [[network.rule]]
+# verdict  = "allow"
+# hostname = "ollama.runeward.svc.cluster.local"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+[limits]
+wall_clock      = "45m"
+max_execs       = 800
+egress_requests = 4000
+loop_window     = "60s"
+loop_threshold  = 12
+
+[[env]]
+name = "CURSOR_API_KEY"
+file = "~/.runeward-cursor.key"
+
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "ANTHROPIC_API_KEY"
+file = "~/.runeward-anthropic.key"
+
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[audit]
+redact = true

@@ -1,6 +1,7 @@
 # A runeward sandbox image that ships REAL coding agents so they can run
-# headless inside a governed sandbox: the OpenAI Codex CLI (`codex`) and the
-# Cursor CLI agent (`agent`), plus git/node for actual repo work.
+# headless inside a governed sandbox: the OpenAI Codex CLI (`codex`), the
+# Cursor CLI agent (`agent`), and the Anthropic Claude Code CLI (`claude`),
+# plus git/node for actual repo work.
 #
 #   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #
@@ -15,8 +16,8 @@ RUN apt-get update \
         git curl ca-certificates python3 nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
-# OpenAI Codex CLI (system-wide).
-RUN npm install -g @openai/codex
+# OpenAI Codex CLI + Anthropic Claude Code CLI (system-wide).
+RUN npm install -g @openai/codex @anthropic-ai/claude-code
 
 # Non-root user + a workspace it owns (empty docker volume inherits this owner).
 RUN useradd -m -u 1000 agent \

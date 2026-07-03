@@ -57,9 +57,9 @@ There are two ways to put an agent behind runeward:
 1. **As an MCP server for your IDE/agent (Cursor, Claude Desktop, VS Code).** Point the tool at
    `runeward mcp`; its agent then runs shell/code/file/browser tools inside a governed sandbox
    instead of on your host. Isolation, policy, egress, and audit apply to everything it does.
-2. **By running an agent CLI inside the sandbox (Codex, Cursor CLI).** A profile ships the agent
-   binary in the image and injects its API key; you launch the agent with a single governed exec call
-   (or a whole fleet of them). See [Running agents and fleets](#running-agents-and-fleets).
+2. **By running an agent CLI inside the sandbox (Codex, Cursor CLI, Claude Code).** A profile ships
+   the agent binary in the image and injects its API key; you launch the agent with a single governed
+   exec call (or a whole fleet of them). See [Running agents and fleets](#running-agents-and-fleets).
 
 ## Quick start
 
@@ -123,7 +123,8 @@ Snapshots (`POST /v1/sandboxes/{id}/snapshot`) are the other way to preserve or 
 
 ## Running agents and fleets
 
-Build the agent image once (it ships `codex`, the Cursor CLI, git, python, node, and `tar`):
+Build the agent image once (it ships `codex`, the Cursor CLI (`agent`), Claude Code (`claude`), git,
+python, node, and `tar`):
 
 ```bash
 docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
@@ -198,6 +199,63 @@ explicitly allowlist it. Instead, workers in a fleet coordinate through the shar
 control plane (claim / complete / fail), which keeps every interaction atomic and audited. Separate
 fleets each have their own board and are fully isolated from one another.
 
+### Prompt-driven fleets: any agent, multiple keys, local LLMs
+
+[examples/build-fleet.toml](examples/build-fleet.toml) (Docker) and
+[examples/build-fleet-k8s.toml](examples/build-fleet-k8s.toml) (Kubernetes) are prompt-driven fleets:
+the board starts empty and you push prompts at runtime. Both wire in keys for all three agents at
+once and `serve` simply skips any key file that doesn't exist, so you keep only the key(s) you use.
+The `runeward fleet` subcommand drives either one against a running `serve`; pick the agent with
+`--agent cursor|codex|claude` and the model with `--model` (both also read `$AGENT` / `$MODEL`):
+
+```bash
+printf '%s' "$ANTHROPIC_API_KEY" > ~/.runeward-anthropic.key   # plus openai/cursor keys as needed
+./bin/runeward --config-dir examples serve
+
+./bin/runeward fleet --agent claude --model sonnet build "Build a FastAPI todo API with tests"
+```
+
+Two ways to work. Each worker has its own `/workspace`, so it matters whether follow-ups land on the
+same one.
+
+**A) Iterate on one app** (same workspace accumulates) with `exec`, which pins to a single sandbox.
+This is the "pass a prompt, then keep adding prompts/changes" flow:
+
+```bash
+runeward fleet --agent claude --model sonnet up
+runeward fleet exec "Build a FastAPI todo API in app/ with SQLite and pytest"
+runeward fleet exec "Now add a PUT /todos/{id} endpoint and tests for it"   # same code
+runeward fleet exec "Add a Dockerfile and a README"
+runeward fleet export ./out                                                 # pull results to the host
+```
+
+Switch agent/model any time via the flags, e.g.
+`runeward fleet --agent codex --model gpt-5-codex exec "refactor the routes"`.
+
+**B) Fan out independent pieces** across the fleet (parallel) with `add` + `run`; each prompt goes to
+whichever worker is free, in its own workspace:
+
+```bash
+runeward fleet --agent codex up
+runeward fleet add "Build the auth module in auth/ with tests"
+runeward fleet add "Build the billing module in billing/ with tests"
+runeward fleet add "Build the CLI in cmd/ with tests"
+runeward fleet run          # all workers build in parallel
+runeward fleet export ./out # out/<sandbox-id>/... — assemble the pieces
+```
+
+For Kubernetes, the same command drives `build-fleet-k8s` unchanged (`runeward fleet up build-fleet-k8s`);
+`serve` reads the key files locally and injects them into every Pod. A dependency-free bash equivalent
+lives at [examples/fleet.sh](examples/fleet.sh) if you'd rather script it with `curl`/`jq`.
+
+**Local LLMs.** runeward isn't tied to those cloud CLIs; it governs whatever command you exec, so any
+local-model runner works too. Point Codex (or `aider`) at an OpenAI-compatible endpoint via
+`OPENAI_BASE_URL` and allow just that host: on Docker that's `host.docker.internal` (Ollama, LM
+Studio, vLLM, llama.cpp); on Kubernetes, run the model as an in-cluster Service and allow its DNS
+name, or run it *inside* the pod with `network.default = "deny"` and no allow rules for a fully
+air-gapped, still-audited fleet. (Cursor's `agent` is cloud-bound and Claude Code is Anthropic-bound;
+Codex and generic CLIs are the local-friendly paths.)
+
 ## Profiles
 
 Profiles may be authored in TOML, YAML, or JSON; the file extension picks the parser and all three
@@ -219,6 +277,7 @@ into the session, redacted from the ledger, and never written under `$HOME`.
 ```
 runeward <profile> [-- cmd...]       Provision a sandbox for a profile and enter it (alias for enter)
 runeward enter <profile>             Same, explicit; --keep leaves the sandbox running
+runeward fleet <up|add|run|build|exec|status|export|down>   Drive a prompt-driven fleet (--agent/--model)
 runeward export <id> <dir>           Copy a sandbox's /workspace back out to a host directory
 runeward print <profile>             Show the resolved, secret-redacted profile + policy
 runeward list                        List reachable profiles

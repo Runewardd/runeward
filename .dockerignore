@@ -1,0 +1,44 @@
+# VCS + CI metadata
+.git
+.gitignore
+.github
+.dockerignore
+
+# Build outputs / binaries (root-level only; does not match cmd/<name>)
+bin/
+dist/
+dist-bin/
+dist-chart/
+runeward
+runeward-agent
+runeward-egress
+runeward-browser
+*.tgz
+*.test
+*.out
+
+# Docs, assets, examples, adapters (not needed to build the binaries)
+docs/
+examples/
+adapters/
+*.md
+NOTES-*.md
+
+# Editor / machine-local
+.cursor/
+.runeward/
+.runeward-fleet
+.DS_Store
+*.swp
+
+# Secrets / runtime state (must never enter the build context)
+.env
+.env.*
+*.key
+*.pem
+ledger.jsonl
+fleets.json
+
+# Python bytecode
+__pycache__/
+*.pyc

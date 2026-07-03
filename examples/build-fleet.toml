@@ -1,0 +1,117 @@
+# A Docker-backed FLEET you drive by prompt. The board starts EMPTY; you push
+# prompts at runtime with `fleet.sh add "<prompt>"` (or the /tasks API) and the
+# workers build them. Works with any of the three shipped agents - Cursor,
+# Codex (OpenAI), or Claude - selected by the driver (AGENT=cursor|codex|claude).
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#   # drop whichever key(s) you use (missing ones are simply skipped):
+#   printf '%s' "$CURSOR_API_KEY"    > ~/.runeward-cursor.key
+#   printf '%s' "$OPENAI_API_KEY"    > ~/.runeward-openai.key
+#   printf '%s' "$ANTHROPIC_API_KEY" > ~/.runeward-anthropic.key
+#   runeward --config-dir examples serve
+#   AGENT=claude MODEL=sonnet ./examples/fleet.sh build "Build a FastAPI todo API with tests"
+
+[host]
+type    = "container"
+image   = "runeward-agent:dev"
+user    = "agent"
+workdir = "/workspace"
+# Optional: start every worker from a copy of an existing scaffold/repo.
+# copy_from = "~/Documents/my-app-scaffold"
+
+[fleet]
+replicas   = 3
+task_board = []
+
+# Deny-by-default egress. Only the model providers below are reachable; anything
+# else the agent tries to hit is blocked and logged.
+[network]
+default = "deny"
+
+# --- OpenAI / Codex ---
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+# --- Anthropic / Claude ---
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.anthropic.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.anthropic.com"
+
+# --- Cursor ---
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor.sh"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "cursor.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor-cdn.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursorapi.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "anysphere-binaries.s3.us-east-1.amazonaws.com"
+
+# --- Local LLM (optional) ---
+# To use a model running on your host (Ollama, LM Studio, vLLM, llama.cpp), allow
+# the Docker host gateway instead of a cloud provider, then point the agent at it
+# (e.g. OPENAI_BASE_URL=http://host.docker.internal:11434/v1 for Codex/aider).
+# [[network.rule]]
+# verdict  = "allow"
+# hostname = "host.docker.internal"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+[limits]
+wall_clock      = "45m"
+max_execs       = 800
+egress_requests = 4000
+loop_window     = "60s"
+loop_threshold  = 12
+
+# Keys for all three providers. resolveEnv skips any file that doesn't exist, so
+# you only need to create the key(s) for the agent(s) you actually use.
+[[env]]
+name = "CURSOR_API_KEY"
+file = "~/.runeward-cursor.key"
+
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "ANTHROPIC_API_KEY"
+file = "~/.runeward-anthropic.key"
+
+# Node-based CLIs (Cursor, Claude Code) honor the egress proxy in cooperative mode.
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[audit]
+redact = true

@@ -22,7 +22,6 @@ import (
 
 // Docker provisions one container per sandbox. It drives the docker CLI
 // rather than the SDK; the CLI contract is more stable across
-// Docker/OrbStack/Podman.
 type Docker struct {
 	bin     string
 	snapDir string
@@ -38,11 +37,24 @@ const (
 	labelVolume  = "runeward.volume"
 )
 
-// NewDocker returns a Docker backend, verifying the CLI is reachable.
+// NewDocker returns a Docker backend, verifying the CLI is present and the
+// engine is actually reachable so misconfig fails fast with a clear message.
 func NewDocker() (*Docker, error) {
 	bin, err := exec.LookPath("docker")
 	if err != nil {
-		return nil, fmt.Errorf("docker CLI not found in PATH: %w", err)
+		return nil, fmt.Errorf("docker CLI not found in PATH (install docker and add it to your PATH): %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	probe := exec.CommandContext(ctx, bin, "version", "--format", "{{.Server.Version}}")
+	var perr bytes.Buffer
+	probe.Stderr = &perr
+	if err := probe.Run(); err != nil {
+		detail := strings.TrimSpace(perr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return nil, fmt.Errorf("docker engine not reachable; is Docker running? (%s)", detail)
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
