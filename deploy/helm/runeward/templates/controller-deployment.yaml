@@ -1,0 +1,77 @@
+{{- if .Values.controller.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "runeward.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      {{- include "runeward.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "runeward.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "runeward.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: controller
+          image: {{ include "runeward.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - controller
+            - --workers={{ .Values.controller.workers }}
+            {{- if .Values.controller.allNamespaces }}
+            - --all-namespaces
+            {{- end }}
+          env:
+            - name: RUNEWARD_K8S_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: RUNEWARD_CONFIG_DIR
+              value: /etc/runeward/profiles
+            - name: RUNEWARD_STATE_DIR
+              value: {{ .Values.stateDir | quote }}
+            - name: RUNEWARD_EGRESS_IMAGE
+              value: {{ .Values.egress.image | quote }}
+          volumeMounts:
+            - name: profiles
+              mountPath: /etc/runeward/profiles
+              readOnly: true
+            - name: state
+              mountPath: {{ .Values.stateDir }}
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+      volumes:
+        - name: profiles
+          configMap:
+            name: {{ include "runeward.profilesConfigMap" . }}
+            optional: true
+        - name: state
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

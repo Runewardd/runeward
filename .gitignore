@@ -1,18 +1,23 @@
-# Binaries
+# Binaries (built at the repo root). Anchored with a leading slash so these do
+# NOT match the cmd/<name> source dirs or deploy/helm/runeward/.
 /bin/
 /dist/bin/
-runeward
-runeward-agent
-runeward-browser
+/runeward
+/runeward-agent
+/runeward-browser
+/runeward-egress
 
 # Go
 *.test
 *.out
 /vendor/
 
+# Python
+__pycache__/
+*.pyc
+
 # Local scratch / runtime state
 /.tmp/
-runeward-egress
 
 # Ledger / signing keys / runtime state (should only live under $RUNEWARD_STATE_DIR)
 *.key
@@ -32,6 +37,9 @@ fleets.json
 
 # Local profiles carry secret references — never commit user-global ones.
 /.runeward/
+
+# Local scratch notes / runbooks (not part of the published docs)
+/NOTES-*.md
 
 # OS / editor
 .DS_Store

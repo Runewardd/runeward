@@ -1,0 +1,14 @@
+{{- if and .Values.profiles.create (not .Values.profiles.existingConfigMap) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "runeward.profilesConfigMap" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+data:
+  {{- range $name, $content := .Values.profiles.data }}
+  {{ $name }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,17 @@
+apiVersion: v2
+name: runeward
+description: Governed execution cells for AI agents — CRDs, controller, and optional control plane.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/adefemi171/runeward
+sources:
+  - https://github.com/adefemi171/runeward
+keywords:
+  - ai
+  - agents
+  - sandbox
+  - governance
+  - security
+maintainers:
+  - name: adefemi171

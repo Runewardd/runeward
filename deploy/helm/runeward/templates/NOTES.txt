@@ -1,0 +1,34 @@
+runeward {{ .Chart.AppVersion }} installed into namespace "{{ .Release.Namespace }}".
+
+{{ if .Values.controller.enabled -}}
+Controller: reconciling runeward.dev/v1alpha1 Sandbox and Fleet resources
+{{- if .Values.controller.allNamespaces }} across all namespaces.{{ else }} in namespace "{{ .Release.Namespace }}".{{ end }}
+
+Create a sandbox declaratively:
+
+  cat <<EOF | kubectl apply -f -
+  apiVersion: runeward.dev/v1alpha1
+  kind: Sandbox
+  metadata:
+    name: demo
+    namespace: {{ .Release.Namespace }}
+  spec:
+    profile: dev
+  EOF
+
+  kubectl -n {{ .Release.Namespace }} get sandboxes
+{{- end }}
+
+{{ if .Values.server.enabled }}
+Control plane (REST + dashboard + MCP) is available in-cluster:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "runeward.fullname" . }}-server {{ .Values.server.service.port }}:{{ .Values.server.service.port }}
+  open http://localhost:{{ .Values.server.service.port }}/
+{{- end }}
+
+{{ if not (or .Values.profiles.create .Values.profiles.existingConfigMap) }}
+NOTE: no profiles are mounted. Provide them via a ConfigMap named
+"{{ include "runeward.profilesConfigMap" . }}", e.g.:
+
+  kubectl -n {{ .Release.Namespace }} create configmap {{ include "runeward.profilesConfigMap" . }} --from-file=examples/
+{{- end }}

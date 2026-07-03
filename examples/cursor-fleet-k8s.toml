@@ -1,0 +1,90 @@
+# A Kubernetes-backed FLEET of governed Cursor CLI agents. Each replica is its
+# own Pod (+ workspace PVC) sharing one atomic task board. A worker claims a
+# task (the payload is the prompt), runs the Cursor agent in its Pod with a
+# chosen model, then marks it done. Every action is policy-gated, egress-limited,
+# and written to the signed audit ledger.
+#
+# Prereqs (see the runbook):
+#   docker build -f deploy/Dockerfile.agent   -t runeward-agent:dev .
+#   docker build -f deploy/Dockerfile.egress  -t runeward-egress:latest .
+#   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
+#   export RUNEWARD_KUBE_CONTEXT=orbstack RUNEWARD_K8S_NAMESPACE=runeward
+#   runeward --config-dir examples serve
+#   POST /v1/fleets {"profile":"cursor-fleet-k8s"}
+
+[host]
+type    = "k8s"
+image   = "runeward-agent:dev"
+workdir = "/workspace"
+# Optional: seed every agent's workspace with a COPY of a starting repo/scaffold.
+# copy_from = "~/Documents/my-app-scaffold"
+
+[fleet]
+# One replica per task means each agent holds exactly one task. If you add more
+# tasks than replicas, idle workers pick up the extras as they finish.
+replicas = 4
+task_board = [
+  "Build a Python FastAPI service in app/: a GET /health endpoint returning {\"status\":\"ok\"}. Add requirements.txt and run it to verify it imports.",
+  "Build the data layer in app/db.py: a SQLite-backed Task model with create/list/get functions and a pytest that exercises them.",
+  "Build the REST routes in app/routes.py: CRUD endpoints for Task using the data layer. Add a pytest hitting each route with the FastAPI test client.",
+  "Write the project README and a Dockerfile that runs the FastAPI app on port 8000, and verify the image builds.",
+]
+
+# Deny-by-default egress; only Cursor's endpoints are reachable. On k8s this runs
+# an egress sidecar (needs runeward-egress in the cluster). For bypass-proof L3
+# enforcement that an uncooperative process can't skip, add: enforce = "strict".
+[network]
+default = "deny"
+# enforce = "strict"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor.sh"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "cursor.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor-cdn.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursorapi.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "anysphere-binaries.s3.us-east-1.amazonaws.com"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+[limits]
+wall_clock      = "45m"
+max_execs       = 500
+egress_requests = 4000
+loop_window     = "60s"
+loop_threshold  = 12
+
+# The Cursor CLI authenticates from CURSOR_API_KEY.
+[[env]]
+name = "CURSOR_API_KEY"
+file = "~/.runeward-cursor.key"
+
+# The Cursor CLI is Node-based; make it honor the egress proxy in cooperative mode.
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[audit]
+redact = true

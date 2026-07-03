@@ -1,0 +1,118 @@
+{{- if .Values.webhook.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "runeward.fullname" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+spec:
+  replicas: {{ .Values.webhook.replicas }}
+  selector:
+    matchLabels:
+      {{- include "runeward.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: webhook
+  template:
+    metadata:
+      labels:
+        {{- include "runeward.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: webhook
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "runeward.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: webhook
+          image: {{ include "runeward.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - webhook
+            - --port={{ .Values.webhook.port }}
+            - --service={{ include "runeward.fullname" . }}-webhook
+          ports:
+            - name: webhook
+              containerPort: {{ .Values.webhook.port }}
+          env:
+            - name: RUNEWARD_K8S_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: RUNEWARD_WEBHOOK_SERVICE
+              value: {{ include "runeward.fullname" . }}-webhook
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: webhook
+              scheme: HTTPS
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.webhook.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "runeward.fullname" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+spec:
+  selector:
+    {{- include "runeward.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+  ports:
+    - name: https
+      port: 443
+      targetPort: webhook
+---
+# Cluster-scoped access the webhook needs on top of the controller Role: read
+# ClusterPolicies everywhere and self-register its admission configurations.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "runeward.fullname" . }}-webhook
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+rules:
+  - apiGroups: ["runeward.dev"]
+    resources: ["clusterpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "runeward.fullname" . }}-webhook
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "runeward.fullname" . }}-webhook
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "runeward.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
