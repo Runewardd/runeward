@@ -1,0 +1,34 @@
+# A runeward sandbox image that ships REAL coding agents so they can run
+# headless inside a governed sandbox: the OpenAI Codex CLI (`codex`) and the
+# Cursor CLI agent (`agent`), plus git/node for actual repo work.
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#
+# Then drive it with examples/codex-agent.toml or examples/cursor-agent.toml.
+# The agent runs as the non-root user `agent`; the workspace volume inherits
+# that ownership so the agent can write to /workspace.
+
+FROM debian:stable-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git curl ca-certificates python3 nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenAI Codex CLI (system-wide).
+RUN npm install -g @openai/codex
+
+# Non-root user + a workspace it owns (empty docker volume inherits this owner).
+RUN useradd -m -u 1000 agent \
+    && mkdir -p /workspace \
+    && chown -R agent:agent /workspace
+
+USER agent
+ENV HOME=/home/agent
+
+# Cursor CLI agent installs into the user's home (~/.local/bin or ~/.cursor/bin).
+RUN curl https://cursor.com/install -fsS | bash
+ENV PATH="/home/agent/.local/bin:/home/agent/.cursor/bin:${PATH}"
+
+WORKDIR /workspace
+CMD ["sleep", "infinity"]

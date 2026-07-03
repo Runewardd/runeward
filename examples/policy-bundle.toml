@@ -1,0 +1,44 @@
+# A profile that sources its authority policy from a SIGNED, VERSIONED policy
+# bundle stored as an OCI artifact, instead of embedding the policy inline.
+#
+# The bundle is a single-layer OCI image (a .rego module, or a TOML fragment of
+# [[cel]] rules) signed with an ed25519 key. When verify_key is set the bundle's
+# signature is REQUIRED and checked before the policy is loaded, so a tampered
+# or unsigned bundle fails closed at sandbox creation.
+#
+# Publish and inspect a bundle with the `runeward bundle` command:
+#
+#   # 1. Generate a signing keypair (prints base64 public + private keys).
+#   runeward bundle keygen --out ./keys
+#
+#   # 2. Push a policy as a signed bundle, versioned by tag.
+#   runeward bundle push oci://ghcr.io/adefemi171/policies/shell-guard:v1 \
+#       --policy examples/rego-policy.rego --engine rego \
+#       --key ./keys/bundle.key
+#
+#   # 3. (optional) Verify what you published.
+#   runeward bundle pull oci://ghcr.io/adefemi171/policies/shell-guard:v1 \
+#       --verify-key ./keys/bundle.pub
+#
+# Then set `ref` below to the pushed reference and `verify_key` to the base64
+# public key (the contents of ./keys/bundle.pub) so runeward refuses to trust an
+# unsigned or tampered bundle.
+
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+# policy_bundle is its own top-level table (NOT nested under [host]). When set,
+# it supersedes the inline policy fields (policy_engine / [[cel]] / [rego]).
+[policy_bundle]
+# oci://registry/repo:tag or repo@sha256:... — replace with your pushed ref.
+ref = "oci://ghcr.io/adefemi171/policies/shell-guard:v1"
+# base64 ed25519 public key; when set the signature is required and verified.
+# Replace with the contents of your bundle.pub (leave empty to skip verification).
+verify_key = ""
+# plain_http = true  # only for local/insecure http registries
+
+[limits]
+wall_clock = "30m"
+max_execs  = 200

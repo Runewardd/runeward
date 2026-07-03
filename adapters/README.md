@@ -1,0 +1,61 @@
+# runeward adapters
+
+Client libraries and agent-framework integrations for
+[runeward](https://github.com/adefemi171/runeward) — the **governed execution
+cell** for AI agents.
+
+## Why governed tools matter for agents
+
+Giving an agent a raw shell is easy; giving it a *safe* one is the hard part.
+The moment an agent can run commands, write files, or reach the network, three
+questions appear: what is it allowed to do, who signs off on the risky parts, and
+what actually happened? runeward answers those by routing **every** tool call
+through one path:
+
+```
+policy check  →  approval gate  →  cost/loop guardrails  →  sandbox exec  →  audit ledger
+```
+
+The result is a tool surface that is safe to hand to an autonomous agent:
+work runs in a disposable, deny-by-default sandbox; sensitive actions are blocked
+or escalated to a human; and everything is recorded in a tamper-evident ledger
+you can replay and verify. These adapters make that governed surface a
+first-class citizen in the frameworks agents are already built with — the agent
+calls a tool exactly as it would any other, but now with a policy engine and a
+human-in-the-loop behind it.
+
+The single behavioral contract every adapter preserves:
+
+- **`allow`** — the action ran (for shell, still check `exit_code`).
+- **`deny`** — policy refused it. **Do not retry the same action**; choose an
+  allowed approach or report the block.
+- **`require-approval`** — a human must sign off. **Pause** and surface the
+  `approval_id`; don't route around the gate.
+
+## What's here
+
+| Path | What it is |
+| --- | --- |
+| [`../dist/skill/SKILL.md`](../dist/skill/SKILL.md) | An agent **skill** teaching a model when and how to use runeward — MCP tool names, the REST fallback, how approvals and denials work, and safety notes. Drop it into a Cursor/Claude skill directory. |
+| [`../dist/mcp/`](../dist/mcp/) | The MCP registry **`server.json`** manifest plus a README on publishing runeward to MCP registries and wiring it into Claude Desktop / Cursor. |
+| [`python/`](./python/) | The **`runeward`** Python package: a pure-stdlib `RunewardClient` plus lazy-loaded LangChain and CrewAI tool factories. |
+| [`typescript/`](./typescript/) | The **`@runeward/sdk`** package: a `fetch`-based `RunewardClient` plus Vercel AI SDK `tool(...)` wrappers. |
+
+## Choosing an adapter
+
+- **Using an MCP client** (Claude Desktop, Cursor, …)? You don't need these
+  adapters — point the client at the runeward MCP server. See
+  [`../dist/mcp/README.md`](../dist/mcp/README.md).
+- **Building a LangChain or CrewAI agent in Python?** Use
+  [`python/`](./python/).
+- **Building on the Vercel AI SDK / a TS agent?** Use
+  [`typescript/`](./typescript/).
+- **Rolling your own?** Both `RunewardClient`s are thin, typed wrappers over the
+  REST control plane and are usable standalone with zero third-party runtime
+  dependencies.
+
+All adapters target the same control plane started with `runeward serve`
+(default `http://localhost:8080`) and expose the same method surface, named to
+match the MCP tools: `create_sandbox`, `shell`, `python`, `node`,
+`read_file`/`write_file`/`list_files`/`search_files`, `list_approvals`/`approve`/
+`deny`, `kill_sandbox`, plus `audit`/`verify_audit`.

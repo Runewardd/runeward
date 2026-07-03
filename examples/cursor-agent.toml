@@ -1,0 +1,74 @@
+# Run the Cursor CLI agent (`agent`) as a governed agent inside a sandbox.
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"cursor-agent"}
+#   POST /v1/sandboxes/{id}/shell/exec
+#        {"command":["sh","-lc","agent -p 'write fib.py that prints the first 10 Fibonacci numbers, then run it' --force --trust --output-format text"]}
+
+[host]
+type    = "container"
+image   = "runeward-agent:dev"
+user    = "agent"
+workdir = "/workspace"
+
+# Deny-by-default egress; only Cursor's endpoints are reachable.
+# NOTE: the Cursor CLI is Node-based, so NODE_USE_ENV_PROXY=1 (below) is what
+# makes it honor runeward's cooperative Docker proxy. For bypass-proof L3
+# enforcement, run on the k8s backend with `enforce = "strict"`.
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor.sh"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "cursor.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor-cdn.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursorapi.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "anysphere-binaries.s3.us-east-1.amazonaws.com"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+[limits]
+wall_clock      = "30m"
+max_execs       = 500
+egress_requests = 2000
+loop_window     = "60s"
+loop_threshold  = 12
+
+# API key read from a file at launch, injected into the session, redacted from
+# the ledger. Never written under $HOME.
+[[env]]
+name = "CURSOR_API_KEY"
+file = "~/.runeward-cursor.key"
+
+# Make the Node-based CLI route through runeward's egress proxy.
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[audit]
+redact = true

@@ -1,0 +1,85 @@
+# A FLEET of governed Cursor CLI agents: N identical sandboxes sharing one
+# atomic task board. Each task payload is a prompt; workers claim a task, run
+# `agent -p "<payload>" --force --trust --output-format text` (optionally
+# `--model <model>`) in their assigned sandbox, then mark it done. Every action
+# is policy-gated, egress-limited, and written to the signed audit ledger.
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
+#   runeward --config-dir examples serve
+#   POST /v1/fleets {"profile":"cursor-fleet"}   # provisions 3 sandboxes + seeds the board
+#   then: claim -> agent -p ... --force --trust -> complete (see the runbook)
+
+[host]
+type    = "container"
+image   = "runeward-agent:dev"
+user    = "agent"
+workdir = "/workspace"
+
+[fleet]
+replicas = 3
+task_board = [
+  "write fib.py that prints the first 10 Fibonacci numbers, then run it",
+  "write primes.py that prints primes below 50, then run it",
+  "write reverse.py that reverses the string 'runeward' and prints it, then run it",
+  "write factorial.py that prints 10! and run it",
+]
+
+# Deny-by-default egress; only Cursor's endpoints are reachable. The Cursor CLI
+# is Node-based, so NODE_USE_ENV_PROXY=1 (below) makes it honor the cooperative
+# Docker proxy. For bypass-proof L3 enforcement, run on the k8s backend with
+# `enforce = "strict"`.
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor.sh"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "cursor.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor-cdn.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursorapi.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "anysphere-binaries.s3.us-east-1.amazonaws.com"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+[limits]
+wall_clock      = "30m"
+max_execs       = 500
+egress_requests = 2000
+loop_window     = "60s"
+loop_threshold  = 12
+
+# The Cursor CLI authenticates from CURSOR_API_KEY.
+[[env]]
+name = "CURSOR_API_KEY"
+file = "~/.runeward-cursor.key"
+
+# Make the Node-based CLI route through runeward's egress proxy.
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[audit]
+redact = true

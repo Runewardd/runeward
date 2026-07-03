@@ -1,0 +1,36 @@
+# Strict (L3) deny-by-default egress on Kubernetes.
+#
+# Unlike egress-demo (cooperative HTTP(S)_PROXY, which an app can bypass by
+# ignoring the proxy env), enforce = "strict" makes the k8s backend inject a
+# privileged iptables init container that transparently redirects ALL egress
+# through the proxy sidecar. The proxy recovers the destination from the TLS
+# SNI / HTTP Host header and enforces the allowlist below in the kernel path.
+#
+# The backend is selected by host.type below (kubernetes), so no extra env is
+# needed. Requires the runeward-egress:latest image built WITH iptables
+# (deploy/Dockerfile.egress) and a namespace whose PodSecurity admission permits
+# NET_ADMIN (e.g. the default "runeward" namespace labeled privileged). Strict
+# mode is a no-op on the docker backend (single container).
+#
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"egress-strict"}
+
+[host]
+type    = "k8s"
+image   = "curlimages/curl:8.11.0"
+workdir = "/workspace"
+
+[network]
+default = "deny"
+enforce = "strict"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.githubusercontent.com"
+
+[limits]
+max_execs = 100

@@ -1,0 +1,46 @@
+# A runnable "autonomous agent" contract for the LIVE Pattern-B demo: an agent
+# gets a real toolchain (python3 / node / curl) inside an isolated sandbox, but
+# every action is gated by policy, egress allowlist, and guardrails, and written
+# to the signed audit ledger.
+#
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"agent-demo"}
+
+[host]
+type    = "container"
+image   = "runeward-sandbox:dev"   # ships python3, node, curl (+ chromium + browser driver)
+workdir = "/workspace"
+
+# Deny everything on the network except the model/API + code host we name.
+# (Swap in api.anthropic.com + your git host for a real coding agent.)
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com"
+
+# Destructive shell commands are refused outright.
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+# Writing outside the workspace needs a human to approve.
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed by an operator"
+
+# Cost + loop guardrails: cap total actions and detect tight repeat loops.
+[limits]
+wall_clock     = "30m"
+max_execs      = 200
+egress_requests = 500
+loop_window    = "30s"
+loop_threshold = 10
+
+[audit]
+redact = true

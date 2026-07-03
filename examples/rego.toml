@@ -1,0 +1,40 @@
+# A profile that expresses the governance layer in Rego (OPA) instead of the
+# built-in glob rules or CEL. It mirrors examples/governed.toml: a hard deny
+# for destructive shell commands and a human-in-the-loop approval gate for
+# writes under /etc, on top of the local Docker backend.
+#
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"rego"}
+#
+# Then try a denied command (rm ...) and an approval-gated write (/etc/...).
+
+policy_engine = "rego"
+
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+# The decision entrypoint is data.runeward.decision by default. The rule may
+# return a bare string verdict or an object {"verdict": ..., "reason": ...}.
+# OPA v1 uses Rego v1 syntax (the `if` keyword; no `import future.keywords`).
+[rego]
+module = """
+package runeward
+
+default decision := {"verdict": "allow"}
+
+decision := {"verdict": "deny", "reason": "destructive command blocked by policy"} if {
+	input.tool == "shell"
+	startswith(input.arg, "rm ")
+}
+
+decision := {"verdict": "require-approval", "reason": "writes under /etc must be reviewed by an operator"} if {
+	input.tool == "file.write"
+	startswith(input.arg, "/etc/")
+}
+"""
+
+[limits]
+wall_clock = "30m"
+max_execs  = 200

@@ -1,0 +1,19 @@
+# Deny-by-default egress demo on a cached busybox image (has wget).
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"egress-demo"}
+# Only example.com is reachable; everything else is refused by the proxy.
+
+[host]
+type    = "container"
+image   = "rancher/mirrored-library-busybox:1.37.0"
+workdir = "/workspace"
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com, *.github.com"
+
+[limits]
+max_execs = 100

@@ -1,0 +1,62 @@
+# Run the OpenAI Codex CLI (`codex`) as a governed agent inside a sandbox.
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key   # no trailing newline needed
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"codex-agent"}
+#   POST /v1/sandboxes/{id}/shell/exec
+#        {"command":["sh","-lc","codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox 'write fib.py that prints the first 10 Fibonacci numbers, then run it'"]}
+#   (--dangerously-bypass-approvals-and-sandbox is correct here: runeward is the
+#    external sandbox. --skip-git-repo-check is needed because /workspace is empty.)
+
+[host]
+type    = "container"
+image   = "runeward-agent:dev"
+user    = "agent"
+workdir = "/workspace"
+
+# Deny-by-default egress; only the OpenAI API is reachable. (Docker enforcement
+# is cooperative — codex/reqwest honors HTTP(S)_PROXY. For bypass-proof L3
+# enforcement, run this on the k8s backend with enforce = "strict".)
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+# Never let the agent nuke the tree; writes outside the workspace need a human.
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+# Cost + loop guardrails.
+[limits]
+wall_clock      = "30m"
+max_execs       = 500
+egress_requests = 2000
+loop_window     = "60s"
+loop_threshold  = 12
+
+# The API key is read from a file on your machine at launch, injected into the
+# session env, redacted from the audit ledger, and never written under $HOME.
+# `codex exec` authenticates from CODEX_API_KEY (NOT OPENAI_API_KEY, which it
+# only uses in interactive mode), so we inject both from the same file.
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[audit]
+redact = true

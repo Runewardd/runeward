@@ -1,0 +1,40 @@
+# A profile for exercising STATEFUL, CDP-driven browser sessions locally.
+#
+# Unlike examples/browser.toml (which uses a plain Chromium image and only
+# supports the one-shot /browser render), the stateful session API
+# (/browser/sessions ...) needs the `runeward-browser` CDP driver ON PATH inside
+# the sandbox. This profile therefore uses the runeward-sandbox image, which
+# ships both Chromium and the driver (see deploy/Dockerfile.sandbox).
+#
+# Build the local image first (tagged runeward-sandbox:dev):
+#   docker build -f deploy/Dockerfile.sandbox -t runeward-sandbox:dev .
+#
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"browser-stateful"}
+#
+# The walkthrough uses data: URLs so no egress is required; browser traffic that
+# does leave the sandbox is still governed by the deny-by-default allowlist.
+
+[host]
+type    = "container"
+image   = "runeward-sandbox:dev"
+workdir = "/workspace"
+
+# Deny-by-default egress. data: URLs need no network; add allow rules for any
+# real hosts you want the session to reach.
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com"
+
+# The cloud metadata endpoint is always refused, even via the browser tool.
+[[policy]]
+tool    = "browser"
+match   = "*169.254.169.254*"
+verdict = "deny"
+reason  = "cloud metadata endpoint is blocked"
+
+[limits]
+max_execs = 200

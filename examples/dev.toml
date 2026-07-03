@@ -1,0 +1,15 @@
+# A minimal, open profile for local experimentation on the Docker backend.
+# `runeward --config-dir examples print dev` to read it; `runeward --config-dir
+# examples dev` to step into a shell.
+
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+# No [network] block => egress is fully open. See ns-auto.toml for a
+# deny-by-default contract.
+
+[limits]
+wall_clock = "30m"
+max_execs  = 500

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>runeward</title>
+  <link rel="icon" type="image/png" href="logo.png" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-logo" src="logo.png" alt="" />
+      <h1>runeward</h1>
+      <span class="brand-sub">governed execution cell</span>
+    </div>
+    <div class="topbar-status">
+      <button id="approvals-btn" class="pill-btn" title="Pending approvals">
+        Approvals <span id="approvals-count" class="count-badge hidden">0</span>
+      </button>
+      <span id="audit-badge" class="badge badge-muted" title="Audit ledger integrity">
+        <span class="badge-dot"></span> Audit
+      </span>
+      <span id="health-badge" class="badge badge-muted" title="Control plane health">
+        <span id="health-dot" class="dot dot-muted"></span> <span id="health-text">checking…</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="view-switch" role="tablist" aria-label="Switch view">
+        <button id="view-sandboxes" class="view-tab active" role="tab" aria-selected="true">Sandboxes</button>
+        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false">Fleets</button>
+      </div>
+
+      <!-- Sandboxes sidebar -->
+      <div id="sb-sidebar" class="sidebar-view">
+        <div class="sidebar-head">
+          <span class="sidebar-title">Sandboxes</span>
+          <button id="refresh-btn" class="icon-btn" title="Refresh">⟳</button>
+        </div>
+
+        <div class="new-sandbox">
+          <select id="profile-select" class="select" title="Profile">
+            <option value="">Loading profiles…</option>
+          </select>
+          <button id="create-btn" class="btn btn-accent" title="Create sandbox">New</button>
+        </div>
+
+        <ul id="sandbox-list" class="sandbox-list">
+          <li class="empty-note">No sandboxes yet.</li>
+        </ul>
+      </div>
+
+      <!-- Fleets sidebar -->
+      <div id="fleet-sidebar" class="sidebar-view hidden">
+        <div class="sidebar-head">
+          <span class="sidebar-title">Fleets</span>
+          <button id="fleet-refresh-btn" class="icon-btn" title="Refresh">⟳</button>
+        </div>
+
+        <div class="new-sandbox">
+          <select id="fleet-profile-select" class="select" title="Profile">
+            <option value="">Loading profiles…</option>
+          </select>
+          <button id="fleet-create-btn" class="btn btn-accent" title="Create fleet">New</button>
+        </div>
+
+        <ul id="fleet-list" class="sandbox-list">
+          <li class="empty-note">No fleets yet.</li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main panel -->
+    <section class="panel">
+      <!-- Sandboxes panel -->
+      <div id="sb-panel" class="panel-view">
+      <div id="panel-empty" class="panel-empty">
+        <div class="panel-empty-inner">
+          <div class="panel-empty-glyph">▢</div>
+          <p>Select a sandbox on the left, or create a new one to begin.</p>
+        </div>
+      </div>
+
+      <div id="panel-body" class="panel-body hidden">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span id="sel-id" class="mono">—</span>
+            <span id="sel-meta" class="panel-meta"></span>
+          </div>
+          <nav class="tabs" id="tabs">
+            <button class="tab active" data-tab="terminal">Terminal</button>
+            <button class="tab" data-tab="files">Files</button>
+            <button class="tab" data-tab="shell">Shell</button>
+            <button class="tab" data-tab="audit">Audit</button>
+          </nav>
+        </div>
+
+        <!-- Terminal tab -->
+        <div class="tab-pane active" data-pane="terminal">
+          <div class="term-toolbar">
+            <span id="term-status" class="conn-status conn-off">disconnected</span>
+            <button id="term-reconnect" class="btn btn-sm">Reconnect</button>
+          </div>
+          <div id="terminal" class="terminal-host"></div>
+        </div>
+
+        <!-- Files tab -->
+        <div class="tab-pane" data-pane="files">
+          <div class="card">
+            <div class="card-head">List directory</div>
+            <div class="row">
+              <input id="list-path" class="input mono" type="text" placeholder="." value="." />
+              <button id="list-btn" class="btn">List</button>
+            </div>
+            <pre id="list-output" class="output"></pre>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Read / write file</div>
+            <div class="row">
+              <input id="file-path" class="input mono" type="text" placeholder="path/to/file.txt" />
+              <button id="read-btn" class="btn">Read</button>
+              <button id="write-btn" class="btn btn-accent">Save</button>
+            </div>
+            <textarea id="file-content" class="textarea mono" spellcheck="false" placeholder="File contents…"></textarea>
+            <div id="file-note" class="note"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Search</div>
+            <div class="row">
+              <input id="search-query" class="input mono" type="text" placeholder="TODO" />
+              <input id="search-path" class="input mono" type="text" placeholder="." value="." />
+              <button id="search-btn" class="btn">Search</button>
+            </div>
+            <pre id="search-output" class="output"></pre>
+          </div>
+        </div>
+
+        <!-- Shell tab -->
+        <div class="tab-pane" data-pane="shell">
+          <div class="card">
+            <div class="card-head">Run one-off command</div>
+            <div class="row">
+              <input id="shell-cmd" class="input mono" type="text" placeholder="ls -la" />
+              <input id="shell-workdir" class="input mono workdir" type="text" placeholder="workdir (optional)" />
+              <button id="shell-run" class="btn btn-accent">Run</button>
+            </div>
+            <div id="shell-result" class="shell-result hidden">
+              <div class="shell-result-head">
+                <span id="shell-verdict" class="verdict"></span>
+                <span id="shell-exit" class="exit-code mono"></span>
+                <span id="shell-duration" class="muted mono"></span>
+              </div>
+              <div id="shell-note" class="note hidden"></div>
+              <div class="std-block">
+                <div class="std-label">stdout</div>
+                <pre id="shell-stdout" class="output"></pre>
+              </div>
+              <div class="std-block">
+                <div class="std-label">stderr</div>
+                <pre id="shell-stderr" class="output output-err"></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">Run code</div>
+            <div class="row">
+              <select id="code-lang" class="select">
+                <option value="python">Python</option>
+                <option value="node">Node</option>
+              </select>
+              <button id="code-run" class="btn btn-accent">Execute</button>
+            </div>
+            <textarea id="code-source" class="textarea mono" spellcheck="false" placeholder="print(2 + 2)">print(2 + 2)</textarea>
+            <div id="code-result" class="shell-result hidden">
+              <div class="shell-result-head">
+                <span id="code-verdict" class="verdict"></span>
+                <span id="code-exit" class="exit-code mono"></span>
+                <span id="code-duration" class="muted mono"></span>
+              </div>
+              <div id="code-note" class="note hidden"></div>
+              <div class="std-block">
+                <div class="std-label">stdout</div>
+                <pre id="code-stdout" class="output"></pre>
+              </div>
+              <div class="std-block">
+                <div class="std-label">stderr</div>
+                <pre id="code-stderr" class="output output-err"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audit tab -->
+        <div class="tab-pane" data-pane="audit">
+          <div class="card">
+            <div class="card-head">
+              Ledger events
+              <span class="card-head-hint">live · polling</span>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Seq</th><th>Time</th><th>Tool</th><th>Action</th><th>Verdict</th><th>Exit</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-body">
+                  <tr><td colspan="6" class="empty-note">No events yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /#sb-panel -->
+
+      <!-- Fleets panel -->
+      <div id="fleet-panel" class="panel-view hidden">
+        <div id="fleet-empty" class="panel-empty">
+          <div class="panel-empty-inner">
+            <div class="panel-empty-glyph">⛃</div>
+            <p>Select a fleet on the left, or create a new one to begin.</p>
+          </div>
+        </div>
+
+        <div id="fleet-body" class="panel-body hidden">
+          <div class="panel-head">
+            <div class="panel-title">
+              <span id="fleet-sel-id" class="mono">—</span>
+              <span id="fleet-sel-meta" class="panel-meta"></span>
+            </div>
+            <div id="fleet-stats" class="stats-bar"></div>
+          </div>
+
+          <div class="panel-scroll">
+            <div class="card">
+              <div class="card-head">
+                Sandboxes
+                <span id="fleet-sb-count" class="card-head-hint"></span>
+              </div>
+              <div id="fleet-chips" class="chip-list"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                Task board
+                <span class="card-head-hint">live · polling</span>
+              </div>
+              <div class="row">
+                <input id="fleet-task-payload" class="input mono" type="text" placeholder="task payload…" />
+                <button id="fleet-add-task" class="btn btn-accent">Add task</button>
+              </div>
+              <div class="row">
+                <input id="fleet-claim-owner" class="input mono workdir" type="text" placeholder="owner" value="operator" />
+                <button id="fleet-claim" class="btn">Claim next</button>
+                <span id="fleet-claim-note" class="note hidden"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Payload</th><th>State</th><th>Owner</th><th>Attempts</th><th>Result / Error</th><th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fleet-task-body">
+                    <tr><td colspan="6" class="empty-note">No tasks yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#fleet-panel -->
+    </section>
+  </main>
+
+  <!-- New sandbox modal -->
+  <div id="new-modal" class="modal hidden" role="dialog" aria-label="New sandbox">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h2>New sandbox</h2>
+        <button class="icon-btn" data-close-modal title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Profile</span>
+          <div id="new-modal-profile" class="field-static mono">—</div>
+        </label>
+        <label class="field">
+          <span class="field-label">Copy local folder into workspace <span class="field-opt">(optional)</span></span>
+          <input id="new-modal-copyfrom" class="input mono" type="text"
+            placeholder="~/Documents/my-project — blank uses the profile default" />
+          <span class="field-hint">
+            One-time copy at create. The host folder is never mounted or modified —
+            the agent works on an isolated copy in <code>/workspace</code>. Pull results
+            back out later with <code>runeward export &lt;id&gt; &lt;dir&gt;</code>.
+          </span>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close-modal>Cancel</button>
+        <button id="new-modal-create" class="btn btn-accent">Create sandbox</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approvals drawer -->
+  <div id="approvals-drawer" class="drawer hidden" role="dialog" aria-label="Pending approvals">
+    <div class="drawer-backdrop" data-close-drawer></div>
+    <div class="drawer-panel">
+      <div class="drawer-head">
+        <h2>Pending approvals</h2>
+        <button class="icon-btn" data-close-drawer title="Close">✕</button>
+      </div>
+      <ul id="approvals-list" class="approvals-list">
+        <li class="empty-note">No pending approvals.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

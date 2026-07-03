@@ -1,0 +1,667 @@
+package backend
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/adefemi171/runeward/internal/egress"
+	"github.com/adefemi171/runeward/internal/profile"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
+)
+
+// k8sContainer is the fixed name of the sandbox container within each pod.
+const k8sContainer = "sandbox"
+
+// K8s is a sandbox backend that provisions one Pod (+ workspace PVC) per
+// sandbox via client-go. It manages Pods directly rather than through a custom
+// controller; a Sandbox CRD + controller can wrap this later for declarative
+// management. Everything above the Backend interface is unaffected.
+type K8s struct {
+	client    kubernetes.Interface
+	rest      *rest.Config
+	namespace string
+}
+
+// NewK8s builds the Kubernetes backend from the ambient kubeconfig.
+//
+// The context can be pinned via $RUNEWARD_KUBE_CONTEXT (so it never
+// accidentally targets your current-context cluster) and the namespace via
+// $RUNEWARD_K8S_NAMESPACE (default "runeward").
+func NewK8s() (*K8s, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	overrides := &clientcmd.ConfigOverrides{}
+	if kctx := os.Getenv("RUNEWARD_KUBE_CONTEXT"); kctx != "" {
+		overrides.CurrentContext = kctx
+	}
+	cfg := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, overrides)
+	restCfg, err := cfg.ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("build kubernetes client: %w", err)
+	}
+	ns := os.Getenv("RUNEWARD_K8S_NAMESPACE")
+	if ns == "" {
+		ns = "runeward"
+	}
+	return &K8s{client: client, rest: restCfg, namespace: ns}, nil
+}
+
+func (k *K8s) Name() string { return "k8s" }
+
+func (k *K8s) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
+	if err := k.ensureNamespace(ctx); err != nil {
+		return nil, err
+	}
+	id := newID()
+	podName := containerName(id)
+	pvcName := volumeName(id)
+	workdir := spec.Workdir
+	if workdir == "" {
+		workdir = "/workspace"
+	}
+	image := spec.Image
+	if image == "" {
+		image = "debian:stable-slim"
+	}
+
+	labels := map[string]string{
+		labelKey(labelManaged): "true",
+		labelKey(labelProfile): spec.Profile,
+		labelKey(labelID):      id,
+	}
+
+	// Workspace PVC.
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: pvcName, Labels: labels},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
+			},
+		},
+	}
+	if _, err := k.client.CoreV1().PersistentVolumeClaims(k.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
+		return nil, fmt.Errorf("create workspace pvc: %w", err)
+	}
+
+	env := make([]corev1.EnvVar, 0, len(spec.Env))
+	for name, val := range spec.Env {
+		env = append(env, corev1.EnvVar{Name: name, Value: val})
+	}
+
+	resources := corev1.ResourceRequirements{Limits: corev1.ResourceList{}}
+	if spec.Resources.MemoryBytes > 0 {
+		resources.Limits[corev1.ResourceMemory] = *resource.NewQuantity(spec.Resources.MemoryBytes, resource.BinarySI)
+	}
+	if spec.Resources.NanoCPUs > 0 {
+		resources.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(spec.Resources.NanoCPUs/1_000_000, resource.DecimalSI)
+	}
+
+	// Deny-by-default profiles get an egress-proxy sidecar in the same pod. The
+	// sidecar shares the pod network namespace, so the sandbox routes egress
+	// through it. The allowlist policy is delivered via a ConfigMap mounted into
+	// the sidecar.
+	//
+	// Two enforcement modes are supported:
+	//   - cooperative (default): the sandbox is pointed at a forward proxy on
+	//     localhost:8888 via HTTP(S)_PROXY. An app can bypass it by ignoring the
+	//     proxy env vars.
+	//   - strict ([network] enforce = "strict"): a privileged init container
+	//     installs iptables rules that transparently redirect all egress to the
+	//     proxy, so it cannot be bypassed.
+	var extraContainers []corev1.Container
+	var extraInit []corev1.Container
+	var extraVolumes []corev1.Volume
+	if spec.Network.DenyByDefault() {
+		polJSON, err := json.Marshal(policyFromNetwork(spec.Network))
+		if err != nil {
+			_ = k.client.CoreV1().PersistentVolumeClaims(k.namespace).Delete(context.Background(), pvcName, metav1.DeleteOptions{})
+			return nil, fmt.Errorf("marshal egress policy: %w", err)
+		}
+		cmName := egressConfigMapName(id)
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: cmName, Labels: labels},
+			Data:       map[string]string{"policy.json": string(polJSON)},
+		}
+		if _, err := k.client.CoreV1().ConfigMaps(k.namespace).Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+			_ = k.client.CoreV1().PersistentVolumeClaims(k.namespace).Delete(context.Background(), pvcName, metav1.DeleteOptions{})
+			return nil, fmt.Errorf("create egress configmap: %w", err)
+		}
+		img := os.Getenv("RUNEWARD_EGRESS_IMAGE")
+		if img == "" {
+			img = "runeward-egress:latest"
+		}
+		policyMount := corev1.VolumeMount{
+			Name:      "egress-policy",
+			MountPath: "/etc/runeward",
+			ReadOnly:  true,
+		}
+
+		if spec.Network.StrictEgress() {
+			redirectPort := strconv.Itoa(egress.StrictRedirectPort)
+			proxyUID := int64(egress.StrictProxyUID)
+			// Init container installs the iptables REDIRECT rules (needs
+			// NET_ADMIN and runs before the app container starts).
+			extraInit = append(extraInit, corev1.Container{
+				Name:            "egress-init",
+				Image:           img,
+				ImagePullPolicy: egressPullPolicy(img),
+				Args: []string{
+					"--setup-iptables",
+					"--proxy-uid", strconv.FormatInt(proxyUID, 10),
+					"--redirect-port", redirectPort,
+				},
+				SecurityContext: &corev1.SecurityContext{
+					RunAsUser:    int64Ptr(0),
+					Capabilities: &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"}},
+				},
+			})
+			// Transparent proxy runs as the exempt uid so its own upstream
+			// traffic is not redirected back to itself.
+			extraContainers = append(extraContainers, corev1.Container{
+				Name:            "egress",
+				Image:           img,
+				ImagePullPolicy: egressPullPolicy(img),
+				Args:            []string{"--transparent", "--redirect-port", redirectPort, "--policy", "/etc/runeward/policy.json"},
+				SecurityContext: &corev1.SecurityContext{RunAsUser: int64Ptr(proxyUID)},
+				VolumeMounts:    []corev1.VolumeMount{policyMount},
+			})
+			// No HTTP(S)_PROXY env: enforcement is transparent at L3.
+		} else {
+			extraContainers = append(extraContainers, corev1.Container{
+				Name:            "egress",
+				Image:           img,
+				ImagePullPolicy: egressPullPolicy(img),
+				Args:            []string{"--addr", ":8888", "--policy", "/etc/runeward/policy.json"},
+				VolumeMounts:    []corev1.VolumeMount{policyMount},
+			})
+			for name, val := range proxyEnv("http://localhost:8888") {
+				env = append(env, corev1.EnvVar{Name: name, Value: val})
+			}
+		}
+
+		extraVolumes = append(extraVolumes, corev1.Volume{
+			Name: "egress-policy",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: cmName},
+				},
+			},
+		})
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: podName, Labels: labels},
+		Spec: corev1.PodSpec{
+			RestartPolicy:      corev1.RestartPolicyAlways,
+			RuntimeClassName:   runtimeClassPtr(spec.RuntimeClass),
+			EnableServiceLinks: boolPtr(false),
+			InitContainers:     extraInit,
+			Containers: []corev1.Container{{
+				Name:       k8sContainer,
+				Image:      image,
+				Command:    []string{"sleep", "infinity"},
+				WorkingDir: workdir,
+				Env:        env,
+				Resources:  resources,
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      "workspace",
+					MountPath: workdir,
+				}},
+			}},
+			Volumes: []corev1.Volume{{
+				Name: "workspace",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvcName},
+				},
+			}},
+		},
+	}
+	pod.Spec.Containers = append(pod.Spec.Containers, extraContainers...)
+	pod.Spec.Volumes = append(pod.Spec.Volumes, extraVolumes...)
+	if _, err := k.client.CoreV1().Pods(k.namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		_ = k.client.CoreV1().PersistentVolumeClaims(k.namespace).Delete(context.Background(), pvcName, metav1.DeleteOptions{})
+		_ = k.client.CoreV1().ConfigMaps(k.namespace).Delete(context.Background(), egressConfigMapName(id), metav1.DeleteOptions{})
+		return nil, fmt.Errorf("create pod: %w", err)
+	}
+
+	if err := k.waitRunning(ctx, podName, 90*time.Second); err != nil {
+		_ = k.Kill(context.Background(), id)
+		return nil, err
+	}
+
+	if spec.SeedDir != "" {
+		if err := k.seedWorkspace(ctx, id, workdir, spec.SeedDir); err != nil {
+			_ = k.Kill(context.Background(), id)
+			return nil, err
+		}
+	}
+
+	if len(spec.Files) > 0 {
+		if err := k.CopyFiles(ctx, id, spec.Files); err != nil {
+			_ = k.Kill(context.Background(), id)
+			return nil, err
+		}
+	}
+
+	return &Sandbox{
+		ID:        id,
+		Profile:   spec.Profile,
+		Backend:   k.Name(),
+		Image:     image,
+		Status:    "running",
+		CreatedAt: time.Now(),
+	}, nil
+}
+
+func (k *K8s) Exec(ctx context.Context, id string, req ExecRequest) (*ExecResult, error) {
+	if req.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, req.Timeout)
+		defer cancel()
+	}
+	command := wrapCommand(req.Workdir, req.Env, req.Command)
+	var stdout, stderr bytes.Buffer
+	start := time.Now()
+	err := k.stream(ctx, containerName(id), corev1.PodExecOptions{
+		Container: k8sContainer,
+		Command:   command,
+		Stdout:    true,
+		Stderr:    true,
+	}, remotecommand.StreamOptions{Stdout: &stdout, Stderr: &stderr})
+
+	res := &ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), Duration: time.Since(start)}
+	if err != nil {
+		// Non-zero exit surfaces as an error carrying the code.
+		if ec, ok := err.(interface{ ExitStatus() int }); ok {
+			res.ExitCode = ec.ExitStatus()
+			return res, nil
+		}
+		return res, fmt.Errorf("pod exec: %w", err)
+	}
+	return res, nil
+}
+
+func (k *K8s) AttachPTY(ctx context.Context, id string, s PTYStream) error {
+	command := s.Command
+	if len(command) == 0 {
+		command = []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"}
+	}
+	opts := corev1.PodExecOptions{
+		Container: k8sContainer,
+		Command:   command,
+		Stdin:     s.Stdin != nil,
+		Stdout:    true,
+		Stderr:    !s.TTY, // with a TTY, stdout and stderr are merged
+		TTY:       s.TTY,
+	}
+	stream := remotecommand.StreamOptions{
+		Stdin:  s.Stdin,
+		Stdout: s.Stdout,
+		Tty:    s.TTY,
+	}
+	if s.Stderr != nil && !s.TTY {
+		stream.Stderr = s.Stderr
+	} else if !s.TTY {
+		stream.Stderr = s.Stdout
+	}
+	if s.Resize != nil {
+		stream.TerminalSizeQueue = &termSizeQueue{ch: s.Resize}
+	}
+	return k.stream(ctx, containerName(id), opts, stream)
+}
+
+func (k *K8s) CopyFiles(ctx context.Context, id string, files []profile.File) error {
+	for _, f := range files {
+		var data []byte
+		switch {
+		case f.Content != "":
+			data = []byte(f.Content)
+		case f.File != "":
+			b, err := os.ReadFile(expandHome(f.File))
+			if err != nil {
+				return fmt.Errorf("read projected file %q: %w", f.File, err)
+			}
+			data = b
+		default:
+			continue
+		}
+		mode := f.Mode
+		if mode == "" {
+			mode = "0444"
+		}
+		script := fmt.Sprintf(`set -e; mkdir -p "$(dirname "$1")"; cat > "$1"; chmod %s "$1"; chown root:root "$1" 2>/dev/null || true`, mode)
+		command := []string{"sh", "-c", script, "sh", f.Path}
+		var stderr bytes.Buffer
+		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := k.stream(cctx, containerName(id), corev1.PodExecOptions{
+			Container: k8sContainer,
+			Command:   command,
+			Stdin:     true,
+			Stdout:    true,
+			Stderr:    true,
+		}, remotecommand.StreamOptions{Stdin: bytes.NewReader(data), Stdout: io.Discard, Stderr: &stderr})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("project file %q: %w: %s", f.Path, err, stderr.String())
+		}
+	}
+	return nil
+}
+
+// seedWorkspace copies the contents of srcDir into the pod's workdir by
+// streaming a tar to `tar -xf -` inside the container. Extraction runs as the
+// pod's user, so files are owned by the sandbox user; the host directory is
+// only read.
+func (k *K8s) seedWorkspace(ctx context.Context, id, workdir, srcDir string) error {
+	if fi, err := os.Stat(srcDir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("copy_from %q must be an existing directory: %v", srcDir, err)
+	}
+	pr, pw := io.Pipe()
+	go func() { pw.CloseWithError(writeDirTar(pw, srcDir)) }()
+
+	var stderr bytes.Buffer
+	err := k.stream(ctx, containerName(id), corev1.PodExecOptions{
+		Container: k8sContainer,
+		Command:   []string{"tar", "-C", workdir, "-xf", "-"},
+		Stdin:     true,
+		Stdout:    true,
+		Stderr:    true,
+	}, remotecommand.StreamOptions{Stdin: pr, Stdout: io.Discard, Stderr: &stderr})
+	if err != nil {
+		return fmt.Errorf("seed workspace from %q: %w: %s", srcDir, err, stderr.String())
+	}
+	return nil
+}
+
+// ExportWorkspace streams a tar of the pod workdir contents to w.
+func (k *K8s) ExportWorkspace(ctx context.Context, id string, w io.Writer) error {
+	workdir, err := k.workdir(ctx, id)
+	if err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	err = k.stream(ctx, containerName(id), corev1.PodExecOptions{
+		Container: k8sContainer,
+		Command:   []string{"tar", "-C", workdir, "-cf", "-", "."},
+		Stdout:    true,
+		Stderr:    true,
+	}, remotecommand.StreamOptions{Stdout: w, Stderr: &stderr})
+	if err != nil {
+		return fmt.Errorf("export workspace: %w: %s", err, stderr.String())
+	}
+	return nil
+}
+
+// has reports whether a sandbox pod for id exists in the backend's namespace.
+func (k *K8s) has(ctx context.Context, id string) bool {
+	_, err := k.client.CoreV1().Pods(k.namespace).Get(ctx, containerName(id), metav1.GetOptions{})
+	return err == nil
+}
+
+func (k *K8s) Snapshot(ctx context.Context, id, name string) (*SnapshotRef, error) {
+	workdir, err := k.workdir(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	snapID := newID()
+	loc := snapshotPath(snapID)
+	out, err := os.Create(loc)
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+
+	var stderr bytes.Buffer
+	err = k.stream(ctx, containerName(id), corev1.PodExecOptions{
+		Container: k8sContainer,
+		Command:   []string{"tar", "-C", workdir, "-cf", "-", "."},
+		Stdout:    true,
+		Stderr:    true,
+	}, remotecommand.StreamOptions{Stdout: out, Stderr: &stderr})
+	if err != nil {
+		os.Remove(loc)
+		return nil, fmt.Errorf("snapshot tar: %w: %s", err, stderr.String())
+	}
+	return &SnapshotRef{ID: snapID, Name: name, Backend: k.Name(), Location: loc, Created: time.Now()}, nil
+}
+
+func (k *K8s) Restore(ctx context.Context, ref SnapshotRef) (*Sandbox, error) {
+	sb, err := k.Create(ctx, Spec{Profile: ref.Profile})
+	if err != nil {
+		return nil, err
+	}
+	workdir, err := k.workdir(ctx, sb.ID)
+	if err != nil {
+		_ = k.Kill(context.Background(), sb.ID)
+		return nil, err
+	}
+	in, err := os.Open(ref.Location)
+	if err != nil {
+		_ = k.Kill(context.Background(), sb.ID)
+		return nil, err
+	}
+	defer in.Close()
+
+	var stderr bytes.Buffer
+	err = k.stream(ctx, containerName(sb.ID), corev1.PodExecOptions{
+		Container: k8sContainer,
+		Command:   []string{"tar", "-C", workdir, "-xf", "-"},
+		Stdin:     true,
+		Stdout:    true,
+		Stderr:    true,
+	}, remotecommand.StreamOptions{Stdin: in, Stderr: &stderr})
+	if err != nil {
+		_ = k.Kill(context.Background(), sb.ID)
+		return nil, fmt.Errorf("restore untar: %w: %s", err, stderr.String())
+	}
+	return sb, nil
+}
+
+func (k *K8s) Kill(ctx context.Context, id string) error {
+	grace := int64(0)
+	podErr := k.client.CoreV1().Pods(k.namespace).Delete(ctx, containerName(id), metav1.DeleteOptions{GracePeriodSeconds: &grace})
+	_ = k.client.CoreV1().PersistentVolumeClaims(k.namespace).Delete(ctx, volumeName(id), metav1.DeleteOptions{})
+	_ = k.client.CoreV1().ConfigMaps(k.namespace).Delete(ctx, egressConfigMapName(id), metav1.DeleteOptions{})
+	if podErr != nil && !apierrors.IsNotFound(podErr) {
+		return fmt.Errorf("delete pod: %w", podErr)
+	}
+	return nil
+}
+
+func (k *K8s) List(ctx context.Context) ([]Sandbox, error) {
+	pods, err := k.client.CoreV1().Pods(k.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelKey(labelManaged) + "=true",
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Sandbox, 0, len(pods.Items))
+	for _, p := range pods.Items {
+		out = append(out, Sandbox{
+			ID:        p.Labels[labelKey(labelID)],
+			Profile:   p.Labels[labelKey(labelProfile)],
+			Backend:   k.Name(),
+			Image:     p.Spec.Containers[0].Image,
+			Status:    string(p.Status.Phase),
+			CreatedAt: p.CreationTimestamp.Time,
+		})
+	}
+	return out, nil
+}
+
+// --- helpers ---
+
+func (k *K8s) ensureNamespace(ctx context.Context) error {
+	_, err := k.client.CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("check namespace: %w", err)
+	}
+	_, err = k.client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: k.namespace, Labels: map[string]string{labelKey(labelManaged): "true"}},
+	}, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create namespace: %w", err)
+	}
+	return nil
+}
+
+func (k *K8s) waitRunning(ctx context.Context, podName string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		pod, err := k.client.CoreV1().Pods(k.namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("wait for pod: %w", err)
+		}
+		if pod.Status.Phase == corev1.PodRunning {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.Name == k8sContainer && cs.Ready {
+					return nil
+				}
+			}
+		}
+		if pod.Status.Phase == corev1.PodFailed {
+			return fmt.Errorf("pod %s entered Failed phase", podName)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for pod %s to become ready (phase=%s)", podName, pod.Status.Phase)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1 * time.Second):
+		}
+	}
+}
+
+func (k *K8s) workdir(ctx context.Context, id string) (string, error) {
+	pod, err := k.client.CoreV1().Pods(k.namespace).Get(ctx, containerName(id), metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	wd := pod.Spec.Containers[0].WorkingDir
+	if wd == "" {
+		wd = "/workspace"
+	}
+	return wd, nil
+}
+
+// stream executes a remotecommand against the sandbox container.
+func (k *K8s) stream(ctx context.Context, podName string, opts corev1.PodExecOptions, stream remotecommand.StreamOptions) error {
+	req := k.client.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(k.namespace).
+		SubResource("exec").
+		VersionedParams(&opts, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(k.rest, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("build executor: %w", err)
+	}
+	return exec.StreamWithContext(ctx, stream)
+}
+
+// wrapCommand injects an optional workdir and env into an argv command using a
+// small sh wrapper (PodExecOptions has no working-dir/env fields).
+func wrapCommand(workdir string, env map[string]string, cmd []string) []string {
+	if workdir == "" && len(env) == 0 {
+		return cmd
+	}
+	var b strings.Builder
+	if workdir != "" {
+		b.WriteString(`cd "$1" && shift; `)
+	}
+	for name, val := range env {
+		fmt.Fprintf(&b, "export %s=%s; ", name, shellQuote(val))
+	}
+	b.WriteString(`exec "$@"`)
+
+	out := []string{"sh", "-c", b.String(), "sh"}
+	if workdir != "" {
+		out = append(out, workdir)
+	}
+	return append(out, cmd...)
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// termSizeQueue adapts the backend resize channel to remotecommand.
+type termSizeQueue struct{ ch <-chan TermSize }
+
+func (t *termSizeQueue) Next() *remotecommand.TerminalSize {
+	s, ok := <-t.ch
+	if !ok {
+		return nil
+	}
+	return &remotecommand.TerminalSize{Width: s.Cols, Height: s.Rows}
+}
+
+func labelKey(k string) string { return k }
+
+// egressConfigMapName is the name of the per-sandbox ConfigMap holding the
+// egress allowlist policy consumed by the sidecar proxy.
+func egressConfigMapName(id string) string { return "runeward-egress-" + id }
+
+func runtimeClassPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func int64Ptr(i int64) *int64 { return &i }
+
+// egressPullPolicy picks the pull policy for the injected egress sidecar/init
+// image. The egress image is typically built locally and preloaded into the
+// node (e.g. OrbStack/kind share the Docker store), so it must NOT force a
+// registry pull — which Kubernetes would otherwise do for a ":latest" tag.
+// $RUNEWARD_EGRESS_PULL_POLICY (Always|Never|IfNotPresent) overrides the
+// default of IfNotPresent for setups that push the image to a real registry.
+func egressPullPolicy(_ string) corev1.PullPolicy {
+	switch corev1.PullPolicy(os.Getenv("RUNEWARD_EGRESS_PULL_POLICY")) {
+	case corev1.PullAlways:
+		return corev1.PullAlways
+	case corev1.PullNever:
+		return corev1.PullNever
+	default:
+		return corev1.PullIfNotPresent
+	}
+}
+
+// snapshotPath returns the on-disk location for a k8s snapshot tarball,
+// mirroring the docker backend's snapshot directory.
+func snapshotPath(id string) string {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		cache = os.TempDir()
+	}
+	dir := cache + "/runeward/snapshots"
+	_ = os.MkdirAll(dir, 0o755)
+	return dir + "/" + id + ".tar"
+}

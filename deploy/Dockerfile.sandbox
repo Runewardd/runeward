@@ -1,0 +1,33 @@
+# The default runeward sandbox image: a minimal Debian base with a headless
+# Chromium and the runeward-browser CDP driver on PATH, so the governed browser
+# tool (stateful, CDP-driven sessions) works out of the box.
+#
+#   docker build -f deploy/Dockerfile.sandbox -t ghcr.io/adefemi171/runeward-sandbox:latest .
+#
+# Any image works as a sandbox; this one simply guarantees the browser tool's
+# prerequisites (a Chromium binary + `runeward-browser`) are present. Profiles
+# that don't use the browser tool can use any base image.
+
+FROM golang:1.25 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" \
+    -o /out/runeward-browser ./cmd/runeward-browser
+
+FROM debian:stable-slim
+# chromium provides the headless browser the CDP driver drives; ca-certificates
+# for TLS; python3/node are common agent runtimes. Kept lean.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        chromium \
+        ca-certificates \
+        curl \
+        python3 \
+        nodejs \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/runeward-browser /usr/local/bin/runeward-browser
+# A stable, writable workspace the profiles default to.
+WORKDIR /workspace
+CMD ["sleep", "infinity"]

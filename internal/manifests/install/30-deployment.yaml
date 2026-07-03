@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runeward-controller
+  namespace: runeward
+  labels:
+    app.kubernetes.io/name: runeward
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: runeward
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: runeward
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: runeward-controller
+      containers:
+        - name: controller
+          # Overridden by `runeward up --image` / $RUNEWARD_IMAGE.
+          image: runeward:latest
+          # Use a locally-built image when present (OrbStack/kind share the
+          # Docker store); avoids the forced registry pull that a ":latest" tag
+          # otherwise triggers. Set to Always when pulling from a real registry.
+          imagePullPolicy: IfNotPresent
+          args: ["controller"]
+          env:
+            - name: RUNEWARD_K8S_NAMESPACE
+              value: runeward
+            - name: RUNEWARD_CONFIG_DIR
+              value: /etc/runeward/profiles
+            - name: RUNEWARD_STATE_DIR
+              value: /var/lib/runeward
+          volumeMounts:
+            - name: profiles
+              mountPath: /etc/runeward/profiles
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/runeward
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+      volumes:
+        - name: profiles
+          configMap:
+            name: runeward-profiles
+            optional: true
+        - name: state
+          emptyDir: {}

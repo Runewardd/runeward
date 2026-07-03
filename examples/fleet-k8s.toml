@@ -1,0 +1,22 @@
+# A Kubernetes-backed multi-agent fleet: N pods from one contract sharing an
+# atomic task board. Use this (instead of the Docker-backed fleet-demo) when the
+# controller runs IN-CLUSTER, since a controller pod has no Docker socket.
+#
+#   kubectl apply -f - <<'EOF'
+#   apiVersion: runeward.dev/v1alpha1
+#   kind: ClusterFleet
+#   metadata: { name: shared-crew }
+#   spec: { profile: fleet-k8s }
+#   EOF
+
+[host]
+type    = "k8s"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+[fleet]
+replicas   = 2
+task_board = ["build module A", "build module B", "run integration tests"]
+
+[limits]
+max_execs = 500

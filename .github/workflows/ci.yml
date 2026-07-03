@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l internal cmd)
+          if [ -n "$out" ]; then
+            echo "These files need gofmt:"; echo "$out"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build (host)
+        run: go build ./...
+
+      - name: build (linux, egress + strict tags)
+        run: GOOS=linux GOARCH=amd64 go build ./...
+
+      - name: test
+        run: go test ./... -count=1
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: helm lint
+        run: helm lint deploy/helm/runeward
+      - name: helm template (controller + server)
+        run: helm template runeward deploy/helm/runeward --set server.enabled=true >/dev/null

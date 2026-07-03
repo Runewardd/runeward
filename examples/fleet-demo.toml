@@ -1,0 +1,18 @@
+# A multi-agent fleet: N sandboxes from one contract sharing an atomic task
+# board. Workers (agents) claim tasks from the board and run them against their
+# assigned sandbox via the governed tool API.
+#
+#   runeward --config-dir examples serve
+#   POST /v1/fleets {"profile":"fleet-demo"}
+
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+[fleet]
+replicas   = 2
+task_board = ["build module A", "build module B", "run integration tests"]
+
+[limits]
+max_execs = 500

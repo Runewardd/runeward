@@ -1,0 +1,38 @@
+# Binaries
+/bin/
+/dist/bin/
+runeward
+runeward-agent
+runeward-browser
+
+# Go
+*.test
+*.out
+/vendor/
+
+# Local scratch / runtime state
+/.tmp/
+runeward-egress
+
+# Ledger / signing keys / runtime state (should only live under $RUNEWARD_STATE_DIR)
+*.key
+*.pem
+ledger.jsonl
+fleets.json
+.env
+.env.*
+
+# Editor/local config with machine-specific absolute paths
+/.cursor/
+
+# Release build outputs (produced in CI)
+/dist-bin/
+/dist-chart/
+*.tgz
+
+# Local profiles carry secret references — never commit user-global ones.
+/.runeward/
+
+# OS / editor
+.DS_Store
+*.swp

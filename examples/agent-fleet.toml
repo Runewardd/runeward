@@ -1,0 +1,40 @@
+# A governed FLEET of agents: N isolated sandboxes sharing one atomic task
+# board. Each worker (agent) claims a task, runs it in its own sandbox under the
+# same policy/egress/guardrail contract, and marks it done — the "fleet of
+# agentic IDEs, sandboxed and governed" pattern.
+#
+#   runeward --config-dir examples serve
+#   POST /v1/fleets {"profile":"agent-fleet"}
+
+[host]
+type    = "container"
+image   = "runeward-sandbox:dev"
+workdir = "/workspace"
+
+[fleet]
+replicas   = 3
+task_board = ["lint module A", "build module B", "run tests for C", "package release"]
+
+# Same deny-by-default egress + destructive-command guard applies to every
+# sandbox in the fleet.
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[limits]
+wall_clock     = "30m"
+max_execs      = 500
+loop_window    = "30s"
+loop_threshold = 15
+
+[audit]
+redact = true

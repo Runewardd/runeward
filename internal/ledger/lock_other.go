@@ -1,0 +1,9 @@
+//go:build windows
+
+package ledger
+
+import "os"
+
+// lockFile is a no-op on platforms without flock; the single-writer guarantee
+// is only enforced on unix.
+func lockFile(_ *os.File) error { return nil }

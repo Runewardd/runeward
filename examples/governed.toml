@@ -1,0 +1,30 @@
+# A profile that demonstrates the governance layer: a hard deny rule and a
+# human-in-the-loop approval gate, on top of the local Docker backend.
+#
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"governed"}
+#
+# Then try a denied command (rm ...) and an approval-gated write (/etc/...).
+
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+# Destructive shell commands are refused outright.
+[[policy]]
+tool    = "shell"
+match   = "rm *"
+verdict = "deny"
+reason  = "destructive command blocked by policy"
+
+# Writes anywhere under /etc require a human to approve them.
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes under /etc must be reviewed by an operator"
+
+[limits]
+wall_clock = "30m"
+max_execs  = 200

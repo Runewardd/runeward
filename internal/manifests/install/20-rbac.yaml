@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runeward-controller
+  namespace: runeward
+  labels:
+    app.kubernetes.io/name: runeward
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runeward-controller
+  namespace: runeward
+  labels:
+    app.kubernetes.io/name: runeward
+rules:
+  # Reconcile the custom resources and their status.
+  - apiGroups: ["runeward.dev"]
+    resources: ["sandboxes", "fleets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["runeward.dev"]
+    resources: ["sandboxes/status", "fleets/status"]
+    verbs: ["get", "update", "patch"]
+  # Drive the Kubernetes backend (pods + workspace PVCs + egress config).
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec", "persistentvolumeclaims", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: runeward-controller
+  namespace: runeward
+  labels:
+    app.kubernetes.io/name: runeward
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: runeward-controller
+subjects:
+  - kind: ServiceAccount
+    name: runeward-controller
+    namespace: runeward

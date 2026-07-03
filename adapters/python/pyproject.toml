@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "runeward"
+version = "0.1.0"
+description = "Python client and agent-framework adapters for the runeward governed execution cell."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "TBD" }
+authors = [{ name = "runeward" }]
+keywords = ["ai", "agents", "sandbox", "mcp", "governance", "langchain", "crewai"]
+# The core client is pure standard library — no runtime dependencies.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/adefemi171/runeward"
+Repository = "https://github.com/adefemi171/runeward"
+
+[project.optional-dependencies]
+# Framework adapters are opt-in; they are imported lazily so the base client
+# works without any of these installed.
+langchain = ["langchain-core>=0.2"]
+crewai = ["crewai>=0.30", "pydantic>=2"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["runeward"]

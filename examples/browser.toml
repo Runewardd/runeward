@@ -1,0 +1,37 @@
+# A sandbox with a headless browser tool. The image must ship Chromium; this
+# uses zenika/alpine-chrome (chromium-browser on PATH). The governed browser
+# tool runs INSIDE the sandbox, so the deny-by-default egress allowlist below
+# also constrains what the browser can reach (the proxy is passed to Chromium
+# via --proxy-server automatically).
+#
+#   docker pull zenika/alpine-chrome
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"browser"}
+#   POST /v1/sandboxes/{id}/browser {"url":"https://example.com","mode":"text"}
+
+[host]
+type    = "container"
+image   = "zenika/alpine-chrome:124"
+workdir = "/tmp"
+# zenika/alpine-chrome runs as user "chrome"; --no-sandbox is already applied.
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.wikipedia.org"
+
+# Fetching internal addresses requires a human to approve.
+[[policy]]
+tool    = "browser"
+match   = "*169.254.169.254*"
+verdict = "deny"
+reason  = "cloud metadata endpoint is blocked"
+
+[limits]
+max_execs = 100

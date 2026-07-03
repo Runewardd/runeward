@@ -1,0 +1,64 @@
+# A FLEET of governed Codex agents: N identical sandboxes sharing one atomic
+# task board. Each task payload is a prompt; workers claim a task, run
+# `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`
+# in their assigned sandbox, then mark it done. Every action is
+# policy-gated, egress-limited, and written to the signed audit ledger.
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
+#   runeward --config-dir examples serve
+#   POST /v1/fleets {"profile":"codex-fleet"}   # provisions 3 sandboxes + seeds the board
+#   then: claim -> codex exec -> complete (see the worker loop in the runbook)
+
+[host]
+type    = "container"
+image   = "runeward-agent:dev"
+user    = "agent"
+workdir = "/workspace"
+
+[fleet]
+replicas = 3
+task_board = [
+  "write fib.py that prints the first 10 Fibonacci numbers, then run it",
+  "write primes.py that prints primes below 50, then run it",
+  "write reverse.py that reverses the string 'runeward' and prints it, then run it",
+  "write factorial.py that prints 10! and run it",
+]
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[[policy]]
+tool    = "file.write"
+match   = "/etc/*"
+verdict = "require-approval"
+reason  = "writes outside the workspace must be reviewed"
+
+[limits]
+wall_clock      = "30m"
+max_execs       = 500
+egress_requests = 2000
+loop_window     = "60s"
+loop_threshold  = 12
+
+# `codex exec` authenticates from CODEX_API_KEY (not OPENAI_API_KEY); inject both.
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[audit]
+redact = true

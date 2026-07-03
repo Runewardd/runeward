@@ -1,0 +1,36 @@
+# Same governance as governed.toml, but expressed with the CEL policy engine
+# instead of the built-in tool+glob rules. Set policy_engine = "cel" and write
+# [[cel]] rules whose `expr` is a boolean CEL expression over the variables
+# `tool` (e.g. "shell", "file.write", "net") and `arg` (the command, path, or
+# host). First matching rule wins; unmatched actions fall through to allow.
+#
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"cel-policy"}
+
+policy_engine = "cel"
+
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+# Block destructive shell commands outright.
+[[cel]]
+expr    = 'tool == "shell" && (arg.startsWith("rm ") || arg.contains("mkfs"))'
+verdict = "deny"
+reason  = "destructive command blocked by CEL policy"
+
+# Writes anywhere under /etc require a human to approve them.
+[[cel]]
+expr    = 'tool == "file.write" && arg.startsWith("/etc/")'
+verdict = "require-approval"
+reason  = "writes under /etc must be reviewed by an operator"
+
+# Explicitly allow package installs (example of a richer predicate).
+[[cel]]
+expr    = 'tool == "shell" && arg.matches("^(apt|apt-get|pip3?) .*")'
+verdict = "allow"
+
+[limits]
+wall_clock = "30m"
+max_execs  = 200

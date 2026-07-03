@@ -1,0 +1,54 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.adefemi171/runeward",
+  "description": "Governed execution cells for AI agents: provision isolated Docker/Kubernetes sandboxes from declarative TOML profiles and run shell, Python, Node, and file tools through a policy engine, tamper-evident audit ledger, cost/loop guardrails, and human-in-the-loop approval gates.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/adefemi171/runeward",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "registryBaseUrl": "https://ghcr.io",
+      "identifier": "ghcr.io/adefemi171/runeward",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "isRequired": true,
+          "description": "Start the runeward MCP server on stdio."
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "RUNEWARD_CONFIG_DIR",
+          "description": "Directory to resolve profile TOML files from (optional; defaults to the standard search path).",
+          "isRequired": false
+        },
+        {
+          "name": "RUNEWARD_STATE_DIR",
+          "description": "Directory where the tamper-evident audit ledger is written (optional).",
+          "isRequired": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "http://localhost:8080/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token for the runeward control plane, if it is configured to require auth.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

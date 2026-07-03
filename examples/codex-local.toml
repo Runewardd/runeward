@@ -1,0 +1,52 @@
+# A governed Codex agent seeded with a COPY of a local project folder.
+#
+# `copy_from` copies your folder's contents into the fresh /workspace at
+# creation. It is a one-time copy: your host folder is never mounted and never
+# modified — the agent works entirely against the isolated copy inside the
+# sandbox. (The image must ship `tar`; runeward-agent:dev does.)
+#
+#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
+#   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
+#   # edit copy_from below to point at YOUR project, then:
+#   runeward --config-dir examples serve
+#   POST /v1/sandboxes {"profile":"codex-local"}
+#   POST /v1/sandboxes/{id}/shell/exec
+#        {"command":["sh","-lc","codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox 'run the tests and fix any failures'"]}
+
+[host]
+type      = "container"
+image     = "runeward-agent:dev"
+user      = "agent"
+workdir   = "/workspace"
+copy_from = "~/Documents/your-project"   # <-- change to your local folder
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[limits]
+wall_clock      = "30m"
+max_execs       = 500
+egress_requests = 2000
+loop_window     = "60s"
+loop_threshold  = 12
+
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[audit]
+redact = true

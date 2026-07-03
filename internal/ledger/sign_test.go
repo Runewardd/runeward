@@ -1,0 +1,74 @@
+package ledger
+
+import (
+	"bytes"
+	"path/filepath"
+	"testing"
+)
+
+func TestSignedLedgerVerifiesAndDetectsTampering(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ledger.jsonl")
+
+	l, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	signer, err := LoadOrCreateSigner(dir)
+	if err != nil {
+		t.Fatalf("signer: %v", err)
+	}
+	l.SetSigner(signer)
+
+	for i := 0; i < 3; i++ {
+		if _, err := l.Append(Event{Tool: "shell", Action: "echo", Verdict: "allow"}); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	if err := l.VerifySignatures(signer.Public(), true); err != nil {
+		t.Fatalf("VerifySignatures should pass: %v", err)
+	}
+
+	// A different key must not verify.
+	other, _ := LoadOrCreateSigner(t.TempDir())
+	if err := l.VerifySignatures(other.Public(), true); err == nil {
+		t.Fatal("verification with wrong key should fail")
+	}
+}
+
+func TestExportAndVerifyBundle(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(filepath.Join(dir, "ledger.jsonl"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	signer, _ := LoadOrCreateSigner(dir)
+	l.SetSigner(signer)
+
+	for i := 0; i < 4; i++ {
+		if _, err := l.Append(Event{SessionID: "s1", Tool: "shell", Action: "cmd", Verdict: "allow"}); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := l.ExportBundle(&buf, "s1", signer.Public()); err != nil {
+		t.Fatalf("export bundle: %v", err)
+	}
+
+	n, err := VerifyBundle(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("VerifyBundle: %v", err)
+	}
+	if n != 4 {
+		t.Fatalf("verified %d events, want 4", n)
+	}
+
+	// Corrupt a byte in the middle of the bundle and expect failure.
+	raw := buf.Bytes()
+	corrupt := bytes.Replace(raw, []byte("\"cmd\""), []byte("\"xxx\""), 1)
+	if _, err := VerifyBundle(bytes.NewReader(corrupt)); err == nil {
+		t.Fatal("VerifyBundle should fail on tampered payload")
+	}
+}

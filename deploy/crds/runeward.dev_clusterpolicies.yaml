@@ -1,0 +1,81 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterpolicies.runeward.dev
+spec:
+  group: runeward.dev
+  scope: Cluster
+  names:
+    kind: ClusterPolicy
+    listKind: ClusterPolicyList
+    plural: clusterpolicies
+    singular: clusterpolicy
+    shortNames:
+      - cpol
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: |
+            ClusterPolicy declares org-wide defaults and guardrails for runeward
+            Sandbox and Fleet resources. The runeward admission webhook enforces
+            every ClusterPolicy on CREATE/UPDATE: it defaults an empty
+            spec.profile, rejects denied or non-allowed profiles, restricts the
+            namespaces resources may live in, and requires labels to be present.
+          properties:
+            spec:
+              type: object
+              properties:
+                allowedProfiles:
+                  type: array
+                  description: |
+                    Glob patterns; if non-empty, a Sandbox/Fleet spec.profile MUST
+                    match at least one pattern.
+                  items:
+                    type: string
+                deniedProfiles:
+                  type: array
+                  description: |
+                    Glob patterns; if any pattern matches spec.profile the request
+                    is rejected.
+                  items:
+                    type: string
+                defaultProfile:
+                  type: string
+                  description: |
+                    Mutating default applied when spec.profile is empty.
+                allowedNamespaces:
+                  type: array
+                  description: |
+                    Glob patterns; if non-empty, the resource's namespace must
+                    match at least one pattern.
+                  items:
+                    type: string
+                requiredLabels:
+                  type: array
+                  description: |
+                    Label keys that must be present on the resource metadata.
+                  items:
+                    type: string
+            status:
+              type: object
+              properties:
+                observedResources:
+                  type: integer
+                  format: int64
+                  description: Number of resources evaluated against this policy.
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Default
+          type: string
+          jsonPath: .spec.defaultProfile
+        - name: Observed
+          type: integer
+          jsonPath: .status.observedResources
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

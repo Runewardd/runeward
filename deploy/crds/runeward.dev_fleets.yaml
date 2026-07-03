@@ -1,0 +1,83 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: fleets.runeward.dev
+spec:
+  group: runeward.dev
+  scope: Namespaced
+  names:
+    kind: Fleet
+    listKind: FleetList
+    plural: fleets
+    singular: fleet
+    shortNames:
+      - flt
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: |
+            Fleet is a declarative request for N governed runeward sandboxes that
+            share a single atomic task board. The runeward controller reconciles
+            it onto the Kubernetes backend using the named profile's [fleet]
+            replicas and task_board.
+          properties:
+            spec:
+              type: object
+              required:
+                - profile
+              properties:
+                profile:
+                  type: string
+                  description: Name of the runeward profile (with a [fleet] block).
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  description: One of Pending, Running, Failed, Terminating.
+                fleetId:
+                  type: string
+                sandboxes:
+                  type: array
+                  items:
+                    type: string
+                tasksTotal:
+                  type: integer
+                tasksPending:
+                  type: integer
+                tasksClaimed:
+                  type: integer
+                tasksDone:
+                  type: integer
+                tasksFailed:
+                  type: integer
+                message:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Profile
+          type: string
+          jsonPath: .spec.profile
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Fleet
+          type: string
+          jsonPath: .status.fleetId
+        - name: Done
+          type: integer
+          jsonPath: .status.tasksDone
+        - name: Total
+          type: integer
+          jsonPath: .status.tasksTotal
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
