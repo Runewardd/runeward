@@ -64,7 +64,10 @@ type Host struct {
 	CopyFrom string `toml:"copy_from" json:"copy_from"`
 	// Runtime is a backend hint ("docker", "podman").
 	Runtime string `toml:"runtime" json:"runtime"`
-	// RuntimeClass maps to a k8s runtimeClassName (e.g. "gvisor").
+	// RuntimeClass selects a sandboxed runtime for VM-grade isolation. On k8s
+	// it maps to runtimeClassName (e.g. "gvisor", "kata"); on the docker
+	// backend it maps to `docker run --runtime` (e.g. "runsc", "kata-runtime").
+	// The runtime must be registered with the engine or creation fails.
 	RuntimeClass string `toml:"runtime_class" json:"runtime_class"`
 }
 

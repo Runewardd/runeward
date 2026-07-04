@@ -58,7 +58,9 @@ type Spec struct {
 	SeedDir   string
 	Network   profile.Network
 	Resources Resources
-	// RuntimeClass maps to k8s runtimeClassName; ignored by the docker backend.
+	// RuntimeClass selects a sandboxed runtime for stronger isolation: it maps
+	// to k8s runtimeClassName and to `docker run --runtime` on the docker
+	// backend (e.g. "runsc" for gVisor, "kata-runtime").
 	RuntimeClass string
 }
 

@@ -110,6 +110,13 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		// host.docker.internal doesn't resolve on Linux without this.
 		args = append(args, "--add-host", "host.docker.internal:host-gateway")
 	}
+	// A runtime class selects a VM/sandboxed OCI runtime (e.g. "runsc" for
+	// gVisor, "kata-runtime") for stronger-than-shared-kernel isolation. It must
+	// be registered with the docker engine; an unknown runtime fails the run
+	// rather than silently downgrading to the default shared-kernel runtime.
+	if spec.RuntimeClass != "" {
+		args = append(args, "--runtime", spec.RuntimeClass)
+	}
 	if spec.User != "" {
 		args = append(args, "-u", spec.User)
 	}
@@ -138,6 +145,9 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	if err := d.run(ctx, args...); err != nil {
 		hp.stop()
 		_ = d.run(context.Background(), "volume", "rm", "-f", vol)
+		if spec.RuntimeClass != "" {
+			return nil, fmt.Errorf("run container with runtime %q: is it registered with the docker engine? (see docs/security-model.md): %w", spec.RuntimeClass, err)
+		}
 		return nil, fmt.Errorf("run container: %w", err)
 	}
 

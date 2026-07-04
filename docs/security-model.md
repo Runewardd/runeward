@@ -59,7 +59,12 @@ Please disclose privately; do not open a public issue.
 runeward is defense-in-depth, not a hard isolation boundary. Its default
 container backend shares the host kernel, so a determined escape via a kernel or
 runtime vulnerability is possible. For untrusted or adversarial workloads, add
-VM-grade isolation — on Kubernetes set a hardened `runtime_class` (e.g. `gvisor`
-or `kata`) in the profile; on Docker, configure your engine's runtime
-accordingly or use a disposable host. runeward's sweet spot is governing a
-cooperative-but-fallible agent, not caging code whose goal is to break out.
+VM-grade isolation by setting `host.runtime_class` in the profile to a
+sandboxed runtime. On Kubernetes this maps to `runtimeClassName` (e.g. `gvisor`
+or `kata`); on Docker it maps to `docker run --runtime` (e.g. `runsc` for
+gVisor, or `kata-runtime`). The runtime must first be installed and registered
+with your engine — runeward does not install it, and a name the engine doesn't
+recognize fails cell creation rather than silently falling back to the
+shared-kernel runtime. For the strictest cases, also use a disposable host.
+runeward's sweet spot is governing a cooperative-but-fallible agent, not caging
+code whose goal is to break out.
