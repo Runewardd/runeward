@@ -56,5 +56,10 @@ Please disclose privately; do not open a public issue.
     The dashboard terminal WebSocket enforces a same-origin check to prevent
     cross-site hijacking. Front the control plane with TLS in production.
 
-runeward is defense-in-depth, not a guarantee. Do not run genuinely hostile code
-on infrastructure you cannot afford to lose.
+runeward is defense-in-depth, not a hard isolation boundary. Its default
+container backend shares the host kernel, so a determined escape via a kernel or
+runtime vulnerability is possible. For untrusted or adversarial workloads, add
+VM-grade isolation — on Kubernetes set a hardened `runtime_class` (e.g. `gvisor`
+or `kata`) in the profile; on Docker, configure your engine's runtime
+accordingly or use a disposable host. runeward's sweet spot is governing a
+cooperative-but-fallible agent, not caging code whose goal is to break out.

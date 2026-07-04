@@ -19,6 +19,7 @@ type      = "container"          # or "k8s"
 image     = "runeward-agent:dev"
 workdir   = "/workspace"
 copy_from = "~/Documents/my-project"   # optional: seed /workspace at create
+# runtime_class = "gvisor"       # k8s only: hardened runtime for untrusted workloads
 
 [network]
 default = "deny"                 # deny-by-default egress
@@ -50,7 +51,7 @@ egress_requests = 100            # cap outbound requests through the proxy
 
 | Section | Purpose |
 | --- | --- |
-| `[host]` | Backend (`container` or `k8s`), image, workdir, and optional `copy_from` to seed the workspace. |
+| `[host]` | Backend (`container` or `k8s`), image, workdir, optional `copy_from` to seed the workspace, and optional `runtime_class` (Kubernetes only) to select a hardened runtime like `gvisor`/`kata` for VM-grade isolation. |
 | `[network]` + `[[network.rule]]` | Egress policy. `default = "deny"` plus one `[[network.rule]]` per `verdict`/`hostname` (or `cidr`) entry; hostnames support `*.wildcard` and comma-separated lists. |
 | `[[env]]` | Environment/secret injection: literal `value`, from a `file`, or a 1Password `op://` reference. Known secrets are redacted from the ledger. |
 | `[[file]]` | Files written into the sandbox at create. |
