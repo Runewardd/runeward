@@ -44,6 +44,31 @@ Images are published to GitHub Container Registry:
 docker pull ghcr.io/adefemi171/runeward:latest
 ```
 
+## Verifying release artifacts
+
+Every release is signed with [cosign](https://docs.sigstore.dev/) using keyless
+(Fulcio/Rekor) signing — no long-lived keys, and the signing identity is the
+GitHub Actions workflow itself.
+
+Verify the checksums file (which covers every archive and SBOM):
+
+```bash
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/adefemi171/runeward' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  checksums.txt
+```
+
+Verify a container image by tag:
+
+```bash
+cosign verify ghcr.io/adefemi171/runeward:latest \
+  --certificate-identity-regexp 'https://github.com/adefemi171/runeward' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+```
+
 ## Prerequisites
 
 - **Docker / OrbStack / Podman** (any docker-compatible CLI) for the container

@@ -2,13 +2,14 @@ package cli
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/adefemi171/runeward/internal/controller"
 	"github.com/adefemi171/runeward/internal/controlplane"
+	"github.com/adefemi171/runeward/internal/obs"
+	"github.com/adefemi171/runeward/internal/telemetry"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
 )
@@ -45,7 +46,7 @@ func newControllerCmd(configDir *string) *cobra.Command {
 			if allNamespaces {
 				ns = ""
 			}
-			logger := log.New(os.Stderr, "runeward-controller ", log.LstdFlags|log.LUTC)
+			logger := obs.NewLogger().With("service", "controller")
 			ctrl := controller.New(mgr, dyn, ns, logger)
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -55,7 +56,9 @@ func newControllerCmd(configDir *string) *cobra.Command {
 			if scope == "" {
 				scope = "all namespaces"
 			}
-			logger.Printf("starting controller (scope=%s, workers=%d)", scope, workers)
+			logger.Info("starting controller", "scope", scope, "workers", workers)
+			logger.Info(telemetry.Notice())
+			telemetry.Report(version, "controller_start", nil)
 			return ctrl.Run(ctx, workers)
 		},
 	}

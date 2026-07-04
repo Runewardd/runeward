@@ -8,13 +8,14 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/adefemi171/runeward/internal/controlplane"
+	"github.com/adefemi171/runeward/internal/obs"
 	"github.com/gorilla/websocket"
 )
 
@@ -22,7 +23,7 @@ import (
 type Server struct {
 	mgr       *controlplane.Manager
 	dashboard http.Handler
-	logger    *log.Logger
+	logger    *slog.Logger
 	upgrader  websocket.Upgrader
 
 	// MCP, when set, is mounted at /mcp alongside the REST API.
@@ -31,9 +32,9 @@ type Server struct {
 
 // New builds a Server over mgr. dashboard, when non-nil, is mounted at "/";
 // logger may be nil.
-func New(mgr *controlplane.Manager, dashboard http.Handler, logger *log.Logger) *Server {
+func New(mgr *controlplane.Manager, dashboard http.Handler, logger *slog.Logger) *Server {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 	return &Server{
 		mgr:       mgr,
@@ -64,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.Handle("GET /metrics", obs.MetricsHandler())
 
 	mux.HandleFunc("GET /v1/profiles", s.handleListProfiles)
 
@@ -160,13 +162,22 @@ func decodeJSON(r *http.Request, v any) error {
 	return dec.Decode(v)
 }
 
-// logRequests is a minimal access-log middleware.
-func logRequests(logger *log.Logger, next http.Handler) http.Handler {
+// logRequests is a structured access-log middleware. High-frequency probe
+// endpoints (/metrics, /healthz) are not logged to avoid drowning the log.
+func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
-		logger.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.status, time.Since(start).Round(time.Millisecond))
+		if r.URL.Path == "/metrics" || r.URL.Path == "/healthz" {
+			return
+		}
+		logger.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", sw.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
 	})
 }
 

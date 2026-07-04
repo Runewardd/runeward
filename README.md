@@ -320,6 +320,7 @@ the audit ledger, whether it arrives over REST, the dashboard, or MCP.
 
 ```
 GET      /healthz
+GET      /metrics                           # Prometheus metrics
 GET      /v1/profiles
 POST     /v1/sandboxes                      {"profile":"dev","copy_from":"~/proj"}   # copy_from optional
 GET      /v1/sandboxes   ·  GET|DELETE /v1/sandboxes/{id}
@@ -344,6 +345,24 @@ POST     /mcp                              # Model Context Protocol (streamable 
 A denied tool call returns `403`; a require-approval call blocks until an operator resolves it via
 the approvals inbox (returning `202` with an `approval_id` if it waits too long). Pin the ledger and
 signing-key location with `$RUNEWARD_STATE_DIR`.
+
+## Observability
+
+`serve` and `controller` are built to run as services:
+
+- **Metrics.** Prometheus exposition at `GET /metrics` — `runeward_actions_total{tool,verdict}`,
+  `runeward_actions_duration_seconds{tool}`, `runeward_sandboxes_created_total`, and
+  `runeward_build_info{version}`, plus the standard Go/process collectors.
+- **Structured logs.** Both services log via `log/slog`. Set `RUNEWARD_LOG_FORMAT=json` for
+  aggregators and `RUNEWARD_LOG_LEVEL=debug|info|warn|error` to tune verbosity.
+- **Telemetry is opt-in and off by default.** It only activates when you set both
+  `RUNEWARD_TELEMETRY=1` and `RUNEWARD_TELEMETRY_ENDPOINT` (and never when `DO_NOT_TRACK` is set).
+  Events carry only version/os/arch — no hostnames, paths, IDs, or profile contents.
+
+See [docs/observability](https://adefemi171.github.io/runeward/observability/) for details.
+
+Releases are signed with keyless [cosign](https://docs.sigstore.dev/) and ship SBOMs; see
+[Verifying release artifacts](https://adefemi171.github.io/runeward/install/#verifying-release-artifacts).
 
 ## MCP
 

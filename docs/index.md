@@ -11,6 +11,15 @@ deny-by-default egress, a tamper-evident audit ledger, human-in-the-loop policy
 gates, and cost/loop guardrails — driven over REST, MCP, a CLI, and a web
 dashboard.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adefemi171/runeward/main/install.sh | sh
+```
+
+Homebrew, container images, and building from source are covered in
+[Install](install.md). Then jump to the [Quickstart](quickstart.md).
+
 ## Why runeward
 
 Letting an AI agent run shell commands, edit files, install packages, and hit the
@@ -33,6 +42,20 @@ in a box") is table stakes. runeward adds the governance layer *around* the box:
 - **Pluggable backends.** Docker/Podman for zero-setup laptop use, or Kubernetes
   (strict L3 egress, CRDs, admission webhook) for production and fleets.
 
+## How it compares
+
+|                                    | typical agent sandbox | runeward                                      |
+| ---------------------------------- | --------------------- | --------------------------------------------- |
+| Isolation (container/VM)           | yes                   | yes (Docker or Kubernetes)                    |
+| Deny-by-default network egress     | sometimes             | yes; SNI allowlist, strict L3 on k8s          |
+| Per-action policy + approvals      | rare                  | yes; builtin / CEL / OPA-Rego + HITL gates    |
+| Tamper-evident, signed audit trail | rare                  | yes; hash-chained + ed25519, verifiable       |
+| Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, loop caps      |
+| Multi-agent fleets                 | rare                  | yes; N cells + atomic task board              |
+| Agent-native surface               | partial               | REST + MCP + CLI + dashboard + SKILL/adapters |
+| Signed release artifacts           | rare                  | yes; cosign keyless + SBOMs                    |
+| Operable as a service              | rare                  | yes; `/metrics` + structured logs             |
+
 ## Where to next
 
 <div class="grid cards" markdown>
@@ -42,6 +65,7 @@ in a box") is table stakes. runeward adds the governance layer *around* the box:
 - :material-lightbulb: **[Concepts](concepts.md)** — sandboxes, fleets, policy, egress, the ledger.
 - :material-file-cog: **[Profiles](profiles.md)** — the declarative security contract.
 - :material-shield-lock: **[Security model](security-model.md)** — what runeward does and does not protect.
+- :material-chart-line: **[Observability](observability.md)** — metrics, structured logs, and telemetry.
 
 </div>
 

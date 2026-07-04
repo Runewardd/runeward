@@ -74,8 +74,6 @@ func (s *Server) handleKillSandbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// --- tool endpoints ---
-
 func (s *Server) handleShell(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Command []string `json:"command"`
@@ -213,8 +211,6 @@ func (s *Server) handleFileSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"output": res.Stdout, "verdict": res.Verdict})
 }
 
-// --- snapshots ---
-
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
@@ -248,8 +244,6 @@ func (s *Server) handleRestoreSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sandboxView(sb))
 }
 
-// --- approvals ---
-
 func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
 	list := s.mgr.Approvals().List()
 	if list == nil {
@@ -273,8 +267,6 @@ func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request, approve
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
-
-// --- audit ---
 
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	events, err := s.mgr.Ledger().Replay(r.PathValue("id"))
@@ -313,8 +305,6 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-
-// --- helpers ---
 
 func sandboxView(sb *backend.Sandbox) map[string]any {
 	return map[string]any{

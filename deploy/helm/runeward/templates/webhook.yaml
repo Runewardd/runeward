@@ -83,8 +83,7 @@ spec:
       port: 443
       targetPort: webhook
 ---
-# Cluster-scoped access the webhook needs on top of the controller Role: read
-# ClusterPolicies everywhere and self-register its admission configurations.
+# Read ClusterPolicies + self-register admission configurations.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

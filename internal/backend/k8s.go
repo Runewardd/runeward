@@ -493,8 +493,6 @@ func (k *K8s) List(ctx context.Context) ([]Sandbox, error) {
 	return out, nil
 }
 
-// --- helpers ---
-
 func (k *K8s) ensureNamespace(ctx context.Context) error {
 	_, err := k.client.CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
 	if err == nil {

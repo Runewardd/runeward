@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
   packages: write
+  # Required for cosign keyless (Fulcio/Rekor) signing via GitHub OIDC.
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
@@ -27,6 +29,8 @@ jobs:
           cache: true
       # syft powers the SBOM generation configured in .goreleaser.yaml.
       - uses: anchore/sbom-action/download-syft@v0
+      # cosign signs checksums.txt (keyless) as configured in .goreleaser.yaml.
+      - uses: sigstore/cosign-installer@v3
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -50,6 +54,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@v3
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -57,6 +62,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push runeward image
+        id: runeward
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -68,8 +74,11 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
             ${{ env.REGISTRY }}/${{ github.repository }}:latest
+          cache-from: type=gha,scope=runeward
+          cache-to: type=gha,mode=max,scope=runeward
 
       - name: Build & push runeward-egress image
+        id: egress
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -79,6 +88,22 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}-egress:${{ github.ref_name }}
             ${{ env.REGISTRY }}/${{ github.repository }}-egress:latest
+          cache-from: type=gha,scope=runeward-egress
+          cache-to: type=gha,mode=max,scope=runeward-egress
+
+      # Keyless (Fulcio/Rekor) signature over each image by digest. Signing the
+      # digest covers every tag that points at it. Verify with:
+      #   cosign verify ghcr.io/adefemi171/runeward:<tag> \
+      #     --certificate-identity-regexp 'https://github.com/adefemi171/runeward' \
+      #     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+      - name: Sign images with cosign (keyless)
+        env:
+          COSIGN_YES: "true"
+          RUNEWARD_DIGEST: ${{ steps.runeward.outputs.digest }}
+          EGRESS_DIGEST: ${{ steps.egress.outputs.digest }}
+        run: |
+          cosign sign "${REGISTRY}/${{ github.repository }}@${RUNEWARD_DIGEST}"
+          cosign sign "${REGISTRY}/${{ github.repository }}-egress@${EGRESS_DIGEST}"
 
   # Package the Helm chart and attach it to the release GoReleaser created.
   chart:

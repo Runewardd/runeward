@@ -16,16 +16,12 @@ serviceAccount:
   annotations: {}
 
 rbac:
-  # Create the Role + RoleBinding granting access to the CRs and the backend
-  # resources (pods/pvcs/configmaps) in the release namespace.
   create: true
 
-# The Kubernetes controller reconciles Sandbox/Fleet CRs onto the backend.
 controller:
   enabled: true
   replicas: 1
   workers: 2
-  # Watch all namespaces instead of just the release namespace.
   allNamespaces: false
   resources:
     requests:
@@ -35,10 +31,6 @@ controller:
       cpu: "1"
       memory: 256Mi
 
-# The admission webhook enforces cluster-scoped ClusterPolicy defaults and
-# guardrails on Sandbox/Fleet resources. It self-registers its
-# Validating/MutatingWebhookConfiguration at runtime, so no config objects are
-# templated here. Disabled by default.
 webhook:
   enabled: false
   port: 8443
@@ -51,13 +43,10 @@ webhook:
       cpu: "1"
       memory: 256Mi
 
-# The control plane exposes the governed REST API, dashboard, and MCP endpoint.
-# Disabled by default; enable to run the imperative/HTTP surface in-cluster.
 server:
   enabled: false
   replicas: 1
   port: 8080
-  # Serve the REST API only (no dashboard) with --no-ui.
   noUI: false
   service:
     type: ClusterIP
@@ -70,22 +59,16 @@ server:
       cpu: "1"
       memory: 512Mi
 
-# Profiles mounted into the pods at /etc/runeward/profiles. Provide a map of
-# filename -> TOML content, or set existingConfigMap to reuse one you created.
+# Profiles mounted at /etc/runeward/profiles (filename -> TOML), or reuse an
+# existing ConfigMap. See docs for the profile schema.
 profiles:
   create: false
   existingConfigMap: ""
   data: {}
-  # example.toml: |
-  #   [host]
-  #   type = "kubernetes"
-  #   image = "debian:stable-slim"
 
-# Image used for the deny-by-default egress sidecar/init container (k8s backend).
 egress:
   image: runeward-egress:latest
 
-# Where the audit ledger + signing key are written inside the pods.
 stateDir: /var/lib/runeward
 
 podAnnotations: {}

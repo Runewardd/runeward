@@ -66,8 +66,6 @@ func (s *Server) resolve(rel string) (string, error) {
 	return cleaned, nil
 }
 
-// --- request / response payloads ---
-
 type execResponse struct {
 	ExitCode   int    `json:"exit_code"`
 	Stdout     string `json:"stdout"`
@@ -143,8 +141,6 @@ type searchMatch struct {
 type fileSearchResponse struct {
 	Matches []searchMatch `json:"matches"`
 }
-
-// --- handlers ---
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -472,8 +468,6 @@ func searchFile(path, query, root string, limit int) ([]searchMatch, error) {
 	}
 	return out, nil
 }
-
-// --- helpers ---
 
 // decode enforces POST and decodes a JSON body into T, writing a 400 on
 // failure.

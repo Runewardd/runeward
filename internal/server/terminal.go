@@ -29,7 +29,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.logger.Printf("terminal: upgrade failed: %v", err)
+		s.logger.Error("terminal upgrade failed", "err", err)
 		return
 	}
 	defer conn.Close()

@@ -9,7 +9,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/adefemi171/runeward/internal/controlplane"
@@ -61,13 +61,13 @@ type Controller struct {
 	factory        dynamicinformer.DynamicSharedInformerFactory
 	clusterFactory dynamicinformer.DynamicSharedInformerFactory
 	queue          workqueue.TypedRateLimitingInterface[item]
-	logger         *log.Logger
+	logger         *slog.Logger
 }
 
 // New builds a Controller watching the given namespace ("" for all).
-func New(mgr *controlplane.Manager, dyn dynamic.Interface, namespace string, logger *log.Logger) *Controller {
+func New(mgr *controlplane.Manager, dyn dynamic.Interface, namespace string, logger *slog.Logger) *Controller {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dyn, 10*time.Minute, namespace, nil)
 	clusterFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dyn, 10*time.Minute, metav1.NamespaceAll, nil)
@@ -109,7 +109,7 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 
 	c.factory.Start(ctx.Done())
 	c.clusterFactory.Start(ctx.Done())
-	c.logger.Printf("controller: syncing caches for %s", Group)
+	c.logger.Info("syncing caches", "group", Group)
 	for gvr, ok := range c.factory.WaitForCacheSync(ctx.Done()) {
 		if !ok {
 			return fmt.Errorf("failed to sync cache for %s", gvr)
@@ -120,13 +120,13 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 			return fmt.Errorf("failed to sync cache for %s", gvr)
 		}
 	}
-	c.logger.Printf("controller: caches synced, starting %d workers", workers)
+	c.logger.Info("caches synced, starting workers", "workers", workers)
 
 	for i := 0; i < workers; i++ {
 		go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 	}
 	<-ctx.Done()
-	c.logger.Printf("controller: shutting down")
+	c.logger.Info("shutting down")
 	return nil
 }
 
@@ -143,7 +143,7 @@ func (c *Controller) processNext(ctx context.Context) bool {
 	defer c.queue.Done(it)
 
 	if err := c.reconcile(ctx, it); err != nil {
-		c.logger.Printf("controller: reconcile %s %s: %v (requeue)", it.gvr.Resource, it.key, err)
+		c.logger.Error("reconcile failed, requeueing", "resource", it.gvr.Resource, "key", it.key, "err", err)
 		c.queue.AddRateLimited(it)
 		return true
 	}
@@ -225,7 +225,7 @@ func (c *Controller) reconcileSandbox(ctx context.Context, client dynamic.Resour
 			"phase": "Failed", "message": err.Error(),
 		})
 	}
-	c.logger.Printf("controller: sandbox %s/%s -> %s", obj.GetNamespace(), obj.GetName(), sb.ID)
+	c.logger.Info("sandbox reconciled", "namespace", obj.GetNamespace(), "name", obj.GetName(), "sandboxId", sb.ID)
 	return c.setStatus(ctx, client, obj, map[string]any{
 		"phase":     "Running",
 		"sandboxId": sb.ID,
@@ -257,7 +257,7 @@ func (c *Controller) reconcileFleet(ctx context.Context, client dynamic.Resource
 			"phase": "Failed", "message": err.Error(),
 		})
 	}
-	c.logger.Printf("controller: fleet %s/%s -> %s (%d sandboxes)", obj.GetNamespace(), obj.GetName(), v.ID, len(v.Sandboxes))
+	c.logger.Info("fleet reconciled", "namespace", obj.GetNamespace(), "name", obj.GetName(), "fleetId", v.ID, "sandboxes", len(v.Sandboxes))
 	return c.setStatus(ctx, client, obj, fleetStatus("Running", v))
 }
 
@@ -267,13 +267,13 @@ func (c *Controller) teardown(ctx context.Context, gvr schema.GroupVersionResour
 	case sandboxGVR, clusterSandboxGVR:
 		if id, _, _ := unstructured.NestedString(obj.Object, "status", "sandboxId"); id != "" {
 			if err := c.mgr.KillSandbox(ctx, id); err != nil {
-				c.logger.Printf("controller: kill sandbox %s: %v (continuing)", id, err)
+				c.logger.Error("kill sandbox failed, continuing", "sandboxId", id, "err", err)
 			}
 		}
 	case fleetGVR, clusterFleetGVR:
 		if id, _, _ := unstructured.NestedString(obj.Object, "status", "fleetId"); id != "" {
 			if err := c.mgr.KillFleet(ctx, id); err != nil {
-				c.logger.Printf("controller: kill fleet %s: %v (continuing)", id, err)
+				c.logger.Error("kill fleet failed, continuing", "fleetId", id, "err", err)
 			}
 		}
 	}

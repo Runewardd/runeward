@@ -233,8 +233,6 @@ func newFleetCmd() *cobra.Command {
 	return cmd
 }
 
-// --- REST client ---
-
 type fleetClient struct {
 	base string
 	http *http.Client
@@ -374,8 +372,6 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 	wg.Wait()
 	return nil
 }
-
-// --- helpers ---
 
 // agentCommand builds the exec command vector for the selected agent.
 func agentCommand(agent, model, prompt string) ([]string, error) {

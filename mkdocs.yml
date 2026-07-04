@@ -66,6 +66,7 @@ nav:
   - CLI reference: cli.md
   - REST API: rest-api.md
   - Security model: security-model.md
+  - Observability: observability.md
   - Testing: E2E-TESTING.md
 
 extra:

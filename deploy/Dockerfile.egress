@@ -1,23 +1,15 @@
-# Build the runeward egress proxy sidecar image used by the Kubernetes backend
-# for deny-by-default profiles.
-#
-#   docker build -f deploy/Dockerfile.egress -t runeward-egress:latest .
-#
-# On OrbStack/Docker Desktop the image is shared with the built-in Kubernetes,
-# so no push is required. For remote clusters, push to a registry and set
-# $RUNEWARD_EGRESS_IMAGE to the pushed reference.
-
-FROM golang:1.25 AS build
+# runeward egress proxy: init container (--setup-iptables) and sidecar.
+FROM --platform=$BUILDPLATFORM golang:1.25 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/runeward-egress ./cmd/runeward-egress
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/runeward-egress ./cmd/runeward-egress
 
-# A distroless base cannot run the iptables binary required by the strict (L3)
-# enforcement init container, so use debian-slim with iptables installed. The
-# image doubles as both the init container (--setup-iptables) and the proxy
-# sidecar (cooperative --addr or transparent --transparent).
+# debian-slim (not distroless) because strict L3 enforcement shells out to iptables.
 FROM debian:stable-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends iptables ca-certificates \

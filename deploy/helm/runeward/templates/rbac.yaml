@@ -20,7 +20,6 @@ rules:
     resources: ["sandboxes/status", "fleets/status"]
     verbs: ["get", "update", "patch"]
   {{- end }}
-  # Drive the Kubernetes backend (pods + workspace PVCs + egress config).
   - apiGroups: [""]
     resources: ["pods", "pods/exec", "persistentvolumeclaims", "configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -47,8 +46,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 {{- if .Values.controller.enabled }}
 ---
-# ClusterSandbox/ClusterFleet are cluster-scoped, so their reconcile permissions
-# always require a ClusterRole regardless of controller.allNamespaces.
+# ClusterSandbox/ClusterFleet always need a ClusterRole (cluster-scoped CRs).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

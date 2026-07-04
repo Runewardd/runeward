@@ -76,6 +76,29 @@ checksum:
 sboms:
   - artifacts: archive
 
+# Keyless cosign signature over checksums.txt. Because every archive and SBOM is
+# listed in checksums.txt, one signature transitively covers them all. Requires
+# cosign on PATH and an OIDC token (id-token: write) in the release workflow.
+#
+# Verify with:
+#   cosign verify-blob --certificate checksums.txt.pem \
+#     --signature checksums.txt.sig \
+#     --certificate-identity-regexp 'https://github.com/adefemi171/runeward' \
+#     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+#     checksums.txt
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    signature: "${artifact}.sig"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
 changelog:
   sort: asc
   use: github

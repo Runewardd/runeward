@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/adefemi171/runeward/internal/obs"
 	"github.com/adefemi171/runeward/internal/webhook"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
@@ -64,7 +64,7 @@ func newWebhookCmd(configDir *string) *cobra.Command {
 				return fmt.Errorf("load serving certificate: %w", err)
 			}
 
-			logger := log.New(os.Stderr, "runeward-webhook ", log.LstdFlags|log.LUTC)
+			logger := obs.StdLogger(obs.NewLogger().With("service", "webhook"))
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()

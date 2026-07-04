@@ -18,6 +18,7 @@ import (
 
 	"github.com/adefemi171/runeward/internal/backend"
 	"github.com/adefemi171/runeward/internal/ledger"
+	"github.com/adefemi171/runeward/internal/obs"
 	"github.com/adefemi171/runeward/internal/policy"
 	"github.com/adefemi171/runeward/internal/policybundle"
 	"github.com/adefemi171/runeward/internal/profile"
@@ -271,6 +272,7 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 	m.sessions[sb.ID] = sess
 	m.mu.Unlock()
 
+	obs.IncSandboxCreated()
 	m.record(sess, "sandbox", "create", nil, string(profile.VerdictAllow), 0, 0, "")
 	return sb, nil
 }
@@ -408,6 +410,7 @@ func (m *Manager) record(sess *Session, tool, action string, args []string, verd
 	if reason != "" {
 		ev.Meta = map[string]string{"reason": reason}
 	}
+	obs.RecordAction(tool, verdict, durMS)
 	// Only redact when there are known secrets: ledger.Redact with no values
 	// hashes the whole payload, making the trail unreadable.
 	if sess.Profile.Audit.RedactEnabled() && len(sess.secrets) > 0 {

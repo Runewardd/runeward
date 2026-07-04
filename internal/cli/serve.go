@@ -11,7 +11,9 @@ import (
 
 	"github.com/adefemi171/runeward/internal/controlplane"
 	"github.com/adefemi171/runeward/internal/mcp"
+	"github.com/adefemi171/runeward/internal/obs"
 	"github.com/adefemi171/runeward/internal/server"
+	"github.com/adefemi171/runeward/internal/telemetry"
 	"github.com/adefemi171/runeward/web"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -34,11 +36,14 @@ func newServeCmd(configDir *string) *cobra.Command {
 			}
 			defer mgr.Close()
 
+			logger := obs.NewLogger()
+			obs.SetBuildInfo(version)
+
 			var dashboard http.Handler
 			if !noUI {
 				dashboard = web.Handler()
 			}
-			srv := server.New(mgr, dashboard, nil)
+			srv := server.New(mgr, dashboard, logger)
 			// MCP streamable-HTTP lives at /mcp alongside REST.
 			mcpSrv := mcp.NewServer(mgr)
 			srv.MCP = mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpSrv }, nil)
@@ -49,10 +54,9 @@ func newServeCmd(configDir *string) *cobra.Command {
 			errCh := make(chan error, 1)
 			go func() { errCh <- httpSrv.ListenAndServe() }()
 
-			fmt.Fprintf(os.Stderr, "runeward: control plane listening on http://localhost%s\n", addr)
-			if !noUI {
-				fmt.Fprintf(os.Stderr, "runeward: dashboard at http://localhost%s/\n", addr)
-			}
+			logger.Info("control plane listening", "addr", "http://localhost"+addr, "ui", !noUI, "metrics", "/metrics")
+			logger.Info(telemetry.Notice())
+			telemetry.Report(version, "serve_start", map[string]string{"ui": fmt.Sprintf("%t", !noUI)})
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -64,7 +68,7 @@ func newServeCmd(configDir *string) *cobra.Command {
 				}
 				return nil
 			case <-ctx.Done():
-				fmt.Fprintln(os.Stderr, "\nruneward: shutting down control plane...")
+				logger.Info("shutting down control plane")
 				shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				return httpSrv.Shutdown(shutCtx)

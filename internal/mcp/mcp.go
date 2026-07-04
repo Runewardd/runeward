@@ -366,8 +366,6 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager) {
 	})
 }
 
-// --- result helpers ---
-
 func content(s string) []sdk.Content { return []sdk.Content{&sdk.TextContent{Text: s}} }
 
 func text(s string) *sdk.CallToolResult { return &sdk.CallToolResult{Content: content(s)} }

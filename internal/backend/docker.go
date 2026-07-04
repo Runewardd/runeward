@@ -461,8 +461,6 @@ func (d *Docker) List(ctx context.Context) ([]Sandbox, error) {
 	return sandboxes, nil
 }
 
-// --- helpers ---
-
 func (d *Docker) run(ctx context.Context, args ...string) error {
 	_, err := d.output(ctx, args...)
 	return err
