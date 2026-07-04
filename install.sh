@@ -1,0 +1,129 @@
+#!/bin/sh
+# runeward installer
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/adefemi171/runeward/main/install.sh | sh
+#
+# Environment overrides:
+#   RUNEWARD_VERSION   release tag to install (default: latest)
+#   RUNEWARD_BIN_DIR   install directory (default: /usr/local/bin, falls back to ~/.local/bin)
+#
+set -eu
+
+REPO="adefemi171/runeward"
+BIN_NAME="runeward"
+
+info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
+err()   { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+need() { command -v "$1" >/dev/null 2>&1 || err "required command not found: $1"; }
+
+# --- pick a downloader ---------------------------------------------------------
+if command -v curl >/dev/null 2>&1; then
+  DL="curl -fsSL"
+  DLO="curl -fsSL -o"
+elif command -v wget >/dev/null 2>&1; then
+  DL="wget -qO-"
+  DLO="wget -qO"
+else
+  err "need curl or wget to download runeward"
+fi
+need tar
+need uname
+
+# --- detect os/arch ------------------------------------------------------------
+os=$(uname -s | tr '[:upper:]' '[:lower:]')
+case "$os" in
+  linux)  os=linux ;;
+  darwin) os=darwin ;;
+  *) err "unsupported OS: $os (linux and darwin are supported)" ;;
+esac
+
+arch=$(uname -m)
+case "$arch" in
+  x86_64|amd64) arch=amd64 ;;
+  arm64|aarch64) arch=arm64 ;;
+  *) err "unsupported architecture: $arch (amd64 and arm64 are supported)" ;;
+esac
+
+# --- resolve version -----------------------------------------------------------
+version="${RUNEWARD_VERSION:-latest}"
+if [ "$version" = "latest" ]; then
+  info "Resolving latest release..."
+  version=$($DL "https://api.github.com/repos/${REPO}/releases/latest" \
+    | grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+  [ -n "$version" ] || err "could not resolve the latest release tag (set RUNEWARD_VERSION)"
+fi
+info "Installing runeward ${version} (${os}/${arch})"
+
+asset="${BIN_NAME}_${os}_${arch}.tar.gz"
+base="https://github.com/${REPO}/releases/download/${version}"
+
+tmp=$(mktemp -d 2>/dev/null || mktemp -d -t runeward)
+trap 'rm -rf "$tmp"' EXIT
+
+# --- download ------------------------------------------------------------------
+info "Downloading ${asset}"
+$DLO "$tmp/$asset" "$base/$asset" || err "download failed: $base/$asset"
+
+# --- verify checksum if published ---------------------------------------------
+if $DLO "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
+  info "Verifying checksum"
+  want=$(grep " $asset\$" "$tmp/checksums.txt" 2>/dev/null | awk '{print $1}' | head -n1)
+  if [ -n "$want" ]; then
+    if command -v sha256sum >/dev/null 2>&1; then
+      got=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+      got=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
+    else
+      warn "no sha256 tool found; skipping checksum verification"
+      got="$want"
+    fi
+    [ "$got" = "$want" ] || err "checksum mismatch for $asset (expected $want, got $got)"
+  else
+    warn "no checksum entry for $asset; skipping verification"
+  fi
+else
+  warn "no checksums.txt published for $version; skipping verification"
+fi
+
+# --- extract -------------------------------------------------------------------
+tar -xzf "$tmp/$asset" -C "$tmp"
+# Release archives contain a binary named runeward_<os>_<arch>; fall back to runeward.
+if [ -f "$tmp/${BIN_NAME}_${os}_${arch}" ]; then
+  binpath="$tmp/${BIN_NAME}_${os}_${arch}"
+elif [ -f "$tmp/${BIN_NAME}" ]; then
+  binpath="$tmp/${BIN_NAME}"
+else
+  binpath=$(find "$tmp" -type f -name "${BIN_NAME}*" ! -name '*.tar.gz' | head -n1)
+  [ -n "$binpath" ] || err "could not find the runeward binary in the archive"
+fi
+chmod +x "$binpath"
+
+# --- choose install dir --------------------------------------------------------
+bindir="${RUNEWARD_BIN_DIR:-/usr/local/bin}"
+if [ ! -d "$bindir" ] || [ ! -w "$bindir" ]; then
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && [ "$bindir" = "/usr/local/bin" ]; then
+    info "Installing to $bindir (using sudo)"
+    sudo install -m 0755 "$binpath" "$bindir/$BIN_NAME"
+    installed="$bindir/$BIN_NAME"
+  else
+    bindir="$HOME/.local/bin"
+    mkdir -p "$bindir"
+    install -m 0755 "$binpath" "$bindir/$BIN_NAME"
+    installed="$bindir/$BIN_NAME"
+  fi
+else
+  install -m 0755 "$binpath" "$bindir/$BIN_NAME"
+  installed="$bindir/$BIN_NAME"
+fi
+
+info "Installed: $installed"
+case ":$PATH:" in
+  *":$bindir:"*) : ;;
+  *) warn "$bindir is not on your PATH. Add it, e.g.: export PATH=\"$bindir:\$PATH\"" ;;
+esac
+
+"$installed" version 2>/dev/null || true
+info "Done. Run '$BIN_NAME --help' to get started."

@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a problem with runeward
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. For **security vulnerabilities**, do not use this
+        form — follow [SECURITY.md](../blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I run `runeward ...`, I expected X but got Y.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps (commands, profile snippet) to reproduce.
+      placeholder: |
+        1. `runeward --config-dir ... serve`
+        2. `curl -sX POST ...`
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: runeward version
+      description: Output of `runeward version` (or commit SHA).
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - Docker / OrbStack / Podman
+        - Kubernetes
+        - Not applicable
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / architecture
+      placeholder: macOS 15 arm64 / Ubuntu 24.04 amd64
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any error output or logs (redact secrets).
+      render: shell

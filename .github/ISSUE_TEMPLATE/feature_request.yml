@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an idea or enhancement for runeward
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the use case or pain point, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like runeward to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or other approaches you've thought about.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, examples, or anything else that helps.

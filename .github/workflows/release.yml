@@ -13,42 +13,29 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  binaries:
+  # GoReleaser builds the cross-platform binaries, archives, checksums.txt and
+  # SBOMs, and creates the GitHub Release for the tag.
+  goreleaser:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - { goos: linux, goarch: amd64 }
-          - { goos: linux, goarch: arm64 }
-          - { goos: darwin, goarch: amd64 }
-          - { goos: darwin, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
           cache: true
-
-      - name: Build binaries
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          VERSION: ${{ github.ref_name }}
-        run: |
-          mkdir -p dist-bin
-          ldflags="-s -w -X github.com/adefemi171/runeward/internal/cli.version=${VERSION}"
-          for cmd in runeward runeward-egress runeward-agent; do
-            if [ -d "./cmd/$cmd" ]; then
-              out="dist-bin/${cmd}_${GOOS}_${GOARCH}"
-              CGO_ENABLED=0 go build -ldflags "$ldflags" -o "$out" "./cmd/$cmd"
-            fi
-          done
-          (cd dist-bin && for f in *_${GOOS}_${GOARCH}; do tar czf "${f}.tar.gz" "$f"; rm "$f"; done)
-
-      - uses: actions/upload-artifact@v4
+      # syft powers the SBOM generation configured in .goreleaser.yaml.
+      - uses: anchore/sbom-action/download-syft@v0
+      - uses: goreleaser/goreleaser-action@v6
         with:
-          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist-bin/*.tar.gz
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Enable once a Homebrew tap exists (see .goreleaser.yaml):
+          # HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   images:
     runs-on: ubuntu-latest
@@ -91,7 +78,9 @@ jobs:
             ${{ env.REGISTRY }}/${{ github.repository }}-egress:${{ github.ref_name }}
             ${{ env.REGISTRY }}/${{ github.repository }}-egress:latest
 
+  # Package the Helm chart and attach it to the release GoReleaser created.
   chart:
+    needs: [goreleaser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,22 +92,7 @@ jobs:
           mkdir -p dist-chart
           helm package deploy/helm/runeward --destination dist-chart \
             --version "${GITHUB_REF_NAME#v}" --app-version "${GITHUB_REF_NAME#v}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: helm-chart
-          path: dist-chart/*.tgz
-
-  release:
-    needs: [binaries, images, chart]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Create GitHub release
+      - name: Attach chart to release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.tgz
+          files: dist-chart/*.tgz

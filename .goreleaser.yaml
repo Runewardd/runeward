@@ -1,0 +1,111 @@
+# GoReleaser config for runeward. See https://goreleaser.com
+#
+# Local dry run (no publish):   goreleaser release --snapshot --clean
+# Real release (on a git tag):  goreleaser release --clean
+#
+# This produces archives named runeward_<os>_<arch>.tar.gz (matching install.sh),
+# a checksums.txt, SBOMs, and a Homebrew formula.
+version: 2
+
+project_name: runeward
+
+before:
+  hooks:
+    # Use download (not tidy) so the working tree stays clean; goreleaser
+    # refuses to release from a dirty git state.
+    - go mod download
+
+builds:
+  - id: runeward
+    main: ./cmd/runeward
+    binary: runeward
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/adefemi171/runeward/internal/cli.version={{ .Version }}
+
+  - id: runeward-egress
+    main: ./cmd/runeward-egress
+    binary: runeward-egress
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/adefemi171/runeward/internal/cli.version={{ .Version }}
+
+  - id: runeward-agent
+    main: ./cmd/runeward-agent
+    binary: runeward-agent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/adefemi171/runeward/internal/cli.version={{ .Version }}
+
+archives:
+  - id: runeward
+    ids: [runeward]
+    name_template: "runeward_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+  - id: runeward-egress
+    ids: [runeward-egress]
+    name_template: "runeward-egress_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+  - id: runeward-agent
+    ids: [runeward-agent]
+    name_template: "runeward-agent_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: adefemi171
+    name: runeward
+  draft: false
+  prerelease: auto
+
+# Homebrew formula (disabled until a tap exists).
+#
+# To enable `brew install adefemi171/tap/runeward`:
+#   1. Create a public repo:  adefemi171/homebrew-tap
+#   2. Add a repo secret HOMEBREW_TAP_TOKEN (a PAT with write access to the tap)
+#      and pass it as env in the release workflow.
+#   3. Uncomment the block below.
+#
+# brews:
+#   - name: runeward
+#     repository:
+#       owner: adefemi171
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     ids: [runeward]
+#     homepage: "https://github.com/adefemi171/runeward"
+#     description: "Governed execution cells for AI agents"
+#     license: "Apache-2.0"
+#     test: |
+#       system "#{bin}/runeward", "version"

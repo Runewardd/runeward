@@ -7,6 +7,13 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+  <a href="https://github.com/adefemi171/runeward/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adefemi171/runeward/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="go.mod"><img alt="Go" src="https://img.shields.io/badge/go-1.25%2B-00ADD8.svg"></a>
+  <a href="https://github.com/adefemi171/runeward/releases"><img alt="Release" src="https://img.shields.io/github/v/release/adefemi171/runeward?sort=semver"></a>
+</p>
+
+<p align="center">
   Declarative profiles provision isolated sandboxes (Docker or Kubernetes) with deny-by-default
   egress, a tamper-evident audit ledger, human-in-the-loop policy gates, and cost/loop guardrails,
   driven over REST, MCP, a CLI, and a web dashboard.
@@ -62,6 +69,22 @@ There are two ways to put an agent behind runeward:
    exec call (or a whole fleet of them). See [Running agents and fleets](#running-agents-and-fleets).
 
 ## Quick start
+
+Install the latest release (macOS/Linux, amd64/arm64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adefemi171/runeward/main/install.sh | sh
+```
+
+Or with Homebrew (once the tap is published):
+
+```bash
+brew install adefemi171/tap/runeward
+```
+
+<!-- TODO: add a short demo at docs/assets/demo.gif and embed it here -->
+
+Prefer to build from source:
 
 ```bash
 # Build the single binary
@@ -442,6 +465,13 @@ See [docs/E2E-TESTING.md](docs/E2E-TESTING.md) for an end-to-end local walkthrou
 and Kubernetes backends, deny-by-default and strict egress, snapshots, multi-agent fleets, and wiring
 the MCP server into Claude Desktop, Cursor, and VS Code.
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build,
+test, and submit changes, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community
+expectations. Found a security issue? Please follow [SECURITY.md](SECURITY.md) and
+report it privately.
+
 ## License
 
-TBD.
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.
