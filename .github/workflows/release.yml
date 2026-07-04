@@ -34,8 +34,10 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Enable once a Homebrew tap exists (see .goreleaser.yaml):
-          # HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # PAT with write access to adefemi171/homebrew-tap. If the secret is
+          # unset this is empty and the Homebrew upload is skipped (see the
+          # skip_upload guard in .goreleaser.yaml), so releases still succeed.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   images:
     runs-on: ubuntu-latest

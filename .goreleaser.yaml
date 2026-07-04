@@ -89,23 +89,22 @@ release:
   draft: false
   prerelease: auto
 
-# Homebrew formula (disabled until a tap exists).
+# Homebrew formula -> brew install adefemi171/tap/runeward
 #
-# To enable `brew install adefemi171/tap/runeward`:
-#   1. Create a public repo:  adefemi171/homebrew-tap
-#   2. Add a repo secret HOMEBREW_TAP_TOKEN (a PAT with write access to the tap)
-#      and pass it as env in the release workflow.
-#   3. Uncomment the block below.
-#
-# brews:
-#   - name: runeward
-#     repository:
-#       owner: adefemi171
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-#     ids: [runeward]
-#     homepage: "https://github.com/adefemi171/runeward"
-#     description: "Governed execution cells for AI agents"
-#     license: "Apache-2.0"
-#     test: |
-#       system "#{bin}/runeward", "version"
+# Uploading to the tap requires a repo secret HOMEBREW_TAP_TOKEN (a PAT with
+# write access to adefemi171/homebrew-tap), passed as env in the release
+# workflow. The skip_upload guard below means: if that token isn't set, the
+# formula is still built but not pushed, so a release never fails on it.
+brews:
+  - name: runeward
+    skip_upload: '{{ if .Env.HOMEBREW_TAP_TOKEN }}false{{ else }}true{{ end }}'
+    repository:
+      owner: adefemi171
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    ids: [runeward]
+    homepage: "https://github.com/adefemi171/runeward"
+    description: "Governed execution cells for AI agents"
+    license: "Apache-2.0"
+    test: |
+      system "#{bin}/runeward", "version"

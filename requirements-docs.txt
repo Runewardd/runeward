@@ -1,0 +1,5 @@
+# Docs site toolchain (MkDocs Material). Install with:
+#   pip install -r requirements-docs.txt
+# Serve locally with:
+#   mkdocs serve
+mkdocs-material>=9.5,<10

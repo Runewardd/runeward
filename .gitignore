@@ -36,6 +36,9 @@ fleets.json
 /dist-chart/
 *.tgz
 
+# Docs site build output (MkDocs)
+/site/
+
 # Local profiles carry secret references — never commit user-global ones.
 /.runeward/
 

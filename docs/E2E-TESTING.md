@@ -59,7 +59,7 @@ Use a scratch state dir so test runs are isolated and easy to wipe:
 export RUNEWARD_STATE_DIR="$(mktemp -d)/runeward-state"
 ```
 
-The example profiles live in [`examples/`](../examples):
+The example profiles live in [`examples/`](https://github.com/adefemi171/runeward/tree/main/examples):
 
 | Profile | Backend | Demonstrates |
 |---------|---------|--------------|
@@ -226,7 +226,7 @@ use Rego v1 syntax (`if`/`contains`).
 
 The browser runs headless Chromium *inside* the sandbox, so it obeys the same
 policy verdicts and egress allowlist. The profile's image must ship a Chromium
-binary; the default sandbox image ([`deploy/Dockerfile.sandbox`](../deploy/Dockerfile.sandbox))
+binary; the default sandbox image ([`deploy/Dockerfile.sandbox`](https://github.com/adefemi171/runeward/blob/main/deploy/Dockerfile.sandbox))
 bundles both Chromium and the `runeward-browser` CDP driver.
 
 **One-shot render** — fetch a single URL:
@@ -733,7 +733,7 @@ point any HTTP-capable client at `serve`'s `/mcp` endpoint instead of stdio.
 
 ## 9. Framework adapters (optional)
 
-The [`adapters/`](../adapters) directory has thin clients over the REST API.
+The [`adapters/`](https://github.com/adefemi171/runeward/tree/main/adapters) directory has thin clients over the REST API.
 
 ```bash
 # TypeScript

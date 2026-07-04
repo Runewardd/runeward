@@ -1,0 +1,71 @@
+site_name: runeward
+site_description: Governed execution cells for AI agents
+site_url: https://adefemi171.github.io/runeward/
+repo_url: https://github.com/adefemi171/runeward
+repo_name: adefemi171/runeward
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 The runeward Authors
+
+theme:
+  name: material
+  logo: assets/runeward-logo.png
+  favicon: assets/runeward-logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Quickstart: quickstart.md
+  - Concepts: concepts.md
+  - Profiles: profiles.md
+  - Fleets: fleets.md
+  - CLI reference: cli.md
+  - REST API: rest-api.md
+  - Security model: security-model.md
+  - Testing: E2E-TESTING.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/adefemi171/runeward
