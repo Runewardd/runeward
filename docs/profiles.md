@@ -22,7 +22,10 @@ copy_from = "~/Documents/my-project"   # optional: seed /workspace at create
 
 [network]
 default = "deny"                 # deny-by-default egress
-allow   = ["api.openai.com", "*.githubusercontent.com"]
+
+[[network.rule]]                 # one rule per allow/deny entry
+verdict  = "allow"
+hostname = "api.openai.com, *.githubusercontent.com"   # comma-separated; supports *.wildcards
 
 [[env]]
 name  = "OPENAI_API_KEY"
@@ -38,9 +41,9 @@ match   = "rm -rf *"
 verdict = "require-approval"
 
 [limits]
-wall_clock_seconds = 900
-max_execs          = 200
-max_egress         = 100
+wall_clock      = "15m"          # duration string; empty/zero means unlimited
+max_execs       = 200
+egress_requests = 100            # cap outbound requests through the proxy
 ```
 
 ## Sections
@@ -48,12 +51,12 @@ max_egress         = 100
 | Section | Purpose |
 | --- | --- |
 | `[host]` | Backend (`container` or `k8s`), image, workdir, and optional `copy_from` to seed the workspace. |
-| `[network]` | Egress policy. `default = "deny"` plus an `allow` list of hosts (supports `*.wildcard`). |
+| `[network]` + `[[network.rule]]` | Egress policy. `default = "deny"` plus one `[[network.rule]]` per `verdict`/`hostname` (or `cidr`) entry; hostnames support `*.wildcard` and comma-separated lists. |
 | `[[env]]` | Environment/secret injection: literal `value`, from a `file`, or a 1Password `op://` reference. Known secrets are redacted from the ledger. |
 | `[[file]]` | Files written into the sandbox at create. |
 | `[[policy]]` / `[[cel]]` / `[rego]` | Per-action verdicts. Choose the engine with top-level `policy_engine`. |
 | `[policy_bundle]` | Pull signed, versioned policy from an OCI artifact instead of inline rules. |
-| `[limits]` | Guardrails: `wall_clock_seconds`, `max_execs`, `max_egress`. |
+| `[limits]` | Guardrails: `wall_clock` (duration string), `max_execs`, `egress_requests`, and loop detection via `loop_window`/`loop_threshold`. |
 
 ## Secret injection
 

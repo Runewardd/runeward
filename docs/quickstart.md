@@ -7,32 +7,76 @@ about a minute. It assumes Docker/OrbStack is running.
     The audit ledger is single-writer. Set a dedicated `RUNEWARD_STATE_DIR` per
     running instance so two processes never share (and corrupt) one ledger.
 
-## 1. Inspect a profile
+## 1. Create a profile
 
-Profiles are the security contract. Print the resolved, secret-redacted policy
-before you use one:
+A profile is the security contract for a sandbox. runeward loads profiles from a
+config directory (`--config-dir` or `$RUNEWARD_CONFIG_DIR`). If you installed via
+Homebrew or the binary, you don't have any yet — author one in its own folder:
 
 ```bash
-runeward --config-dir examples list
-runeward --config-dir examples print ns-auto
+mkdir -p ~/runeward-profiles
+cat > ~/runeward-profiles/dev.toml <<'EOF'
+[host]
+type    = "container"
+image   = "debian:stable-slim"
+workdir = "/workspace"
+
+# Deny-by-default egress; allow only what you list (supports *.wildcards,
+# comma-separated). Omit the whole [network] block to leave egress open.
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.debian.org"
+
+# Per-action policy: block destructive shell commands.
+[[policy]]
+tool    = "shell"
+match   = "rm -rf *"
+verdict = "deny"
+reason  = "no recursive deletes"
+
+[limits]
+wall_clock = "30m"
+max_execs  = 500
+EOF
 ```
 
-## 2. Run a one-shot command in a fresh sandbox
+!!! warning "Point `--config-dir` at a folder of only profiles"
+    runeward tries to parse **every** `.toml`/`.yaml`/`.yml`/`.json` file in the
+    config dir as a profile. Pointing it at, say, a repo root will throw parse
+    errors for unrelated files like `mkdocs.yml`. Use a dedicated directory.
+
+If you cloned the repo instead, skip this step and use the ready-made profiles in
+`examples/` (substitute `--config-dir examples` and a name like `dev` or `ns-auto`
+below).
+
+## 2. Inspect the profile
+
+Print the resolved, secret-redacted policy before you use it:
+
+```bash
+runeward --config-dir ~/runeward-profiles list
+runeward --config-dir ~/runeward-profiles print dev
+```
+
+## 3. Run a command in a fresh sandbox
 
 A bare profile name is shorthand for `enter <profile>`:
 
 ```bash
 # Interactive shell in a sandbox
-runeward --config-dir examples enter ns-auto
+runeward --config-dir ~/runeward-profiles enter dev
 
 # Or run a single command, then tear down
-runeward --config-dir examples enter ns-auto -- uname -a
+runeward --config-dir ~/runeward-profiles enter dev -- uname -a
 ```
 
-## 3. Start the control plane
+## 4. Start the control plane
 
 ```bash
-RUNEWARD_STATE_DIR=/tmp/rw ./bin/runeward --config-dir examples serve
+RUNEWARD_STATE_DIR=/tmp/rw runeward --config-dir ~/runeward-profiles serve
 ```
 
 This serves the REST API and web dashboard on `:8080`. Open
@@ -40,11 +84,11 @@ This serves the REST API and web dashboard on `:8080`. Open
 (optionally point it at a local folder to copy in), and drive the sandbox's
 terminal, files, audit timeline, and approvals inbox.
 
-## 4. Drive it over REST
+## 5. Drive it over REST
 
 ```bash
 # Create a sandbox
-SB=$(curl -sX POST localhost:8080/v1/sandboxes -d '{"profile":"ns-auto"}' | jq -r .id)
+SB=$(curl -sX POST localhost:8080/v1/sandboxes -d '{"profile":"dev"}' | jq -r .id)
 
 # Run a shell command through the governance path
 curl -sX POST "localhost:8080/v1/sandboxes/$SB/shell/exec" \
@@ -58,7 +102,7 @@ curl -s "localhost:8080/v1/audit/verify"
 curl -sX DELETE "localhost:8080/v1/sandboxes/$SB"
 ```
 
-## 5. Work against your own code
+## 6. Work against your own code
 
 runeward never mounts your host folder — it takes a one-time copy at create, so
 the agent works on an isolated `/workspace` and your real files are untouched.
@@ -66,7 +110,7 @@ the agent works on an isolated `/workspace` and your real files are untouched.
 ```bash
 # Seed from a local folder at create time
 curl -sX POST localhost:8080/v1/sandboxes \
-  -d '{"profile":"codex-agent","copy_from":"~/Documents/my-project"}'
+  -d '{"profile":"dev","copy_from":"~/Documents/my-project"}'
 
 # Pull the agent's results back out to the host
 runeward export <sandbox-id> ./agent-output
