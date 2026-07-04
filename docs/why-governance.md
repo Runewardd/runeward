@@ -91,6 +91,36 @@ and omissions fail safe.
 > before every action, and recorded in a signed audit trail. Security stops
 > depending on the model's judgment or the operator's memory.
 
+## Compliance & evidence
+
+A control is only useful to an auditor if you can *prove* it was in force. The
+ledger is designed to be that proof: it is append-only, hash-chained, and
+ed25519-signed, and it exports as a self-contained bundle that embeds the public
+key so anyone can verify it **offline** — no access to your running control
+plane required.
+
+```bash
+# Export the signed transcript from a running control plane
+curl -s localhost:8080/v1/audit/export > transcript.json
+
+# Verify the chain + signatures offline (e.g. on an auditor's machine)
+runeward audit verify transcript.json
+# ok: 128 events verified (hash chain + signatures intact)
+```
+
+You can also verify a live instance and scope a transcript to a single sandbox:
+
+```bash
+curl -s localhost:8080/v1/audit/verify              # verify the live ledger
+curl -s localhost:8080/v1/sandboxes/$SB/audit       # one sandbox's events + verdicts
+```
+
+The mapping to a control framework is then concrete: the **profile is the
+documented control** (deny-by-default egress, per-action policy, approval gates,
+guardrails), and the **verified transcript is the evidence** that every action
+was evaluated against it. If a record were altered or dropped, verification
+fails — silent tampering is not possible without breaking the chain.
+
 ## Honest boundaries
 
 Governance is defense-in-depth, not magic. Being precise about the limits is

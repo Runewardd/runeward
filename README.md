@@ -27,6 +27,12 @@ retry loop. Raw isolation ("jail the agent in a box") is table stakes. runeward 
 layer *around* the box that most sandboxes lack. Think of it as a seatbelt and flight recorder for
 autonomous agents.
 
+The core idea: **don't rely on training or prompting the model to behave — enforce the rules outside
+it, in a deny-by-default contract the agent can't talk its way past.** So the agent never has to
+*know* it's about to break a rule; the enforcement layer knows and refuses. That also fixes the
+scariest failure mode — a control the operator *forgot* to ask for — because anything the profile
+didn't grant is already denied. See [Why governance, not training](https://adefemi171.github.io/runeward/why-governance/).
+
 - **Profiles are a security contract.** `[host]`, `[network]`, `[[env]]`, `[[file]]`, `[[policy]]`,
   and `[limits]` declare exactly the access a task needs. Everything you didn't grant is denied by
   default, so the blast radius is explicit.
