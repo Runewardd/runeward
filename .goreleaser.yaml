@@ -9,6 +9,11 @@ version: 2
 
 project_name: runeward
 
+# The repo tracks a committed dist/ (MCP manifest, SKILL.md). GoReleaser's
+# default output dir is also "dist" and `--clean` would delete those tracked
+# files, leaving a dirty tree that aborts the release. Use a separate dir.
+dist: dist-release
+
 before:
   hooks:
     # Use download (not tidy) so the working tree stays clean; goreleaser

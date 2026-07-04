@@ -34,6 +34,7 @@ fleets.json
 # Release build outputs (produced in CI)
 /dist-bin/
 /dist-chart/
+/dist-release/
 *.tgz
 
 # Docs site build output (MkDocs)
