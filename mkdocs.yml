@@ -58,6 +58,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Why governance: why-governance.md
   - Install: install.md
   - Quickstart: quickstart.md
   - Concepts: concepts.md

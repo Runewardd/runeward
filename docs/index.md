@@ -25,7 +25,9 @@ Homebrew, container images, and building from source are covered in
 Letting an AI agent run shell commands, edit files, install packages, and hit the
 network is useful right up until it `rm -rf`s the wrong directory, exfiltrates a
 secret, or burns your API budget in a retry loop. Raw isolation ("jail the agent
-in a box") is table stakes. runeward adds the governance layer *around* the box:
+in a box") is table stakes. runeward adds the governance layer *around* the box —
+enforcing the rules outside the model instead of hoping it was trained to behave
+([why governance, not training](why-governance.md)):
 
 - **Profiles are a security contract.** Everything you don't grant is denied by
   default, so the blast radius is explicit.
@@ -60,6 +62,7 @@ in a box") is table stakes. runeward adds the governance layer *around* the box:
 
 <div class="grid cards" markdown>
 
+- :material-scale-balance: **[Why governance](why-governance.md)** — enforce rules outside the model, not by training it.
 - :material-download: **[Install](install.md)** — one-line installer, Homebrew, or from source.
 - :material-rocket-launch: **[Quickstart](quickstart.md)** — a governed sandbox in ~60 seconds.
 - :material-lightbulb: **[Concepts](concepts.md)** — sandboxes, fleets, policy, egress, the ledger.
