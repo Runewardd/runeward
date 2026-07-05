@@ -2,13 +2,105 @@ package backend
 
 import (
 	"archive/tar"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
+
+// tarEntrySafe reports whether a tar entry name (and, for symlinks, its link
+// target) stays within the extraction root. It rejects absolute paths and any
+// ".." traversal, which `tar -x` would otherwise honor and use to write
+// outside the workspace (tar-slip).
+func tarEntrySafe(name, linkname string) bool {
+	if !relWithinRoot(name) {
+		return false
+	}
+	if linkname != "" && !relWithinRoot(linkname) {
+		return false
+	}
+	return true
+}
+
+// relWithinRoot reports whether p is a relative path that does not escape its
+// root via "..".
+func relWithinRoot(p string) bool {
+	if p == "" {
+		return true
+	}
+	if strings.HasPrefix(p, "/") {
+		return false
+	}
+	clean := path.Clean(p)
+	return clean != ".." && !strings.HasPrefix(clean, "../")
+}
+
+// filterTarSafe copies a tar stream from src to dst, passing through only
+// entries whose paths stay within the extraction root and erroring on any
+// unsafe entry. It lets a snapshot be sanitized host-side before it is streamed
+// into a container's `tar -x`.
+func filterTarSafe(dst io.Writer, src io.Reader) error {
+	tr := tar.NewReader(src)
+	tw := tar.NewWriter(dst)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("restore: read archive: %w", err)
+		}
+		if !tarEntrySafe(hdr.Name, hdr.Linkname) {
+			_ = tw.Close()
+			return fmt.Errorf("restore: unsafe archive entry %q -> %q", hdr.Name, hdr.Linkname)
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			if _, err := io.Copy(tw, tr); err != nil {
+				return err
+			}
+		}
+	}
+	return tw.Close()
+}
+
+// verifySnapshot checks that the snapshot tarball still matches the digest
+// recorded at capture time. A snapshot without a recorded digest (older
+// captures) is accepted for backward compatibility.
+func verifySnapshot(ref SnapshotRef) error {
+	if ref.Sha256 == "" {
+		return nil
+	}
+	sum, err := hashFile(ref.Location)
+	if err != nil {
+		return fmt.Errorf("restore: hash snapshot: %w", err)
+	}
+	if sum != ref.Sha256 {
+		return fmt.Errorf("restore: snapshot integrity check failed (tarball digest %s != recorded %s)", sum, ref.Sha256)
+	}
+	return nil
+}
+
+// hashFile returns the hex SHA-256 of the file at path.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
 // writeDirTar tars the contents of srcDir into w with paths relative to
 // srcDir. Regular files, directories, and symlinks only; sockets, devices,

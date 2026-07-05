@@ -71,7 +71,10 @@ func clientConfig(caPEM []byte, service, namespace, path string) admissionregist
 }
 
 func registerValidating(ctx context.Context, clientset kubernetes.Interface, caPEM []byte, service, namespace string) error {
-	fail := admissionregistrationv1.Ignore
+	// Fail closed: if the webhook is unreachable, deny Sandbox/Fleet admission
+	// rather than letting an ungoverned resource through. The rules only match
+	// runeward.dev CRDs, so a webhook outage can't wedge core cluster objects.
+	fail := admissionregistrationv1.Fail
 	sideEffects := admissionregistrationv1.SideEffectClassNone
 	desired := &admissionregistrationv1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{

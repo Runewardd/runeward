@@ -63,7 +63,7 @@ func TestLoadRestoresBoard(t *testing.T) {
 	b.Add("a")
 	b.Add("b")
 	c, _ := b.Claim("w1")
-	_ = b.Complete(c.ID, "done")
+	_ = b.Complete(c.ID, "w1", "done")
 
 	restored := Load(b.Export(), time.Minute)
 	if got := restored.Stats(); got.Total != 2 || got.Done != 1 || got.Pending != 1 {

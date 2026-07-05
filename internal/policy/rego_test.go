@@ -3,7 +3,7 @@ package policy
 import (
 	"testing"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // objectModule returns object-shaped decisions.

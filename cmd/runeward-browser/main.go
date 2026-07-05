@@ -30,7 +30,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/browser"
+	"github.com/Runewardd/runeward/internal/browser"
 )
 
 func main() {
@@ -61,8 +61,6 @@ Usage:
 `)
 }
 
-// chromeNames mirrors the binary search in the legacy one-shot browser tool
-// (internal/controlplane/executor.go).
 var chromeNames = []string{
 	"chromium",
 	"chromium-browser",
@@ -173,7 +171,6 @@ func runServe(args []string) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			// Accept fails once the listener is closed during shutdown.
 			if d.closing() {
 				return
 			}
@@ -186,16 +183,13 @@ func runServe(args []string) {
 
 // driver holds the long-lived browser session state shared across connections.
 type driver struct {
-	client *browser.Client
-	chrome *exec.Cmd
-	udd    string
-	socket string
-	ln     net.Listener
-	logger func(string, ...any)
-
-	// execMu serializes actions; the CDP client handles one request at a time.
-	execMu sync.Mutex
-
+	client    *browser.Client
+	chrome    *exec.Cmd
+	udd       string
+	socket    string
+	ln        net.Listener
+	logger    func(string, ...any)
+	execMu    sync.Mutex
 	closeOnce sync.Once
 	closed    atomicBool
 }
@@ -230,7 +224,6 @@ func (d *driver) shutdown(code int) {
 func (d *driver) handleConn(conn net.Conn) {
 	defer conn.Close()
 
-	// Only the command read gets a deadline; the action itself may run long.
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	var cmd browser.Command
 	if err := json.NewDecoder(conn).Decode(&cmd); err != nil {
@@ -326,7 +319,6 @@ func writeResult(conn net.Conn, res browser.Result) {
 	_ = json.NewEncoder(conn).Encode(res)
 }
 
-// runCall sends one Command to the driver socket and prints the Result.
 func runCall(args []string) {
 	fs := flag.NewFlagSet("call", flag.ExitOnError)
 	socket := fs.String("socket", "", "path to the driver's Unix domain control socket")
@@ -367,7 +359,7 @@ func runCall(args []string) {
 		fmt.Fprintf(os.Stderr, "call: send command: %v\n", err)
 		os.Exit(2)
 	}
-	// Half-close to signal end-of-request.
+
 	if uc, ok := conn.(*net.UnixConn); ok {
 		_ = uc.CloseWrite()
 	}
@@ -391,7 +383,7 @@ func runCall(args []string) {
 }
 
 // waitForDevToolsPort polls for the DevToolsActivePort file Chromium writes
-// after launch; line 1 holds the port.
+// after launch;
 func waitForDevToolsPort(udd string, timeout time.Duration) (int, error) {
 	path := filepath.Join(udd, "DevToolsActivePort")
 	deadline := time.Now().Add(timeout)
@@ -419,8 +411,7 @@ type target struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
-// attachPage returns a page-level DevTools WebSocket URL. It retries because
-// Chromium's HTTP endpoint becomes ready a beat after the port file appears.
+// attachPage returns a page-level DevTools WebSocket URL.
 func attachPage(port int, timeout time.Duration) (string, error) {
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	deadline := time.Now().Add(timeout)
@@ -445,7 +436,7 @@ func attachPage(port int, timeout time.Duration) (string, error) {
 
 func newPageWS(base string) (string, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
-	// Newer Chromium requires PUT for /json/new; older accepts GET. Try both.
+
 	for _, method := range []string{http.MethodPut, http.MethodGet} {
 		req, err := http.NewRequest(method, base+"/json/new?about:blank", nil)
 		if err != nil {
@@ -464,7 +455,7 @@ func newPageWS(base string) (string, error) {
 			}
 		}
 	}
-	// Fallback: reuse an existing page target.
+
 	resp, err := client.Get(base + "/json")
 	if err != nil {
 		return "", err

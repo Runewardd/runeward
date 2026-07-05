@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
-  "name": "io.github.adefemi171/runeward",
+  "name": "io.github.Runewardd/runeward",
   "description": "Governed execution cells for AI agents: provision isolated Docker/Kubernetes sandboxes from declarative TOML profiles and run shell, Python, Node, and file tools through a policy engine, tamper-evident audit ledger, cost/loop guardrails, and human-in-the-loop approval gates.",
   "version": "0.1.0",
   "repository": {
-    "url": "https://github.com/adefemi171/runeward",
+    "url": "https://github.com/Runewardd/runeward",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "oci",
       "registryBaseUrl": "https://ghcr.io",
-      "identifier": "ghcr.io/adefemi171/runeward",
+      "identifier": "ghcr.io/runewardd/runeward",
       "version": "0.1.0",
       "transport": {
         "type": "stdio"

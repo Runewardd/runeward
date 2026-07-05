@@ -66,9 +66,7 @@ spec:
             {{- toYaml .Values.server.resources | nindent 12 }}
       volumes:
         - name: profiles
-          configMap:
-            name: {{ include "runeward.profilesConfigMap" . }}
-            optional: true
+          {{- include "runeward.profilesVolume" . | nindent 10 }}
         - name: state
           emptyDir: {}
       {{- with .Values.nodeSelector }}

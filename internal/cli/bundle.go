@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/policybundle"
+	"github.com/Runewardd/runeward/internal/policybundle"
 	"github.com/spf13/cobra"
 )
 

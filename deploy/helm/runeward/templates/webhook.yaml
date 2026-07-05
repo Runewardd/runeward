@@ -36,6 +36,7 @@ spec:
             - webhook
             - --port={{ .Values.webhook.port }}
             - --service={{ include "runeward.fullname" . }}-webhook
+            - --cert-secret={{ include "runeward.fullname" . }}-webhook-cert
           ports:
             - name: webhook
               containerPort: {{ .Values.webhook.port }}
@@ -95,9 +96,15 @@ rules:
   - apiGroups: ["runeward.dev"]
     resources: ["clusterpolicies"]
     verbs: ["get", "list", "watch"]
+  # Create the admission configs on first install...
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["create"]
+  # ...but only mutate runeward's own configs thereafter (scoped by name).
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+    resourceNames: ["runeward.dev"]
+    verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -110,6 +117,42 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "runeward.fullname" . }}-webhook
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "runeward.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Namespaced access to persist/share the serving cert Secret (create once,
+# then read/update the webhook's own cert). Scoped to the release namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "runeward.fullname" . }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ include "runeward.fullname" . }}-webhook-cert"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "runeward.fullname" . }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "runeward.fullname" . }}-webhook-cert
 subjects:
   - kind: ServiceAccount
     name: {{ include "runeward.serviceAccountName" . }}

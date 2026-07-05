@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/adefemi171/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/backend"
 	"github.com/spf13/cobra"
 )
 

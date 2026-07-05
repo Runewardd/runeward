@@ -4,9 +4,9 @@ description: Governed execution cells for AI agents — CRDs, controller, and op
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://github.com/adefemi171/runeward
+home: https://github.com/Runewardd/runeward
 sources:
-  - https://github.com/adefemi171/runeward
+  - https://github.com/Runewardd/runeward
 keywords:
   - ai
   - agents

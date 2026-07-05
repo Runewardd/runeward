@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // loadProfile resolves a profile by name, honoring --config-dir and

@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/obs"
-	"github.com/adefemi171/runeward/internal/webhook"
+	"github.com/Runewardd/runeward/internal/obs"
+	"github.com/Runewardd/runeward/internal/webhook"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -24,6 +24,7 @@ func newWebhookCmd(configDir *string) *cobra.Command {
 	_ = configDir // profiles are not resolved by the webhook; kept for symmetry.
 	var port int
 	var service string
+	var certSecret string
 	cmd := &cobra.Command{
 		Use:   "webhook",
 		Short: "Enforce runeward ClusterPolicy on Sandbox/Fleet (admission webhook)",
@@ -55,9 +56,14 @@ func newWebhookCmd(configDir *string) *cobra.Command {
 				fmt.Sprintf("%s.%s.svc.cluster.local", service, ns),
 			}
 
-			certPEM, keyPEM, caPEM, err := webhook.GenerateCert(dnsNames)
+			// Persist the cert in a Secret so it survives restarts and is shared
+			// by every replica (a stable CA is what makes >1 replica safe).
+			if certSecret == "" {
+				certSecret = service + "-cert"
+			}
+			certPEM, keyPEM, caPEM, err := webhook.LoadOrCreateCert(cmd.Context(), clientset, ns, certSecret, dnsNames)
 			if err != nil {
-				return fmt.Errorf("generate serving certificate: %w", err)
+				return fmt.Errorf("obtain serving certificate: %w", err)
 			}
 			keyPair, err := tls.X509KeyPair(certPEM, keyPEM)
 			if err != nil {
@@ -102,5 +108,7 @@ func newWebhookCmd(configDir *string) *cobra.Command {
 	cmd.Flags().IntVar(&port, "port", 8443, "HTTPS port to serve admission requests on")
 	cmd.Flags().StringVar(&service, "service", os.Getenv("RUNEWARD_WEBHOOK_SERVICE"),
 		"name of the Service fronting the webhook (or $RUNEWARD_WEBHOOK_SERVICE)")
+	cmd.Flags().StringVar(&certSecret, "cert-secret", os.Getenv("RUNEWARD_WEBHOOK_CERT_SECRET"),
+		"Secret name used to persist/share the serving cert across restarts and replicas (default <service>-cert)")
 	return cmd
 }

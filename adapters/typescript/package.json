@@ -6,7 +6,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
-    "url": "https://github.com/adefemi171/runeward"
+    "url": "https://github.com/Runewardd/runeward"
   },
   "keywords": [
     "ai",
@@ -14,7 +14,9 @@
     "sandbox",
     "mcp",
     "governance",
-    "vercel-ai-sdk"
+    "vercel-ai-sdk",
+    "langchain",
+    "strands"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -31,6 +33,14 @@
     "./ai-tools": {
       "types": "./dist/ai-tools.d.ts",
       "import": "./dist/ai-tools.js"
+    },
+    "./langchain-tools": {
+      "types": "./dist/langchain-tools.d.ts",
+      "import": "./dist/langchain-tools.js"
+    },
+    "./strands-tools": {
+      "types": "./dist/strands-tools.d.ts",
+      "import": "./dist/strands-tools.js"
     }
   },
   "files": [
@@ -46,10 +56,18 @@
     "node": ">=18"
   },
   "peerDependencies": {
+    "@langchain/core": ">=0.2.0",
+    "@strands-agents/sdk": ">=1.0.0",
     "ai": ">=3.0.0",
     "zod": ">=3.22.0"
   },
   "peerDependenciesMeta": {
+    "@langchain/core": {
+      "optional": true
+    },
+    "@strands-agents/sdk": {
+      "optional": true
+    },
     "ai": {
       "optional": true
     },

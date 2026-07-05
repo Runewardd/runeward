@@ -25,7 +25,7 @@ const maxSearchMatches = 500
 // Server exposes shell, code, and file operations over HTTP, with file access
 // confined to root.
 type Server struct {
-	root string // absolute, cleaned workspace dir
+	root string
 }
 
 // New constructs a Server whose file operations are confined to root.

@@ -1,20 +1,24 @@
 # @runeward/sdk (TypeScript)
 
 A dependency-light TypeScript client and [Vercel AI SDK](https://sdk.vercel.ai)
-tool wrappers for the [runeward](https://github.com/adefemi171/runeward)
+tool wrappers for the [runeward](https://github.com/Runewardd/runeward)
 **governed execution cell** — provision isolated sandboxes and run shell /
 Python / Node / file tools through a policy engine, audit ledger, guardrails,
 and human-in-the-loop approval gates.
 
 The core `RunewardClient` uses the global `fetch` and has **no runtime
-dependencies** (Node 18+, Deno, Bun, browsers). The AI SDK tool wrappers require
-the optional peer dependencies `ai` and `zod`, imported lazily.
+dependencies** (Node 18+, Deno, Bun, browsers). The Vercel AI SDK wrappers
+require `ai` and `zod`; the LangChain.js wrappers require `@langchain/core` and
+`zod`; the Strands wrappers require `@strands-agents/sdk` and `zod`. All are
+optional peer dependencies, imported lazily.
 
 ## Install
 
 ```bash
-npm install @runeward/sdk            # core client only
-npm install @runeward/sdk ai zod     # + Vercel AI SDK tools
+npm install @runeward/sdk                           # core client only
+npm install @runeward/sdk ai zod                    # + Vercel AI SDK tools
+npm install @runeward/sdk @langchain/core zod       # + LangChain.js tools
+npm install @runeward/sdk @strands-agents/sdk zod   # + Strands Agents SDK tools
 ```
 
 Build from this directory during development:
@@ -104,6 +108,41 @@ Tool names match the runeward MCP tools (`runeward_create_sandbox`,
 `runeward_shell`, …). Governance verdicts are returned to the model as
 descriptive strings so it can react to a denial or an approval gate instead of
 crashing the run.
+
+## LangChain.js tools
+
+```ts
+import { ChatOpenAI } from "@langchain/openai";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { RunewardClient } from "@runeward/sdk";
+import { makeRunewardTools } from "@runeward/sdk/langchain-tools";
+
+const tools = await makeRunewardTools(new RunewardClient());
+const agent = createReactAgent({ llm: new ChatOpenAI({ model: "gpt-4o" }), tools });
+
+const res = await agent.invoke({
+  messages: [{ role: "user", content: "Create a dev sandbox, run `node --version`, then tear it down." }],
+});
+```
+
+Returns `DynamicStructuredTool` instances (from `@langchain/core/tools`) with the
+same runeward tool names and the same string-based verdict handling as above.
+
+## Strands Agents SDK
+
+```ts
+import { Agent } from "@strands-agents/sdk";
+import { RunewardClient } from "@runeward/sdk";
+import { makeRunewardTools } from "@runeward/sdk/strands-tools";
+
+const tools = await makeRunewardTools(new RunewardClient());
+const agent = new Agent({ tools });
+
+const res = await agent.invoke("Create a dev sandbox, run `node --version`, then tear it down.");
+```
+
+Returns Strands tools built with `tool({ name, description, inputSchema, callback })`
+(Zod schemas), with the same runeward tool names and string-based verdict handling.
 
 ## Notes
 

@@ -50,6 +50,41 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+/* ---------------- Auth ---------------- */
+const AUTH_KEY = "runeward.token";
+
+const auth = {
+  token: localStorage.getItem(AUTH_KEY) || "",
+  principal: null,
+  rbac: false,
+  onRequired: null, // callback invoked on a 401 (shows the login overlay)
+};
+
+function setToken(tok) {
+  auth.token = (tok || "").trim();
+  if (auth.token) localStorage.setItem(AUTH_KEY, auth.token);
+  else localStorage.removeItem(AUTH_KEY);
+}
+
+// canApprove reports whether the current identity may resolve approvals. Open
+// mode (no principal) and admins can; a principal must have can_approve.
+function canApprove() {
+  const p = auth.principal;
+  return !p || p.can_approve !== false;
+}
+
+// canLaunch reports whether the current identity may create sandboxes. Under
+// RBAC a non-admin with an empty allowed-profiles list can launch nothing.
+function canLaunch() {
+  const p = auth.principal;
+  if (!p) return true;
+  if (p.admin) return true;
+  if (auth.rbac && Array.isArray(p.allowed_profiles) && p.allowed_profiles.length === 0) {
+    return false;
+  }
+  return p.can_launch !== false;
+}
+
 /* ---------------- API layer ---------------- */
 class ApiError extends Error {
   constructor(status, body) {
@@ -61,6 +96,7 @@ class ApiError extends Error {
 
 async function api(method, path, body) {
   const opts = { method, headers: {} };
+  if (auth.token) opts.headers["Authorization"] = "Bearer " + auth.token;
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -81,6 +117,9 @@ async function api(method, path, body) {
     }
   }
   if (!res.ok) {
+    if (res.status === 401 && typeof auth.onRequired === "function") {
+      auth.onRequired();
+    }
     throw new ApiError(res.status, data);
   }
   return { status: res.status, data };
@@ -209,6 +248,11 @@ function renderSandboxList() {
           el("span", { text: s.profile || "—" }),
           el("span", { text: "·" }),
           el("span", { text: s.backend || "—" }),
+          // Owner is only meaningful to an admin viewing other principals'
+          // sandboxes; non-admins only ever see their own.
+          (s.owner && auth.principal && auth.principal.admin)
+            ? el("span", { class: "sb-owner", title: "owner", text: "@" + s.owner })
+            : null,
           el("span", { class: `sb-status ${status}`, text: status }),
         ]),
         el("button", {
@@ -724,7 +768,10 @@ function connectTerminal(forceReconnect = false) {
   teardownTerminalSocket();
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/v1/sandboxes/${encodeURIComponent(state.selected)}/terminal`;
+  let url = `${proto}//${location.host}/v1/sandboxes/${encodeURIComponent(state.selected)}/terminal`;
+  // Browsers can't set headers on a WebSocket handshake, so the token rides as
+  // a query param (the server accepts ?token= for exactly this reason).
+  if (auth.token) url += `?token=${encodeURIComponent(auth.token)}`;
   setTermStatus("conn-off", "connecting…");
 
   let socket;
@@ -1010,18 +1057,20 @@ function renderApprovals() {
         el("div", { class: "approval-action", text: a.action || "" }),
         a.reason ? el("div", { class: "approval-reason", text: a.reason }) : null,
         el("div", { class: "approval-meta", text: `requested ${fmtTime(a.created)}` }),
-        el("div", { class: "approval-actions" }, [
-          el("button", {
-            class: "btn btn-sm btn-approve",
-            text: "Approve",
-            onClick: () => decideApproval(a.id, "approve"),
-          }),
-          el("button", {
-            class: "btn btn-sm btn-deny",
-            text: "Deny",
-            onClick: () => decideApproval(a.id, "deny"),
-          }),
-        ]),
+        canApprove()
+          ? el("div", { class: "approval-actions" }, [
+              el("button", {
+                class: "btn btn-sm btn-approve",
+                text: "Approve",
+                onClick: () => decideApproval(a.id, "approve"),
+              }),
+              el("button", {
+                class: "btn btn-sm btn-deny",
+                text: "Deny",
+                onClick: () => decideApproval(a.id, "deny"),
+              }),
+            ])
+          : el("div", { class: "approval-meta", text: "You do not have permission to resolve approvals." }),
       ])
     );
   }
@@ -1058,17 +1107,25 @@ function debounce(fn, ms) {
 
 /* ---------------- Polling loop ---------------- */
 function startGlobalPoll() {
+  if (state.timers.global) return;
   const tick = async () => {
     await Promise.all([
       refreshHealth(),
       refreshAuditVerify(),
       loadSandboxes(),
-      refreshApprovals(),
+      canApprove() ? refreshApprovals() : Promise.resolve(),
       state.activeView === "fleets" ? refreshFleets() : Promise.resolve(),
     ]);
   };
   tick();
   state.timers.global = setInterval(tick, POLL_MS);
+}
+
+function stopGlobalPoll() {
+  if (state.timers.global) {
+    clearInterval(state.timers.global);
+    state.timers.global = null;
+  }
 }
 
 /* ---------------- Wiring ---------------- */
@@ -1109,10 +1166,126 @@ function wireEvents() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); closeNewSandboxModal(); } });
 }
 
-function init() {
-  wireEvents();
+/* ---------------- Login / identity ---------------- */
+function showLogin() {
+  const ov = $("#login-overlay");
+  if (ov) ov.classList.remove("hidden");
+  const t = $("#login-token");
+  if (t) setTimeout(() => t.focus(), 0);
+}
+
+function hideLogin() {
+  const ov = $("#login-overlay");
+  if (ov) ov.classList.add("hidden");
+}
+
+// applyPrincipal renders the caller's identity in the topbar and gates
+// controls (create, approvals) that the identity isn't permitted to use.
+function applyPrincipal() {
+  const p = auth.principal || {};
+  const chip = $("#identity");
+  if (chip) {
+    chip.classList.remove("hidden");
+    let name, role;
+    if (auth.rbac) {
+      name = p.name || "(unnamed)";
+      role = p.admin ? "admin" : (p.can_approve ? "approver" : "user");
+    } else {
+      name = "open mode";
+      role = "";
+    }
+    $("#identity-name").textContent = name;
+    $("#identity-role").textContent = role;
+    $("#identity-role").classList.toggle("hidden", !role);
+    // A sign-out only makes sense when authenticating with a token.
+    $("#signout-btn").classList.toggle("hidden", !auth.token);
+  }
+  // Hide approvals entirely when the identity can't resolve them.
+  $("#approvals-btn").classList.toggle("hidden", !canApprove());
+  // Disable sandbox/fleet creation when the identity can launch nothing.
+  const allowed = canLaunch();
+  ["#create-btn", "#fleet-create-btn"].forEach((sel) => {
+    const b = $(sel);
+    if (b) {
+      b.disabled = !allowed;
+      if (!allowed) b.title = "Your role is not permitted to launch profiles";
+    }
+  });
+}
+
+// Start the live app exactly once, regardless of how many times boot runs
+// (initial load, then again after an interactive login).
+function startApp() {
+  if (state.started) return;
+  state.started = true;
   loadProfiles();
   startGlobalPoll();
+}
+
+async function loadWhoami() {
+  const { data } = await api("GET", "/v1/whoami");
+  auth.principal = data.principal || null;
+  auth.rbac = !!data.rbac;
+}
+
+async function bootSession() {
+  try {
+    await loadWhoami();
+    hideLogin();
+    applyPrincipal();
+    startApp();
+  } catch (e) {
+    if (e.status === 401) {
+      showLogin();
+      return;
+    }
+    // whoami unavailable (older server / no auth): treat as open mode so the
+    // dashboard still works against a control plane without authentication.
+    auth.principal = { name: "", admin: true, can_approve: true, can_launch: true };
+    auth.rbac = false;
+    hideLogin();
+    applyPrincipal();
+    startApp();
+  }
+}
+
+function wireLogin() {
+  auth.onRequired = () => { stopGlobalPoll(); state.started = false; showLogin(); };
+  const form = $("#login-form");
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = $("#login-error");
+      err.classList.add("hidden");
+      setToken($("#login-token").value);
+      try {
+        await loadWhoami();
+        hideLogin();
+        applyPrincipal();
+        startApp();
+        toast("Signed in" + (auth.principal && auth.principal.name ? ` as ${auth.principal.name}` : ""), "success");
+      } catch (ex) {
+        setToken("");
+        err.textContent = ex.status === 401
+          ? "Invalid token. Please try again."
+          : "Sign-in failed: " + ex.message;
+        err.classList.remove("hidden");
+      }
+    });
+  }
+  const signout = $("#signout-btn");
+  if (signout) {
+    signout.addEventListener("click", () => {
+      setToken("");
+      location.reload();
+    });
+  }
+}
+
+function init() {
+  wireEvents();
+  wireLogin();
+  bootSession();
 }
 
 document.addEventListener("DOMContentLoaded", init);

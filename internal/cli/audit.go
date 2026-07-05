@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/adefemi171/runeward/internal/ledger"
+	"github.com/Runewardd/runeward/internal/ledger"
 	"github.com/spf13/cobra"
 )
 

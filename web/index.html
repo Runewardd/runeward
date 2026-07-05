@@ -3,14 +3,32 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' ws: wss:; base-uri 'self'; object-src 'none'; frame-ancestors 'none'" />
   <title>runeward</title>
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"
+    integrity="sha384-tStR1zLfWgsiXCF3IgfB3lBa8KmBe/lG287CL9WCeKgQYcp1bjb4/+mwN6oti4Co" crossorigin="anonymous" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <!-- Login overlay: shown when the control plane requires authentication. -->
+  <div id="login-overlay" class="login-overlay hidden" role="dialog" aria-label="Sign in" aria-modal="true">
+    <form id="login-form" class="login-card" autocomplete="off">
+      <img class="login-logo" src="logo.png" alt="" />
+      <h2 class="login-title">runeward</h2>
+      <p class="login-sub">This control plane requires authentication. Enter your API token to continue.</p>
+      <label class="field">
+        <span class="field-label">API token</span>
+        <input id="login-token" class="input mono" type="password" placeholder="token" autocomplete="off" spellcheck="false" />
+      </label>
+      <div id="login-error" class="login-error hidden"></div>
+      <button type="submit" class="btn btn-accent login-submit">Sign in</button>
+      <p class="login-hint">Your token is stored only in this browser and sent as a bearer token.</p>
+    </form>
+  </div>
 
   <header class="topbar">
     <div class="brand">
@@ -19,6 +37,12 @@
       <span class="brand-sub">governed execution cell</span>
     </div>
     <div class="topbar-status">
+      <span id="identity" class="identity hidden" title="Signed-in identity">
+        <span class="identity-glyph">◈</span>
+        <span id="identity-name" class="identity-name">—</span>
+        <span id="identity-role" class="identity-role hidden"></span>
+        <button id="signout-btn" class="icon-btn hidden" title="Sign out">⎋</button>
+      </span>
       <button id="approvals-btn" class="pill-btn" title="Pending approvals">
         Approvals <span id="approvals-count" class="count-badge hidden">0</span>
       </button>
@@ -330,8 +354,10 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"
+    integrity="sha384-J4qzUjBl1FxyLsl/kQPQIOeINsmp17OHYXDOMpMxlKX53ZfYsL+aWHpgArvOuof9" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"
+    integrity="sha384-XGqKrV8Jrukp1NITJbOEHwg01tNkuXr6uB6YEj69ebpYU3v7FvoGgEg23C1Gcehk" crossorigin="anonymous"></script>
   <script src="app.js"></script>
 </body>
 </html>

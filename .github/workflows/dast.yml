@@ -1,0 +1,83 @@
+# Lightweight DAST: build runeward, run it locally with auth enabled, and run
+# the OWASP ZAP baseline scan against the live server.
+#
+# NOTE: this is intentionally non-blocking (`continue-on-error: true`). An
+# unauthenticated baseline crawl will flag the 401s from the token-guarded API;
+# the value here is *regression visibility* (new headers/endpoints/behaviours),
+# not a pass/fail gate. Tighten later with a ZAP context that authenticates.
+name: dast
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly (Mondays 08:31 UTC).
+    - cron: "31 8 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  zap-baseline:
+    name: ZAP baseline
+    runs-on: ubuntu-latest
+    # Non-blocking: baseline findings should not fail the PR gate yet.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build runeward
+        run: go build -o runeward ./cmd/runeward
+
+      - name: Start runeward
+        env:
+          RUNEWARD_API_TOKEN: ci-dast-token
+        run: |
+          # Bind to loopback on 8080; the token is set so the API is exercised
+          # in an authenticated posture (ZAP itself crawls unauthenticated).
+          ./runeward serve --bind 127.0.0.1 --port 8080 >runeward.log 2>&1 &
+          echo $! > runeward.pid
+
+      - name: Wait for /healthz
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+              echo "runeward is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::runeward did not become healthy within 30s"
+          echo "----- runeward.log -----"
+          cat runeward.log || true
+          exit 1
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: http://127.0.0.1:8080
+          # -a: also report alerts marked "IGNORE"/informational; keeps the
+          # scan from failing the step on baseline warnings.
+          cmd_options: "-a"
+
+      - name: Stop runeward
+        if: always()
+        run: |
+          if [ -f runeward.pid ]; then
+            kill "$(cat runeward.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload runeward log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runeward-dast-log
+          path: runeward.log
+          if-no-files-found: ignore

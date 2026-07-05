@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // fakeClock is a manually advanced clock for deterministic tests.

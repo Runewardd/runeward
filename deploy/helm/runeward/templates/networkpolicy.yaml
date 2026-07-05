@@ -1,0 +1,78 @@
+{{- if .Values.networkPolicy.enabled -}}
+# Default-deny NetworkPolicy for the runeward control-plane namespace.
+#
+# This is a conservative, opt-in policy (networkPolicy.enabled=false by
+# default) because it only has any effect under a CNI that enforces
+# NetworkPolicy, and a default-deny stance can silently break connectivity
+# for operators who don't expect it.
+#
+# It denies all ingress and egress by default (via the catch-all policy
+# below), then layers allow rules for the flows runeward actually needs:
+#   - ingress to the server/webhook ports from within the release namespace,
+#   - egress to DNS,
+#   - egress to the Kubernetes API server.
+#
+# Per-sandbox pods get their own in-cluster default-deny policy from the
+# runeward server (see RUNEWARD_K8S_NETWORK_POLICY); this template only
+# governs the control-plane components installed by the chart.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "runeward.fullname" . }}-default-deny
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  # Empty selector => applies to every pod in the namespace.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  # No ingress/egress rules on the catch-all means deny-all; the allow rules
+  # live in the policies below and are additive across NetworkPolicy objects.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "runeward.fullname" . }}-allow-intra-namespace
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "runeward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  # Only the runeward-managed control-plane pods.
+  podSelector:
+    matchLabels:
+      {{- include "runeward.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from other pods in the release namespace to the
+    # server/webhook ports (e.g. Service/probe traffic, in-cluster clients).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.server.port }}
+        - protocol: TCP
+          port: {{ .Values.webhook.port }}
+  egress:
+    # DNS resolution (kube-dns / CoreDNS).
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API server. The apiserver's ClusterIP/port aren't known at
+    # template time, so allow egress to TCP 443/6443 cluster-wide; tighten
+    # with a CIDR-scoped rule if your apiserver address is fixed.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+{{- end }}

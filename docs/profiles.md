@@ -19,7 +19,10 @@ type      = "container"          # or "k8s"
 image     = "runeward-agent:dev"
 workdir   = "/workspace"
 copy_from = "~/Documents/my-project"   # optional: seed /workspace at create
-# runtime_class = "gvisor"       # k8s only: hardened runtime for untrusted workloads
+# runtime_class = "gvisor"       # hardened runtime (Docker --runtime / k8s runtimeClassName)
+# read_only  = true              # read-only rootfs (writable /tmp + workspace)
+# seccomp    = "/etc/seccomp/strict.json"   # Docker --security-opt seccomp / k8s Localhost profile
+# apparmor   = "runtime/default"            # AppArmor profile
 
 [network]
 default = "deny"                 # deny-by-default egress
@@ -30,7 +33,7 @@ hostname = "api.openai.com, *.githubusercontent.com"   # comma-separated; suppor
 
 [[env]]
 name  = "OPENAI_API_KEY"
-value = "sk-..."                 # or: file = "~/.secrets/openai"; or op = "op://vault/item/field"
+value = "sk-..."                 # or file = "~/.secrets/openai"; or op = "env://OPENAI_API_KEY" / "vault://kv/openai#key"
 
 [[file]]
 path    = "/workspace/README.md"
@@ -45,19 +48,21 @@ verdict = "require-approval"
 wall_clock      = "15m"          # duration string; empty/zero means unlimited
 max_execs       = 200
 egress_requests = 100            # cap outbound requests through the proxy
+max_tokens      = 2000000        # cap reported model tokens (0 = unlimited)
+max_cost_usd    = 25.0           # cap reported spend in USD (0 = unlimited)
 ```
 
 ## Sections
 
 | Section | Purpose |
 | --- | --- |
-| `[host]` | Backend (`container` or `k8s`), image, workdir, optional `copy_from` to seed the workspace, and optional `runtime_class` (Kubernetes only) to select a hardened runtime like `gvisor`/`kata` for VM-grade isolation. |
+| `[host]` | Backend (`container` or `k8s`), image, workdir, optional `copy_from` to seed the workspace, optional `runtime_class` to select a hardened runtime like `gvisor`/`kata` for VM-grade isolation (maps to `--runtime` on Docker and `runtimeClassName` on Kubernetes), optional `read_only = true` to mount the root filesystem read-only (writable `/tmp` + workspace), and optional `seccomp` / `apparmor` to pin a seccomp/AppArmor profile (Docker `--security-opt`; k8s Localhost profiles — k8s pods default to the runtime's seccomp profile). |
 | `[network]` + `[[network.rule]]` | Egress policy. `default = "deny"` plus one `[[network.rule]]` per `verdict`/`hostname` (or `cidr`) entry; hostnames support `*.wildcard` and comma-separated lists. |
-| `[[env]]` | Environment/secret injection: literal `value`, from a `file`, or a 1Password `op://` reference. Known secrets are redacted from the ledger. |
+| `[[env]]` | Environment/secret injection: literal `value`, from a `file`, or an `op` scheme reference — `env://NAME` (host env var), `vault://<mount>/<path>#<field>` (Vault KV v2 via `VAULT_ADDR`/`VAULT_TOKEN`), `aws://<secret-id>[#json-key]` (AWS Secrets Manager), `gcp://<name>[#version]` (GCP Secret Manager), or `op://…` (1Password, not built in). Resolution is fail-closed; known secrets are redacted from the ledger. |
 | `[[file]]` | Files written into the sandbox at create. |
 | `[[policy]]` / `[[cel]]` / `[rego]` | Per-action verdicts. Choose the engine with top-level `policy_engine`. |
 | `[policy_bundle]` | Pull signed, versioned policy from an OCI artifact instead of inline rules. |
-| `[limits]` | Guardrails: `wall_clock` (duration string), `max_execs`, `egress_requests`, and loop detection via `loop_window`/`loop_threshold`. |
+| `[limits]` | Guardrails: `wall_clock` (duration string), `max_execs`, `egress_requests`, loop detection via `loop_window`/`loop_threshold`, and budget caps `max_tokens`/`max_cost_usd` (enforced once usage is reported to `POST /v1/sandboxes/{id}/usage`). |
 
 ## Secret injection
 
@@ -72,8 +77,30 @@ file = "~/.secrets/anthropic"   # read from a host file at create
 
 [[env]]
 name = "GITHUB_TOKEN"
-op   = "op://Private/GitHub/token"   # 1Password reference
+op   = "env://GITHUB_TOKEN"          # host env var
+
+[[env]]
+name = "DB_PASSWORD"
+op   = "vault://kv/database/prod#password"   # HashiCorp Vault KV v2 (VAULT_ADDR/VAULT_TOKEN)
+
+[[env]]
+name = "STRIPE_KEY"
+op   = "aws://prod/stripe#secret_key"        # AWS Secrets Manager (AWS_REGION + creds); #key extracts a JSON field
+
+[[env]]
+name = "SIGNING_KEY"
+op   = "gcp://signing-key"                   # GCP Secret Manager (GOOGLE_CLOUD_PROJECT + access token / metadata); version defaults to latest
 ```
+
+The `op` key takes a scheme reference resolved fresh at sandbox creation:
+`env://NAME`, `vault://<mount>/<path>#<field>`, `aws://<secret-id>[#json-key]`
+(AWS Secrets Manager — `AWS_REGION`/`AWS_DEFAULT_REGION` plus standard
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`),
+`gcp://<name>[#version]` or `gcp://projects/<p>/secrets/<n>/versions/<v>` (GCP
+Secret Manager — `GOOGLE_CLOUD_PROJECT` plus `GOOGLE_OAUTH_ACCESS_TOKEN` or the
+GCE metadata server), or `op://…` (1Password, not built in — always fails
+closed). Resolution is fail-closed: an unresolvable reference aborts sandbox
+creation rather than starting without the secret.
 
 ## Seeding and exporting workspaces
 
@@ -102,5 +129,5 @@ ref        = "oci://ghcr.io/acme/runeward-policies:v3"
 verify_key = "<base64 ed25519 public key>"   # when set, a valid signature is REQUIRED
 ```
 
-See the [`examples/`](https://github.com/adefemi171/runeward/tree/main/examples)
+See the [`examples/`](https://github.com/Runewardd/runeward/tree/main/examples)
 directory for complete, runnable profiles.

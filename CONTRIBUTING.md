@@ -37,7 +37,8 @@ Run the same checks CI runs, locally:
 gofmt -l internal cmd     # must print nothing
 go vet ./...
 go build ./...
-GOOS=linux GOARCH=amd64 go build ./...   # egress/strict build tags
+GOOS=linux GOARCH=amd64 go build ./...    # egress/strict build tags
+GOOS=windows GOARCH=amd64 go build ./cmd/runeward   # the CLI is cross-platform
 go test ./... -count=1
 ```
 
@@ -47,6 +48,29 @@ If you touch the Helm chart:
 helm lint deploy/helm/runeward
 helm template runeward deploy/helm/runeward --set server.enabled=true >/dev/null
 ```
+
+If you touch a GitHub Actions workflow, keep it valid (CI security scans depend
+on it):
+
+```bash
+actionlint .github/workflows/*.yml   # if installed
+```
+
+## Security scanning in CI
+
+Beyond build/test, CI runs a set of security scans (see `.github/workflows/`):
+
+- **SAST** — `gosec` and CodeQL (`security-extended`) analyze the Go source.
+- **Dependencies/vulnerabilities** — `govulncheck` plus a Trivy filesystem scan
+  (vuln/secret/misconfig); Dependabot opens weekly update PRs for Go modules,
+  GitHub Actions, and the Docker images.
+- **Image scanning** — Trivy scans each built image (`deploy/Dockerfile*`) for
+  CRITICAL/HIGH CVEs.
+- **DAST** — an OWASP ZAP baseline runs against a locally-started `runeward serve`.
+
+Most scans are currently non-blocking (results upload to the Security tab) so
+findings are visible without gating every PR; `govulncheck` and CodeQL are
+treated as blocking. Please triage anything your change introduces.
 
 ## Coding conventions
 

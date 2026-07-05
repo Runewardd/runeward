@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/adefemi171/runeward/internal/backend"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/policy"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // Snapshot captures a sandbox's workspace and registers the reference.
@@ -42,7 +43,7 @@ func (m *Manager) ListSnapshots() []backend.SnapshotRef {
 
 // RestoreSnapshot recreates a governed sandbox from a snapshot, re-deriving
 // policy and guardrails from the snapshot's profile.
-func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID string) (*backend.Sandbox, error) {
+func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID, owner string) (*backend.Sandbox, error) {
 	m.snapMu.Lock()
 	ref, ok := m.snapshots[snapshotID]
 	m.snapMu.Unlock()
@@ -51,8 +52,11 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID string) (*back
 	}
 
 	p, err := profile.Load(ref.Profile, profile.Options{ConfigDir: m.configDir})
-	if err != nil {
-		// Restore still works if the source profile is gone.
+	// profileMissing fails closed: if the source profile is gone we can't
+	// re-derive its governance, so the restored sandbox denies every action
+	// rather than falling back to default-allow.
+	profileMissing := err != nil
+	if profileMissing {
 		p = &profile.Profile{Name: ref.Profile}
 	}
 
@@ -71,13 +75,19 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID string) (*back
 		return nil, err
 	}
 
-	engine, err := newEngine(p)
-	if err != nil {
+	var engine policy.Evaluator
+	if profileMissing {
+		engine = policy.New(nil, profile.VerdictDeny)
+	} else if engine, err = newEngine(p); err != nil {
 		_ = be.Kill(context.Background(), sb.ID)
 		return nil, err
 	}
 
-	env, secrets := resolveEnv(p)
+	env, secrets, err := resolveEnv(p)
+	if err != nil {
+		_ = be.Kill(context.Background(), sb.ID)
+		return nil, err
+	}
 	sess := &Session{
 		Sandbox: sb,
 		Backend: be,
@@ -86,6 +96,7 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID string) (*back
 		Guard:   guard,
 		Env:     env,
 		Workdir: p.Host.Workdir,
+		Owner:   owner,
 		secrets: secrets,
 	}
 	m.mu.Lock()

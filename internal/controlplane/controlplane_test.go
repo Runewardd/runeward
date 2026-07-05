@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/backend"
-	"github.com/adefemi171/runeward/internal/ledger"
-	"github.com/adefemi171/runeward/internal/policy"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/ledger"
+	"github.com/Runewardd/runeward/internal/policy"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // fakeBackend echoes commands so tests can run without a container runtime.

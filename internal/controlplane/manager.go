@@ -10,18 +10,24 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/backend"
-	"github.com/adefemi171/runeward/internal/ledger"
-	"github.com/adefemi171/runeward/internal/obs"
-	"github.com/adefemi171/runeward/internal/policy"
-	"github.com/adefemi171/runeward/internal/policybundle"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/accounting"
+	"github.com/Runewardd/runeward/internal/anomaly"
+	"github.com/Runewardd/runeward/internal/auditsink"
+	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/ledger"
+	"github.com/Runewardd/runeward/internal/obs"
+	"github.com/Runewardd/runeward/internal/policy"
+	"github.com/Runewardd/runeward/internal/policybundle"
+	"github.com/Runewardd/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/secrets"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -32,6 +38,14 @@ type Manager struct {
 	ledger    *ledger.Ledger
 	signer    *ledger.Signer
 	approvals *ApprovalStore
+
+	// sink streams audit events to external destinations (webhook/file) in
+	// real time. Never nil; a no-op sink when nothing is configured.
+	sink auditsink.Sink
+
+	// accounting tracks per-sandbox and per-profile token/cost usage reported
+	// via the usage API, and enforces profile budget limits. Never nil.
+	accounting *accounting.Tracker
 
 	// approvalWait bounds how long a require-approval call blocks before the
 	// REST layer returns 202 pending.
@@ -63,6 +77,11 @@ type Session struct {
 	Env     map[string]string
 	Workdir string
 
+	// Owner is the name of the RBAC principal that created the sandbox, used
+	// for per-principal ("multi-user") visibility and access control. Empty
+	// when RBAC is not configured.
+	Owner string
+
 	// secrets are resolved secret env values, kept so they can be redacted
 	// from ledger payloads.
 	secrets []string
@@ -93,10 +112,23 @@ func New(configDir string) (*Manager, error) {
 		signer = s
 	}
 
+	// Optional real-time audit fan-out (webhook/file); a misconfigured sink is
+	// a hard error so it isn't silently ignored. The ledger anomaly detector is
+	// always chained in so novel-egress / exec-burst / denial-spike patterns are
+	// surfaced regardless of whether an external sink is configured.
+	envSink, err := auditsink.FromEnv(nil)
+	if err != nil {
+		_ = l.Close()
+		return nil, fmt.Errorf("configure audit sink: %w", err)
+	}
+	sink := auditsink.NewMulti(envSink, anomaly.New(nil))
+
 	m := &Manager{
 		configDir:    configDir,
 		ledger:       l,
 		signer:       signer,
+		sink:         sink,
+		accounting:   accounting.New(),
 		approvals:    NewApprovalStore(),
 		approvalWait: 5 * time.Minute,
 		sessions:     make(map[string]*Session),
@@ -130,6 +162,19 @@ func fleetLeaseFromEnv() time.Duration {
 // Signed reports whether the ledger is being signed.
 func (m *Manager) Signed() bool { return m.signer != nil }
 
+// appendAudit writes an event to the ledger, logging (rather than silently
+// dropping) a failure so a broken audit trail is at least visible.
+func (m *Manager) appendAudit(ev ledger.Event) {
+	if _, err := m.ledger.Append(ev); err != nil {
+		log.Printf("runeward: audit ledger append failed (tool=%s verdict=%s): %v", ev.Tool, ev.Verdict, err)
+	}
+	// Fan out to external sinks (non-blocking); redaction already applied by
+	// the caller so the streamed event matches the ledger record.
+	if m.sink != nil {
+		m.sink.Emit(ev)
+	}
+}
+
 // recordFleet appends a fleet-level audit event.
 func (m *Manager) recordFleet(f *Fleet, action, taskID, reason string) {
 	ev := ledger.Event{
@@ -145,7 +190,7 @@ func (m *Manager) recordFleet(f *Fleet, action, taskID, reason string) {
 	if reason != "" {
 		ev.Meta = map[string]string{"reason": reason}
 	}
-	_, _ = m.ledger.Append(ev)
+	m.appendAudit(ev)
 }
 
 // LedgerPublicKey returns the base64 signing key and key id, or empty strings
@@ -174,17 +219,73 @@ func (m *Manager) VerifyLedger() error {
 	return m.ledger.Verify()
 }
 
-// Close stops the sweeper and releases the ledger handle.
+// Close stops the sweeper, flushes audit sinks, and releases the ledger handle.
 func (m *Manager) Close() error {
 	m.stopSweeper()
+	if m.sink != nil {
+		_ = m.sink.Close()
+	}
 	return m.ledger.Close()
 }
 
 // Ledger returns the shared ledger.
 func (m *Manager) Ledger() *ledger.Ledger { return m.ledger }
 
+// StateDir returns the directory holding runeward state (ledger, keys, and
+// terminal recordings).
+func (m *Manager) StateDir() string { return m.stateDir }
+
 // Approvals returns the approval store.
 func (m *Manager) Approvals() *ApprovalStore { return m.approvals }
+
+// ResolveApproval resolves a pending approval and records who decided it in the
+// tamper-evident ledger, so a human-in-the-loop decision is always attributed.
+// It reports whether the id was pending.
+func (m *Manager) ResolveApproval(id string, approve bool, actor string) bool {
+	view, ok := m.approvals.ResolveView(id, approve)
+	if !ok {
+		return false
+	}
+	if strings.TrimSpace(actor) == "" {
+		actor = "unknown"
+	}
+	decision, verdict := "approved", string(profile.VerdictAllow)
+	if !approve {
+		decision, verdict = "denied", string(profile.VerdictDeny)
+	}
+
+	ev := ledger.Event{
+		SessionID: view.Sandbox,
+		Sandbox:   view.Sandbox,
+		Tool:      "approval",
+		Action:    view.Action,
+		Args:      []string{view.Tool},
+		Verdict:   verdict,
+		Meta: map[string]string{
+			"decision":    decision,
+			"approver":    actor,
+			"approval_id": view.ID,
+		},
+	}
+	if view.Reason != "" {
+		ev.Meta["reason"] = view.Reason
+	}
+
+	m.mu.Lock()
+	sess := m.sessions[view.Sandbox]
+	m.mu.Unlock()
+	if sess != nil {
+		ev.Profile = sess.Profile.Name
+		if sess.Profile.Audit.RedactEnabled() {
+			ev = ledger.Scrub(ev, sess.secrets...)
+		}
+	} else {
+		ev = ledger.Scrub(ev)
+	}
+	obs.RecordAction("approval", verdict, 0)
+	m.appendAudit(ev)
+	return true
+}
 
 // ProfileInfo is a lightweight profile descriptor for listing.
 type ProfileInfo struct {
@@ -220,6 +321,10 @@ type CreateOptions struct {
 	// CopyFrom overrides host.copy_from for this create: a one-time copy into
 	// the fresh workspace, the host dir is never mounted. "~/" is expanded.
 	CopyFrom string
+	// Owner records the RBAC principal that created the sandbox, for
+	// per-principal visibility and access control. Empty means unowned
+	// (RBAC disabled), in which case every caller can see it.
+	Owner string
 }
 
 // CreateSandbox loads the named profile, provisions a sandbox on its backend,
@@ -230,7 +335,10 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 		return nil, err
 	}
 
-	env, secrets := resolveEnv(p)
+	env, secrets, err := resolveEnv(p)
+	if err != nil {
+		return nil, err
+	}
 
 	be, err := backend.For(p)
 	if err != nil {
@@ -265,6 +373,7 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 		Guard:   guard,
 		Env:     env,
 		Workdir: p.Host.Workdir,
+		Owner:   opts.Owner,
 		secrets: secrets,
 	}
 
@@ -299,6 +408,36 @@ func (m *Manager) ListSandboxes() []backend.Sandbox {
 	return out
 }
 
+// SandboxInfo pairs a sandbox handle with its owning principal for listing.
+type SandboxInfo struct {
+	Sandbox backend.Sandbox
+	Owner   string
+}
+
+// ListSandboxInfos returns every governed sandbox together with its owner. The
+// server uses this to filter the list per principal ("multi-user" views).
+func (m *Manager) ListSandboxInfos() []SandboxInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]SandboxInfo, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		out = append(out, SandboxInfo{Sandbox: *s.Sandbox, Owner: s.Owner})
+	}
+	return out
+}
+
+// SandboxOwner returns the owning principal for a sandbox id. ok is false when
+// the sandbox is unknown; a known-but-unowned sandbox returns ("", true).
+func (m *Manager) SandboxOwner(id string) (owner string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return "", false
+	}
+	return s.Owner, true
+}
+
 // KillSandbox tears down a sandbox and removes its session.
 func (m *Manager) KillSandbox(ctx context.Context, id string) error {
 	m.mu.Lock()
@@ -310,8 +449,52 @@ func (m *Manager) KillSandbox(ctx context.Context, id string) error {
 	if !ok {
 		return fmt.Errorf("sandbox %q not found", id)
 	}
+	if m.accounting != nil {
+		m.accounting.Forget(id)
+	}
 	m.record(sess, "sandbox", "kill", nil, string(profile.VerdictAllow), 0, 0, "")
 	return sess.Backend.Kill(ctx, id)
+}
+
+// RecordUsage attributes reported model usage (tokens and/or US-dollar spend)
+// to a sandbox, updating the accounting totals and metrics and appending an
+// audit event. Callers (agents, fleet workers) report usage they observe from
+// the model provider; once the profile's budget is exceeded, govern denies
+// further tool calls. It errors if the sandbox is unknown.
+func (m *Manager) RecordUsage(id string, tokens int64, costUSD float64) error {
+	sess, err := m.session(id)
+	if err != nil {
+		return err
+	}
+	if m.accounting == nil {
+		return fmt.Errorf("usage accounting is not initialized")
+	}
+	m.accounting.Record(sess.Profile.Name, id, tokens, costUSD)
+	u := m.accounting.Usage(id)
+	ev := ledger.Event{
+		SessionID: id,
+		Sandbox:   id,
+		Profile:   sess.Profile.Name,
+		Tool:      "usage",
+		Action:    "report",
+		Verdict:   string(profile.VerdictAllow),
+		Meta: map[string]string{
+			"tokens":       strconv.FormatInt(tokens, 10),
+			"cost_usd":     strconv.FormatFloat(costUSD, 'f', -1, 64),
+			"tokens_tot":   strconv.FormatInt(u.Tokens, 10),
+			"cost_usd_tot": strconv.FormatFloat(u.CostUSD, 'f', -1, 64),
+		},
+	}
+	m.appendAudit(ev)
+	return nil
+}
+
+// SandboxUsage returns the cumulative reported usage for a sandbox.
+func (m *Manager) SandboxUsage(id string) accounting.Usage {
+	if m.accounting == nil {
+		return accounting.Usage{}
+	}
+	return m.accounting.Usage(id)
 }
 
 // AttachTerminal wires an interactive PTY to the sandbox. Terminals are not
@@ -320,6 +503,16 @@ func (m *Manager) AttachTerminal(ctx context.Context, id string, stream backend.
 	sess, err := m.session(id)
 	if err != nil {
 		return err
+	}
+	// A raw terminal is an unrestricted RCE primitive that bypasses per-action
+	// policy, so it is itself policy-gated as tool "terminal" (a profile can
+	// deny it in hardened mode). require-approval isn't meaningful for an
+	// interactive attach, so it is treated as deny here.
+	dec := sess.Engine.Evaluate(policy.Action{Tool: "terminal", Arg: "attach"})
+	if dec.Verdict != profile.VerdictAllow {
+		reason := orReason(dec.Reason, "terminal attach denied by policy")
+		m.record(sess, "terminal", "attach", nil, string(profile.VerdictDeny), -1, 0, reason)
+		return fmt.Errorf("%s", reason)
 	}
 	m.record(sess, "terminal", "attach", nil, string(profile.VerdictAllow), 0, 0, "")
 	return sess.Backend.AttachPTY(ctx, id, stream)
@@ -338,7 +531,7 @@ func (m *Manager) session(id string) (*Session, error) {
 // govern runs one action through the governed path. run is only invoked once
 // the action is authorized and within guardrails.
 func (m *Manager) govern(ctx context.Context, sess *Session, tool, arg string, args []string, run func(context.Context) (*backend.ExecResult, error)) (*ToolResult, error) {
-	dec := sess.Engine.Evaluate(policy.Action{Tool: tool, Arg: arg})
+	dec := sess.Engine.Evaluate(policy.Action{Tool: tool, Arg: arg, Args: args})
 
 	switch dec.Verdict {
 	case profile.VerdictDeny:
@@ -375,6 +568,23 @@ func (m *Manager) govern(ctx context.Context, sess *Session, tool, arg string, a
 		return &ToolResult{Verdict: profile.VerdictDeny, Reason: err.Error()}, nil
 	}
 
+	// Enforce the spend/token budget: once a sandbox's reported usage exceeds
+	// the profile's limits, further tool calls are denied fail-closed.
+	if m.accounting != nil {
+		if over, why := m.accounting.Over(sess.Sandbox.ID, sess.Profile.Limits.MaxTokens, sess.Profile.Limits.MaxCostUSD); over {
+			m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, why)
+			return &ToolResult{Verdict: profile.VerdictDeny, Reason: why}, nil
+		}
+	}
+
+	// Enforce the egress budget for outbound tools (previously dead code).
+	if isEgressTool(tool) {
+		if err := sess.Guard.CheckEgress(); err != nil {
+			m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, err.Error())
+			return &ToolResult{Verdict: profile.VerdictDeny, Reason: err.Error()}, nil
+		}
+	}
+
 	res, err := run(ctx)
 	loopKey := tool + "|" + arg
 	if err != nil {
@@ -385,13 +595,27 @@ func (m *Manager) govern(ctx context.Context, sess *Session, tool, arg string, a
 	sess.Guard.RecordOutcome(loopKey, res.ExitCode != 0)
 	m.record(sess, tool, arg, args, string(profile.VerdictAllow), res.ExitCode, res.Duration.Milliseconds(), "")
 
+	// Redact secrets from returned output too, not just the ledger, so a leaked
+	// credential in stdout/stderr doesn't reach the API/MCP client in cleartext.
+	stdout, stderr := res.Stdout, res.Stderr
+	if sess.Profile.Audit.RedactEnabled() {
+		stdout = ledger.ScrubString(stdout, sess.secrets...)
+		stderr = ledger.ScrubString(stderr, sess.secrets...)
+	}
+
 	return &ToolResult{
 		Verdict:    profile.VerdictAllow,
 		ExitCode:   res.ExitCode,
-		Stdout:     res.Stdout,
-		Stderr:     res.Stderr,
+		Stdout:     stdout,
+		Stderr:     stderr,
 		DurationMS: res.Duration.Milliseconds(),
 	}, nil
+}
+
+// isEgressTool reports whether a tool causes outbound network access subject to
+// the egress budget.
+func isEgressTool(tool string) bool {
+	return tool == "browser" || tool == "net"
 }
 
 // record appends an event to the ledger.
@@ -411,12 +635,13 @@ func (m *Manager) record(sess *Session, tool, action string, args []string, verd
 		ev.Meta = map[string]string{"reason": reason}
 	}
 	obs.RecordAction(tool, verdict, durMS)
-	// Only redact when there are known secrets: ledger.Redact with no values
-	// hashes the whole payload, making the trail unreadable.
-	if sess.Profile.Audit.RedactEnabled() && len(sess.secrets) > 0 {
-		ev = ledger.Redact(ev, sess.secrets...)
+	// Scrub declared secret values (hashed) and pattern-detected credentials
+	// (masked) from the payload. Unlike a whole-payload hash, this keeps the
+	// trail readable while catching secrets pasted into a command or snippet.
+	if sess.Profile.Audit.RedactEnabled() {
+		ev = ledger.Scrub(ev, sess.secrets...)
 	}
-	_, _ = m.ledger.Append(ev)
+	m.appendAudit(ev)
 }
 
 // defaultLedgerPath returns the ledger file location, honoring
@@ -437,19 +662,31 @@ func defaultLedgerPath() (string, error) {
 }
 
 // resolveEnv turns a profile's [[env]] entries into literal values and returns
-// the resolved secret values for redaction.
-func resolveEnv(p *profile.Profile) (map[string]string, []string) {
+// the resolved secret values for redaction. It fails closed: an env entry that
+// names a source it can't resolve (unreadable file, or a scheme reference such
+// as env://, vault://, op:// that the resolver rejects) is an error rather than
+// a silently-missing secret, so a sandbox never starts believing it has a
+// credential it does not.
+func resolveEnv(p *profile.Profile) (map[string]string, []string, error) {
 	out := make(map[string]string, len(p.Env))
-	var secrets []string
+	var secretVals []string
+	resolver := secrets.Default()
 	for _, e := range p.Env {
 		var val string
 		switch {
 		case e.Op != "":
-			continue // 1Password resolution deferred
+			// e.Op holds a scheme reference (op://, vault://, env://). Resolve
+			// it fail-closed: an unresolvable reference is an error so a
+			// sandbox never starts believing it has a credential it doesn't.
+			resolved, err := resolver.Resolve(context.Background(), e.Op)
+			if err != nil {
+				return nil, nil, fmt.Errorf("env %q: resolve %q: %w", e.Name, e.Op, err)
+			}
+			val = resolved
 		case e.File != "":
 			b, err := os.ReadFile(expandHome(e.File))
 			if err != nil {
-				continue
+				return nil, nil, fmt.Errorf("env %q: read file %q: %w", e.Name, e.File, err)
 			}
 			val = strings.TrimRight(string(b), "\r\n")
 		case e.Value != "":
@@ -459,10 +696,10 @@ func resolveEnv(p *profile.Profile) (map[string]string, []string) {
 		}
 		out[e.Name] = val
 		if e.Secret() && val != "" {
-			secrets = append(secrets, val)
+			secretVals = append(secretVals, val)
 		}
 	}
-	return out, secrets
+	return out, secretVals, nil
 }
 
 func expandHome(p string) string {
@@ -505,12 +742,20 @@ const bundlePullTimeout = 30 * time.Second
 func newBundleEngine(p *profile.Profile) (policy.Evaluator, error) {
 	pb := p.PolicyBundle
 	var verify ed25519.PublicKey
-	if pb.VerifyKey != "" {
+	switch {
+	case pb.VerifyKey != "":
 		k, err := policybundle.DecodePublicKey(pb.VerifyKey)
 		if err != nil {
 			return nil, fmt.Errorf("policy bundle: %w", err)
 		}
 		verify = k
+	case pb.Insecure:
+		// Explicit, logged opt-out: pull without verifying the signature.
+		log.Printf("runeward: WARNING: policy bundle %q pulled WITHOUT signature verification (insecure_skip_verify=true)", pb.Ref)
+	default:
+		// Fail closed: an unverified bundle is remotely-controlled policy, so
+		// refuse rather than silently trusting whatever the registry serves.
+		return nil, fmt.Errorf("policy bundle %q: verify_key is required; set policy_bundle.verify_key, or set insecure_skip_verify=true to explicitly accept an unsigned bundle", pb.Ref)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), bundlePullTimeout)

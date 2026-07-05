@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/agent"
+	"github.com/Runewardd/runeward/internal/agent"
 )
 
 func main() {
-	addr := flag.String("addr", ":8000", "address to listen on")
+	addr := flag.String("addr", "127.0.0.1:8000", "address to listen on (loopback by default; this server has no auth, so binding a wider interface exposes shell/file access)")
 	root := flag.String("root", "/workspace", "workspace root that file operations are confined to")
 	flag.Parse()
 

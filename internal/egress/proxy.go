@@ -1,10 +1,13 @@
 package egress
 
 import (
+	"crypto/subtle"
+	"encoding/base64"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,6 +20,12 @@ type Proxy struct {
 	Policy Policy
 	// Logger receives allow/deny decisions; nil discards them.
 	Logger *log.Logger
+	// AuthUser/AuthPass, when both set, require Proxy-Authorization (HTTP Basic)
+	// on every request. This keeps a proxy bound on a shared interface (e.g. the
+	// host proxy reachable via host.docker.internal) from being used by other
+	// local/LAN processes.
+	AuthUser string
+	AuthPass string
 	// transport forwards plain HTTP requests; nil falls back to the default.
 	transport http.RoundTripper
 }
@@ -27,9 +36,29 @@ func (p *Proxy) logf(format string, args ...any) {
 	}
 }
 
+// authOK reports whether r satisfies the configured proxy credentials. When no
+// credentials are configured it always passes.
+func (p *Proxy) authOK(r *http.Request) bool {
+	if p.AuthUser == "" && p.AuthPass == "" {
+		return true
+	}
+	user, pass, ok := parseProxyBasicAuth(r.Header.Get("Proxy-Authorization"))
+	if !ok {
+		return false
+	}
+	userOK := subtle.ConstantTimeCompare([]byte(user), []byte(p.AuthUser)) == 1
+	passOK := subtle.ConstantTimeCompare([]byte(pass), []byte(p.AuthPass)) == 1
+	return userOK && passOK
+}
+
 // Handler returns an [http.Handler] implementing the forward proxy.
 func (p *Proxy) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !p.authOK(r) {
+			w.Header().Set("Proxy-Authenticate", `Basic realm="runeward-egress"`)
+			http.Error(w, "Proxy Authentication Required", http.StatusProxyAuthRequired)
+			return
+		}
 		if r.Method == http.MethodConnect {
 			p.handleConnect(w, r)
 			return
@@ -115,6 +144,24 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// parseProxyBasicAuth parses a "Basic base64(user:pass)" Proxy-Authorization
+// header value.
+func parseProxyBasicAuth(header string) (user, pass string, ok bool) {
+	const prefix = "Basic "
+	if len(header) < len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+		return "", "", false
+	}
+	dec, err := base64.StdEncoding.DecodeString(header[len(prefix):])
+	if err != nil {
+		return "", "", false
+	}
+	u, p, found := strings.Cut(string(dec), ":")
+	if !found {
+		return "", "", false
+	}
+	return u, p, true
 }
 
 func copyHeader(dst, src http.Header) {

@@ -82,6 +82,13 @@ func (s *ApprovalStore) List() []ApprovalView {
 // Resolve delivers a decision to the waiting tool call and removes the
 // approval. It reports whether that id was pending.
 func (s *ApprovalStore) Resolve(id string, approve bool) bool {
+	_, ok := s.ResolveView(id, approve)
+	return ok
+}
+
+// ResolveView is like Resolve but also returns a view of the approval that was
+// resolved, so callers can record who decided it and what it authorized.
+func (s *ApprovalStore) ResolveView(id string, approve bool) (ApprovalView, bool) {
 	s.mu.Lock()
 	ap, ok := s.m[id]
 	if ok {
@@ -89,10 +96,17 @@ func (s *ApprovalStore) Resolve(id string, approve bool) bool {
 	}
 	s.mu.Unlock()
 	if !ok {
-		return false
+		return ApprovalView{}, false
 	}
 	ap.decided <- approve
-	return true
+	return ApprovalView{
+		ID:      ap.ID,
+		Sandbox: ap.Sandbox,
+		Tool:    ap.Tool,
+		Action:  ap.Action,
+		Reason:  ap.Reason,
+		Created: ap.Created,
+	}, true
 }
 
 // forget drops an approval without delivering a decision, so a timed-out
@@ -104,7 +118,7 @@ func (s *ApprovalStore) forget(id string) {
 }
 
 func newID() string {
-	var b [8]byte
+	var b [16]byte // 128-bit: approval IDs must not be guessable
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }

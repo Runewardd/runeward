@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/controlplane"
+	"github.com/Runewardd/runeward/internal/controlplane"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

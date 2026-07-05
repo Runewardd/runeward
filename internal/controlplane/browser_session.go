@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/backend"
-	"github.com/adefemi171/runeward/internal/browser"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/browser"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // browserDriverBin is the in-sandbox CDP driver (cmd/runeward-browser), shipped

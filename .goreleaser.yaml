@@ -26,10 +26,10 @@ builds:
     binary: runeward
     env:
       - CGO_ENABLED=0
-    goos: [linux, darwin]
+    goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ldflags:
-      - -s -w -X github.com/adefemi171/runeward/internal/cli.version={{ .Version }}
+      - -s -w -X github.com/Runewardd/runeward/internal/cli.version={{ .Version }}
 
   - id: runeward-egress
     main: ./cmd/runeward-egress
@@ -39,7 +39,7 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     ldflags:
-      - -s -w -X github.com/adefemi171/runeward/internal/cli.version={{ .Version }}
+      - -s -w -X github.com/Runewardd/runeward/internal/cli.version={{ .Version }}
 
   - id: runeward-agent
     main: ./cmd/runeward-agent
@@ -49,13 +49,17 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     ldflags:
-      - -s -w -X github.com/adefemi171/runeward/internal/cli.version={{ .Version }}
+      - -s -w -X github.com/Runewardd/runeward/internal/cli.version={{ .Version }}
 
 archives:
   - id: runeward
     ids: [runeward]
     name_template: "runeward_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
+    # Ship an idiomatic zip on Windows; keep tar.gz elsewhere.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files:
       - LICENSE
       - NOTICE
@@ -83,7 +87,7 @@ sboms:
 # Verify with:
 #   cosign verify-blob --certificate checksums.txt.pem \
 #     --signature checksums.txt.sig \
-#     --certificate-identity-regexp 'https://github.com/adefemi171/runeward' \
+#     --certificate-identity-regexp 'https://github.com/Runewardd/runeward' \
 #     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
 #     checksums.txt
 signs:
@@ -112,26 +116,26 @@ changelog:
 
 release:
   github:
-    owner: adefemi171
+    owner: Runewardd
     name: runeward
   draft: false
   prerelease: auto
 
-# Homebrew formula -> brew install adefemi171/tap/runeward
+# Homebrew formula -> brew install Runewardd/tap/runeward
 #
 # Uploading to the tap requires a repo secret HOMEBREW_TAP_TOKEN (a PAT with
-# write access to adefemi171/homebrew-tap), passed as env in the release
+# write access to Runewardd/homebrew-tap), passed as env in the release
 # workflow. The skip_upload guard below means: if that token isn't set, the
 # formula is still built but not pushed, so a release never fails on it.
 brews:
   - name: runeward
     skip_upload: '{{ if .Env.HOMEBREW_TAP_TOKEN }}false{{ else }}true{{ end }}'
     repository:
-      owner: adefemi171
+      owner: Runewardd
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     ids: [runeward]
-    homepage: "https://github.com/adefemi171/runeward"
+    homepage: "https://github.com/Runewardd/runeward"
     description: "Governed execution cells for AI agents"
     license: "Apache-2.0"
     test: |

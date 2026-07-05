@@ -1,7 +1,7 @@
 # runeward adapters
 
 Client libraries and agent-framework integrations for
-[runeward](https://github.com/adefemi171/runeward) — the **governed execution
+[runeward](https://github.com/Runewardd/runeward) — the **governed execution
 cell** for AI agents.
 
 ## Why governed tools matter for agents
@@ -38,17 +38,17 @@ The single behavioral contract every adapter preserves:
 | --- | --- |
 | [`../dist/skill/SKILL.md`](../dist/skill/SKILL.md) | An agent **skill** teaching a model when and how to use runeward — MCP tool names, the REST fallback, how approvals and denials work, and safety notes. Drop it into a Cursor/Claude skill directory. |
 | [`../dist/mcp/`](../dist/mcp/) | The MCP registry **`server.json`** manifest plus a README on publishing runeward to MCP registries and wiring it into Claude Desktop / Cursor. |
-| [`python/`](./python/) | The **`runeward`** Python package: a pure-stdlib `RunewardClient` plus lazy-loaded LangChain and CrewAI tool factories. |
-| [`typescript/`](./typescript/) | The **`@runeward/sdk`** package: a `fetch`-based `RunewardClient` plus Vercel AI SDK `tool(...)` wrappers. |
+| [`python/`](./python/) | The **`runeward`** Python package: a pure-stdlib `RunewardClient` plus lazy-loaded LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, and Strands tool factories. |
+| [`typescript/`](./typescript/) | The **`@runeward/sdk`** package: a `fetch`-based `RunewardClient` plus Vercel AI SDK, LangChain.js, and Strands `tool(...)` wrappers. |
 
 ## Choosing an adapter
 
 - **Using an MCP client** (Claude Desktop, Cursor, …)? You don't need these
   adapters — point the client at the runeward MCP server. See
   [`../dist/mcp/README.md`](../dist/mcp/README.md).
-- **Building a LangChain or CrewAI agent in Python?** Use
-  [`python/`](./python/).
-- **Building on the Vercel AI SDK / a TS agent?** Use
+- **Building a LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, or Strands
+  agent in Python?** Use [`python/`](./python/).
+- **Building on the Vercel AI SDK, LangChain.js, or Strands / a TS agent?** Use
   [`typescript/`](./typescript/).
 - **Rolling your own?** Both `RunewardClient`s are thin, typed wrappers over the
   REST control plane and are usable standalone with zero third-party runtime

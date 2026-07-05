@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/fleet"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/fleet"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // Fleet is a set of sandboxes from one profile sharing an atomic task board.
@@ -161,26 +161,27 @@ func (m *Manager) HeartbeatTask(fleetID, taskID, owner string) (fleet.Task, erro
 	return t, err
 }
 
-// CompleteTask marks a claimed task done.
-func (m *Manager) CompleteTask(fleetID, taskID, result string) error {
+// CompleteTask marks a claimed task done. owner must match the claiming worker.
+func (m *Manager) CompleteTask(fleetID, taskID, owner, result string) error {
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return fmt.Errorf("fleet %q not found", fleetID)
 	}
-	if err := f.Board.Complete(taskID, result); err != nil {
+	if err := f.Board.Complete(taskID, owner, result); err != nil {
 		return err
 	}
 	m.saveFleets()
 	return nil
 }
 
-// FailTask marks a claimed task failed, optionally requeuing it.
-func (m *Manager) FailTask(fleetID, taskID, errMsg string, requeue bool) error {
+// FailTask marks a claimed task failed, optionally requeuing it. owner must
+// match the claiming worker.
+func (m *Manager) FailTask(fleetID, taskID, owner, errMsg string, requeue bool) error {
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return fmt.Errorf("fleet %q not found", fleetID)
 	}
-	if err := f.Board.Fail(taskID, errMsg, requeue); err != nil {
+	if err := f.Board.Fail(taskID, owner, errMsg, requeue); err != nil {
 		return err
 	}
 	m.saveFleets()

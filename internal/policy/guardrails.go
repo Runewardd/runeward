@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // Sentinel errors returned by [Guard].

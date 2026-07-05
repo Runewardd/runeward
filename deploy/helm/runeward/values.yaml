@@ -34,7 +34,8 @@ controller:
 webhook:
   enabled: false
   port: 8443
-  replicas: 1
+  # >1 is safe: replicas share one serving cert via a Secret (see cert-secret).
+  replicas: 2
   resources:
     requests:
       cpu: 50m
@@ -59,15 +60,38 @@ server:
       cpu: "1"
       memory: 512Mi
 
-# Profiles mounted at /etc/runeward/profiles (filename -> TOML), or reuse an
-# existing ConfigMap. See docs for the profile schema.
+# Profiles mounted at /etc/runeward/profiles (filename -> TOML). The chart
+# stores them in a Secret by default (profiles can carry secret material).
+# Reuse an existing Secret via existingSecret, or an existing ConfigMap via
+# existingConfigMap (backward compatible). See docs for the profile schema.
 profiles:
   create: false
+  existingSecret: ""
   existingConfigMap: ""
   data: {}
 
 egress:
   image: runeward-egress:latest
+
+# Opt-in default-deny NetworkPolicy for the control-plane namespace. Off by
+# default: it only takes effect under a CNI that enforces NetworkPolicy, and a
+# default-deny stance can surprise single-tenant operators. When enabled it
+# denies all traffic, then allows intra-namespace ingress to the server/webhook
+# ports plus egress to DNS and the Kubernetes API. Per-sandbox pods get their
+# own in-cluster deny policy from the server via RUNEWARD_K8S_NETWORK_POLICY.
+networkPolicy:
+  enabled: false
+
+# Pod Security Admission level applied to the runeward-managed namespace that
+# hosts sandbox pods. The strict-egress sidecar needs NET_ADMIN, which the
+# "baseline"/"restricted" levels forbid at enforcement time, so enforce defaults
+# to "privileged" while warn/audit stay at "baseline" to surface violations
+# without breaking egress. Set enforce to baseline/restricted only if you don't
+# use strict egress. Maps to RUNEWARD_K8S_PSA_ENFORCE on the server/controller.
+podSecurityStandard:
+  enforce: privileged
+  warn: baseline
+  audit: baseline
 
 stateDir: /var/lib/runeward
 

@@ -49,11 +49,28 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 
-{{/* Name of the profiles ConfigMap (existing or chart-created). */}}
-{{- define "runeward.profilesConfigMap" -}}
-{{- if .Values.profiles.existingConfigMap -}}
-{{- .Values.profiles.existingConfigMap -}}
+{{/* Name of the profiles Secret (existing or chart-created). */}}
+{{- define "runeward.profilesSecretName" -}}
+{{- if .Values.profiles.existingSecret -}}
+{{- .Values.profiles.existingSecret -}}
 {{- else -}}
 {{- printf "%s-profiles" (include "runeward.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Volume source for the profiles mount. Profiles can contain secret material, so
+the chart stores them in a Secret by default. An existing ConfigMap is still
+honored for backward compatibility.
+*/}}
+{{- define "runeward.profilesVolume" -}}
+{{- if .Values.profiles.existingConfigMap -}}
+configMap:
+  name: {{ .Values.profiles.existingConfigMap }}
+  optional: true
+{{- else -}}
+secret:
+  secretName: {{ include "runeward.profilesSecretName" . }}
+  optional: true
 {{- end -}}
 {{- end -}}

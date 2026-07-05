@@ -6,10 +6,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/adefemi171/runeward/internal/controller"
-	"github.com/adefemi171/runeward/internal/controlplane"
-	"github.com/adefemi171/runeward/internal/obs"
-	"github.com/adefemi171/runeward/internal/telemetry"
+	"github.com/Runewardd/runeward/internal/controller"
+	"github.com/Runewardd/runeward/internal/controlplane"
+	"github.com/Runewardd/runeward/internal/obs"
+	"github.com/Runewardd/runeward/internal/telemetry"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
 )

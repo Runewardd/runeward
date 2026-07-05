@@ -2,11 +2,11 @@
 
 [`server.json`](./server.json) is the [Model Context Protocol registry][mcp-reg]
 manifest for runeward. It declares the server's reverse-DNS name
-(`io.github.adefemi171/runeward`), its source repository, and two ways to run
+(`io.github.Runewardd/runeward`), its source repository, and two ways to run
 it:
 
 - a **stdio package** — `runeward mcp` shipped as the OCI image
-  `ghcr.io/adefemi171/runeward`, and
+  `ghcr.io/runewardd/runeward`, and
 - an optional **streamable HTTP remote** at `http://localhost:8080/mcp` (served
   by `runeward serve`).
 
@@ -26,14 +26,14 @@ CLI. From this directory:
 # 1. Install the publisher CLI (see the docs for your platform).
 #    e.g. via Go: go install github.com/modelcontextprotocol/registry/cmd/mcp-publisher@latest
 
-# 2. Authenticate. GitHub auth proves you own the io.github.adefemi171/* namespace.
+# 2. Authenticate. GitHub auth proves you own the io.github.Runewardd/* namespace.
 mcp-publisher login github
 
 # 3. Validate the manifest against the registry schema, then publish.
 mcp-publisher publish ./server.json
 ```
 
-The `name` namespace (`io.github.adefemi171/...`) must match the GitHub account
+The `name` namespace (`io.github.Runewardd/...`) must match the GitHub account
 you authenticate as — that ownership check is how the registry prevents
 namespace squatting. Bump `version` on every release and keep it in sync with
 the OCI image tag under `packages[].version`.

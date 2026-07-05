@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/adefemi171/runeward/internal/controlplane"
-	"github.com/adefemi171/runeward/internal/fleet"
+	"github.com/Runewardd/runeward/internal/controlplane"
+	"github.com/Runewardd/runeward/internal/fleet"
 )
 
 func (s *Server) handleCreateFleet(w http.ResponseWriter, r *http.Request) {
@@ -103,13 +103,14 @@ func (s *Server) handleClaimTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Owner  string `json:"owner"`
 		Result string `json:"result"`
 	}
 	if err := decodeJSON(r, &req); err != nil && err.Error() != "EOF" {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.mgr.CompleteTask(r.PathValue("id"), r.PathValue("taskID"), req.Result); err != nil {
+	if err := s.mgr.CompleteTask(r.PathValue("id"), r.PathValue("taskID"), req.Owner, req.Result); err != nil {
 		writeTaskErr(w, err)
 		return
 	}
@@ -134,6 +135,7 @@ func (s *Server) handleHeartbeatTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFailTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Owner   string `json:"owner"`
 		Error   string `json:"error"`
 		Requeue bool   `json:"requeue"`
 	}
@@ -141,7 +143,7 @@ func (s *Server) handleFailTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.mgr.FailTask(r.PathValue("id"), r.PathValue("taskID"), req.Error, req.Requeue); err != nil {
+	if err := s.mgr.FailTask(r.PathValue("id"), r.PathValue("taskID"), req.Owner, req.Error, req.Requeue); err != nil {
 		writeTaskErr(w, err)
 		return
 	}

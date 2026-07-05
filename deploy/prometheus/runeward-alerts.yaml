@@ -1,0 +1,72 @@
+# Prometheus alerting rules for runeward.
+#
+# Load this file by referencing it from prometheus.yml:
+#
+#   rule_files:
+#     - /etc/prometheus/rules/runeward-alerts.yaml
+#
+# All expressions are built only from metrics runeward exposes at /metrics:
+#   runeward_actions_total{tool,verdict}
+#   runeward_actions_duration_seconds_bucket{tool,le}
+#   runeward_sandboxes_created_total
+#   runeward_build_info{version}
+# plus the standard `up` metric emitted by Prometheus for each scrape target.
+groups:
+  - name: runeward
+    rules:
+      - alert: RunewardDenySpike
+        expr: |
+          sum(rate(runeward_actions_total{verdict="deny"}[5m]))
+            / clamp_min(sum(rate(runeward_actions_total[5m])), 0.001)
+            > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "runeward is denying more than half of all actions"
+          description: >-
+            Deny ratio is {{ $value | humanizePercentage }} over the last 5m
+            (threshold 50%), sustained for 10m. A misbehaving agent or an
+            overly strict profile may be blocking legitimate work.
+
+      - alert: RunewardHighActionLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, tool) (rate(runeward_actions_duration_seconds_bucket[5m]))
+          ) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "runeward action p95 latency is high for tool {{ $labels.tool }}"
+          description: >-
+            p95 duration for tool {{ $labels.tool }} is {{ $value | humanizeDuration }}
+            (threshold 30s), sustained for 10m. Governed actions are running slow;
+            check the backend/sandbox and any downstream dependencies.
+
+      - alert: RunewardNoActivity
+        expr: |
+          sum(rate(runeward_actions_total[5m])) == 0
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "runeward has processed no actions for 30m"
+          description: >-
+            No governed actions have been recorded for 30m. This is expected
+            when idle, but may indicate that agents can no longer reach the
+            control plane. Correlate with request/log volume before acting.
+
+      - alert: RunewardTargetDown
+        expr: |
+          up{job=~".*runeward.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "runeward target {{ $labels.instance }} is down"
+          description: >-
+            Prometheus cannot scrape runeward target {{ $labels.instance }}
+            (job {{ $labels.job }}) for 5m. The control plane may be down or
+            unreachable; agents governed by it may be failing closed.

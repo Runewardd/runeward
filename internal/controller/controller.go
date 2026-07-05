@@ -12,7 +12,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/controlplane"
+	"github.com/Runewardd/runeward/internal/controlplane"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"

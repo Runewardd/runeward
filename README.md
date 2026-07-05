@@ -8,9 +8,9 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-  <a href="https://github.com/adefemi171/runeward/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adefemi171/runeward/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/Runewardd/runeward/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Runewardd/runeward/actions/workflows/ci.yml/badge.svg"></a>
   <a href="go.mod"><img alt="Go" src="https://img.shields.io/badge/go-1.25%2B-00ADD8.svg"></a>
-  <a href="https://github.com/adefemi171/runeward/releases"><img alt="Release" src="https://img.shields.io/github/v/release/adefemi171/runeward?sort=semver"></a>
+  <a href="https://github.com/Runewardd/runeward/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Runewardd/runeward?sort=semver"></a>
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@ The core idea: **don't rely on training or prompting the model to behave — enf
 it, in a deny-by-default contract the agent can't talk its way past.** So the agent never has to
 *know* it's about to break a rule; the enforcement layer knows and refuses. That also fixes the
 scariest failure mode — a control the operator *forgot* to ask for — because anything the profile
-didn't grant is already denied. See [Why governance, not training](https://adefemi171.github.io/runeward/why-governance/).
+didn't grant is already denied. See [Why governance, not training](https://runewardd.github.io/runeward/why-governance/).
 
 - **Profiles are a security contract.** `[host]`, `[network]`, `[[env]]`, `[[file]]`, `[[policy]]`,
   and `[limits]` declare exactly the access a task needs. Everything you didn't grant is denied by
@@ -42,11 +42,15 @@ didn't grant is already denied. See [Why governance, not training](https://adefe
   every call and its verdict, and exports as an independently verifiable transcript.
 - **Human-in-the-loop where it matters.** Per-action `allow` / `deny` / `require-approval` verdicts
   pause risky operations for an operator instead of guessing.
-- **Cost and loop guardrails.** Hard caps on wall-clock, exec count, and egress requests, plus
-  retry-loop detection, stop runaway agents.
+- **Cost and loop guardrails.** Hard caps on wall-clock, exec count, egress requests, and
+  token/spend budgets, plus retry-loop detection, stop runaway agents.
+- **Authenticated, multi-user control plane.** `serve` binds loopback by default and requires a
+  bearer token before it will listen on a public interface; optional multi-principal RBAC scopes each
+  token to specific profiles and approval rights, and the dashboard has an interactive login with
+  per-user sandbox views.
 - **Pluggable backends.** A Docker/Podman backend for zero-setup laptop use, or a Kubernetes backend
-  (with strict L3 egress, CRDs, and an admission webhook) for production and fleets. Everything above
-  the backend is identical.
+  (with strict L3 egress, CRDs, an admission webhook, and PSA + NetworkPolicy multi-tenancy) for
+  production and fleets. Everything above the backend is identical.
 - **Isolated workspaces from your real code.** `copy_from` seeds a sandbox with a copy of a local
   folder (never a mount), and `runeward export` pulls results back out, so the agent works on your
   project without ever touching the original.
@@ -59,8 +63,9 @@ didn't grant is already denied. See [Why governance, not training](https://adefe
 | Deny-by-default network egress     | sometimes             | yes; SNI allowlist, strict L3 on k8s         |
 | Per-action policy + approvals      | rare                  | yes; builtin / CEL / OPA-Rego + HITL gates   |
 | Tamper-evident, signed audit trail | rare                  | yes; hash-chained + ed25519, verifiable      |
-| Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, loop caps     |
+| Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, token/spend   |
 | Multi-agent fleets                 | rare                  | yes; N cells + atomic task board             |
+| Control-plane auth + multi-user    | rare                  | yes; bearer token + RBAC + per-user views    |
 | Agent-native surface               | partial               | REST + MCP + CLI + dashboard + SKILL/adapters|
 
 ## How runeward fits your agent stack
@@ -76,16 +81,16 @@ There are two ways to put an agent behind runeward:
 
 ## Quick start
 
-Install the latest release (macOS/Linux, amd64/arm64):
+Install the latest release (macOS/Linux/Windows CLI, amd64/arm64):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/adefemi171/runeward/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
 ```
 
 Or with Homebrew (once the tap is published):
 
 ```bash
-brew install adefemi171/tap/runeward
+brew install Runewardd/tap/runeward
 ```
 
 <!-- TODO: add a short demo at docs/assets/demo.gif and embed it here -->
@@ -298,8 +303,11 @@ share the same schema (TOML is shown throughout these docs). `runeward <name>` r
 sanitized templates in [examples/](examples/). See [examples/ns-auto.toml](examples/ns-auto.toml) for
 a fully worked deny-by-default profile.
 
-Secrets in `[[env]]` are resolved fresh at launch (`value`, `file`, or `op` for 1Password), injected
-into the session, redacted from the ledger, and never written under `$HOME`.
+Secrets in `[[env]]` are resolved fresh at launch — inline `value`, `file`, or a reference URI:
+`op://` (1Password), `env://`, `vault://` (HashiCorp Vault), `aws://` (AWS Secrets Manager), or
+`gcp://` (GCP Secret Manager). They are injected into the session, redacted from the ledger, and
+never written under `$HOME`. Resolution is fail-closed: a reference that can't be resolved aborts
+sandbox creation rather than starting without the secret.
 
 ## CLI
 
@@ -310,7 +318,12 @@ runeward fleet <up|add|run|build|exec|status|export|down>   Drive a prompt-drive
 runeward export <id> <dir>           Copy a sandbox's /workspace back out to a host directory
 runeward print <profile>             Show the resolved, secret-redacted profile + policy
 runeward list                        List reachable profiles
-runeward serve                       Governed control plane: REST API + web dashboard (:8080)
+runeward validate <profile>          Statically lint a profile (missing images, unresolved secrets, dead rules)
+runeward policy {test,scaffold}      Simulate a profile's policy, or print a ready-made policy template
+runeward profile {sign,verify}       Produce/verify a detached ed25519 signature over a profile
+runeward runtime {check,guide,install}  Inspect, explain, or install hardened runtimes (gVisor/Kata)
+runeward replay <cast>               Replay a recorded terminal session (asciinema v2)
+runeward serve [--token ...]         Governed control plane: REST API + web dashboard (127.0.0.1:8080)
 runeward mcp [--http]                Model Context Protocol server (stdio, or streamable HTTP)
 runeward up [--crds-only]            Install CRDs + namespace + RBAC + controller into k8s
 runeward controller                  Reconcile Sandbox/Fleet CRDs onto the k8s backend
@@ -322,18 +335,23 @@ runeward bundle {keygen,push,pull}   Build/publish/verify signed OCI policy bund
 ## Control plane (REST)
 
 `runeward serve` routes every tool call through policy, approval gate, guardrails, backend exec, and
-the audit ledger, whether it arrives over REST, the dashboard, or MCP.
+the audit ledger, whether it arrives over REST, the dashboard, or MCP. It binds `127.0.0.1` by
+default; set a bearer token with `--token` / `$RUNEWARD_API_TOKEN` (or per-principal RBAC via
+`$RUNEWARD_AUTHZ_FILE`) before binding a public interface, and pass it as `Authorization: Bearer
+<token>` on every request except `/healthz` and the dashboard shell.
 
 ```
 GET      /healthz
-GET      /metrics                           # Prometheus metrics
+GET      /metrics                           # Prometheus metrics (token-gated when auth is on)
+GET      /v1/whoami                         # the caller's identity + capabilities
 GET      /v1/profiles
 POST     /v1/sandboxes                      {"profile":"dev","copy_from":"~/proj"}   # copy_from optional
-GET      /v1/sandboxes   ·  GET|DELETE /v1/sandboxes/{id}
+GET      /v1/sandboxes   ·  GET|DELETE /v1/sandboxes/{id}   # scoped to the caller under RBAC
 POST     /v1/sandboxes/{id}/shell/exec      {"command":["ls","-la"]}
 POST     /v1/sandboxes/{id}/code/python     {"code":"print(2+2)"}
 POST     /v1/sandboxes/{id}/code/node       {"code":"..."}
 POST     /v1/sandboxes/{id}/file/{read,write,list,search}
+POST     /v1/sandboxes/{id}/usage           {"tokens":1200,"cost_usd":0.03}   # accrues toward the budget
 POST     /v1/sandboxes/{id}/snapshot        {"name":"before-refactor"}
 GET      /v1/snapshots   ·  POST /v1/snapshots/{id}/restore
 POST     /v1/fleets                         {"profile":"fleet-demo"}   # N cells + shared task board
@@ -342,22 +360,24 @@ GET|POST /v1/fleets/{id}/tasks             # list / add tasks
 POST     /v1/fleets/{id}/claim             {"owner":"w1"}             # atomic claim
 POST     /v1/fleets/{id}/tasks/{tid}/{complete,fail}
 GET      /v1/sandboxes/{id}/audit          # this sandbox's ledger events
-GET      /v1/sandboxes/{id}/terminal       # interactive PTY over WebSocket
+GET      /v1/sandboxes/{id}/terminal       # interactive PTY over WebSocket (token via ?token=)
 GET      /v1/audit/verify                  # verify the hash chain + signatures
-GET      /v1/approvals   ·  POST /v1/approvals/{id}/{approve,deny}
+GET      /v1/approvals   ·  POST /v1/approvals/{id}/{approve,deny}   # approver identity recorded
 POST     /mcp                              # Model Context Protocol (streamable HTTP)
 ```
 
 A denied tool call returns `403`; a require-approval call blocks until an operator resolves it via
-the approvals inbox (returning `202` with an `approval_id` if it waits too long). Pin the ledger and
-signing-key location with `$RUNEWARD_STATE_DIR`.
+the approvals inbox (returning `202` with an `approval_id` if it waits too long). Once a sandbox's
+reported usage exceeds its profile's `limits.max_tokens`/`max_cost_usd`, further calls are denied
+fail-closed. Pin the ledger and signing-key location with `$RUNEWARD_STATE_DIR`.
 
 ## Observability
 
 `serve` and `controller` are built to run as services:
 
 - **Metrics.** Prometheus exposition at `GET /metrics` — `runeward_actions_total{tool,verdict}`,
-  `runeward_actions_duration_seconds{tool}`, `runeward_sandboxes_created_total`, and
+  `runeward_actions_duration_seconds{tool}`, `runeward_sandboxes_created_total`,
+  `runeward_usage_tokens_total{profile}`, `runeward_usage_cost_usd_total{profile}`, and
   `runeward_build_info{version}`, plus the standard Go/process collectors.
 - **Structured logs.** Both services log via `log/slog`. Set `RUNEWARD_LOG_FORMAT=json` for
   aggregators and `RUNEWARD_LOG_LEVEL=debug|info|warn|error` to tune verbosity.
@@ -365,10 +385,10 @@ signing-key location with `$RUNEWARD_STATE_DIR`.
   `RUNEWARD_TELEMETRY=1` and `RUNEWARD_TELEMETRY_ENDPOINT` (and never when `DO_NOT_TRACK` is set).
   Events carry only version/os/arch — no hostnames, paths, IDs, or profile contents.
 
-See [docs/observability](https://adefemi171.github.io/runeward/observability/) for details.
+See [docs/observability](https://runewardd.github.io/runeward/observability/) for details.
 
 Releases are signed with keyless [cosign](https://docs.sigstore.dev/) and ship SBOMs; see
-[Verifying release artifacts](https://adefemi171.github.io/runeward/install/#verifying-release-artifacts).
+[Verifying release artifacts](https://runewardd.github.io/runeward/install/#verifying-release-artifacts).
 
 ## MCP
 
@@ -385,6 +405,52 @@ by `runeward serve`).
   `runeward_kill_fleet`.
 
 A policy deny surfaces as a tool error; a require-approval verdict tells the agent to pause for a human.
+
+## Adapters
+
+Adapters make runeward's governed tools a first-class citizen in the agent frameworks you already
+use: import a small client (or a ready-made set of framework "tools") and hand them to your agent.
+The agent calls `runeward_shell`, `runeward_python`, `runeward_read_file`, … like any other tool, but
+every call flows through the same governed path (policy → approval → guardrails → sandbox → audit).
+Each returns one of three verdicts — `allow`, `deny` ("don't retry"), or `require-approval` ("pause
+for a human") — surfaced as typed errors on the raw client and as model-readable strings on the
+framework tools. See [docs/adapters](https://runewardd.github.io/runeward/adapters/) and
+[`adapters/`](adapters/).
+
+**Python (`runeward`)** — pure-stdlib client; framework tools are lazy-loaded optional extras for
+LangChain, CrewAI, LlamaIndex, the OpenAI Agents SDK, and Strands:
+
+```bash
+pip install runeward                    # core client only (no third-party deps)
+pip install "runeward[strands]"         # a framework extra (also: langchain, crewai, llamaindex, openai-agents)
+```
+
+```python
+from runeward import RunewardClient
+from runeward.strands_tools import make_runeward_tools   # or langchain_/crewai_/llamaindex_/openai_agents_tools
+
+tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
+# hand `tools` to your Strands / LangChain / CrewAI / LlamaIndex / OpenAI-Agents agent
+```
+
+**TypeScript (`@runeward/sdk`)** — `fetch`-based client with no runtime deps; tools use optional peers
+for the Vercel AI SDK, LangChain.js, and Strands:
+
+```bash
+npm install @runeward/sdk ai zod                    # Vercel AI SDK tools
+npm install @runeward/sdk @langchain/core zod       # LangChain.js tools
+npm install @runeward/sdk @strands-agents/sdk zod   # Strands Agents SDK tools
+```
+
+```ts
+import { RunewardClient } from "@runeward/sdk";
+import { makeRunewardTools } from "@runeward/sdk/strands-tools";   // or "/ai-tools", "/langchain-tools"
+
+const tools = await makeRunewardTools(new RunewardClient());
+```
+
+Already on an **MCP client** (Claude Desktop, Cursor, VS Code)? You don't need an adapter — point it
+at `runeward mcp` (see [MCP](#mcp) above).
 
 ## Kubernetes
 
@@ -430,6 +496,13 @@ The controller provisions the backing Pods/PVCs, populates `.status` (`sandboxId
 task stats), and tears everything down via a finalizer on delete. On k8s, egress can be enforced at
 L3 (`enforce = "strict"`: an iptables init container plus a transparent SNI proxy) so it cannot be
 bypassed by an uncooperative process.
+
+For multi-tenancy, the managed namespace carries Pod Security Admission labels
+(`RUNEWARD_K8S_PSA_ENFORCE`, or the chart's `podSecurityStandard`), sandbox containers always drop
+`ALL` capabilities and disable privilege escalation, and an optional default-deny NetworkPolicy
+(DNS-only egress) isolates sandbox pods (`RUNEWARD_K8S_NETWORK_POLICY`, or the chart's
+`networkPolicy.enabled`). Pair this with a hardened `runtime_class` (gVisor/Kata) — install one with
+`runeward runtime install` — for VM-grade isolation of untrusted workloads.
 
 For org-shared cells that shouldn't live in a single team's namespace, use cluster-scoped
 `ClusterSandbox` / `ClusterFleet` (same spec, no `namespace`); the same controller reconciles them

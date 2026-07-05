@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/adefemi171/runeward/internal/backend"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // ToolResult is the governed outcome of a single tool invocation.
@@ -68,7 +69,8 @@ func (m *Manager) FileRead(ctx context.Context, id, path string) (*ToolResult, e
 		return nil, err
 	}
 	return m.govern(ctx, sess, "file.read", path, []string{path}, func(ctx context.Context) (*backend.ExecResult, error) {
-		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: []string{"cat", path}, Workdir: sess.Workdir, Env: sess.Env})
+		// "--" stops a path that begins with "-" from being parsed as a flag.
+		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: []string{"cat", "--", path}, Workdir: sess.Workdir, Env: sess.Env})
 	})
 }
 
@@ -96,7 +98,7 @@ func (m *Manager) FileList(ctx context.Context, id, path string) (*ToolResult, e
 		path = "."
 	}
 	return m.govern(ctx, sess, "file.read", path, []string{path}, func(ctx context.Context) (*backend.ExecResult, error) {
-		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: []string{"ls", "-la", path}, Workdir: sess.Workdir, Env: sess.Env})
+		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: []string{"ls", "-la", "--", path}, Workdir: sess.Workdir, Env: sess.Env})
 	})
 }
 
@@ -110,7 +112,9 @@ func (m *Manager) FileSearch(ctx context.Context, id, query, path string) (*Tool
 		path = "."
 	}
 	return m.govern(ctx, sess, "file.read", query, []string{query, path}, func(ctx context.Context) (*backend.ExecResult, error) {
-		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: []string{"grep", "-rn", query, path}, Workdir: sess.Workdir, Env: sess.Env})
+		// "-e query" treats a leading-"-" query as a pattern, not a flag; "--"
+		// stops the path being parsed as a flag.
+		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: []string{"grep", "-rn", "-e", query, "--", path}, Workdir: sess.Workdir, Env: sess.Env})
 	})
 }
 
@@ -144,7 +148,15 @@ func browserScript(url, mode string, env map[string]string) string {
 		proxyArg = "--proxy-server=" + shQuote(proxy) + " "
 	}
 	find := `CHROME=$(command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null || command -v google-chrome 2>/dev/null || command -v google-chrome-stable 2>/dev/null || command -v headless-shell 2>/dev/null || echo chromium)`
-	flags := `--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars`
+	// Chromium's own sandbox needs user namespaces, which are usually
+	// unavailable in a container, so --no-sandbox is the default. Under a
+	// runtime that provides isolation (gVisor/Kata) or userns, operators can
+	// keep Chromium's sandbox by setting RUNEWARD_BROWSER_NO_SANDBOX=0.
+	sandbox := "--no-sandbox "
+	if os.Getenv("RUNEWARD_BROWSER_NO_SANDBOX") == "0" {
+		sandbox = ""
+	}
+	flags := `--headless=new ` + sandbox + `--disable-gpu --disable-dev-shm-usage --hide-scrollbars`
 	if mode == "screenshot" {
 		return find + `; "$CHROME" ` + flags + ` ` + proxyArg + `--screenshot=/tmp/rw-shot.png ` + shQuote(url) + ` >/dev/null 2>&1; base64 /tmp/rw-shot.png`
 	}

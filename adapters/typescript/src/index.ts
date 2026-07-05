@@ -4,7 +4,9 @@
  *
  * The core {@link RunewardClient} has no runtime dependencies (uses global
  * `fetch`). The AI SDK tool wrappers in `./ai-tools` require the optional peer
- * dependencies `ai` and `zod`.
+ * dependencies `ai` and `zod`; the LangChain.js wrappers in `./langchain-tools`
+ * require `@langchain/core` and `zod`; the Strands wrappers in `./strands-tools`
+ * require `@strands-agents/sdk` and `zod`.
  */
 
 export {

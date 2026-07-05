@@ -24,6 +24,11 @@ var reserved = map[string]bool{
 	"controller": true,
 	"webhook":    true,
 	"up":         true,
+	"validate":   true,
+	"policy":     true,
+	"profile":    true,
+	"replay":     true,
+	"runtime":    true,
 	"help":       true,
 	"completion": true,
 	"-h":         true,
@@ -90,6 +95,11 @@ func newRootCmd() *cobra.Command {
 		newUpCmd(),
 		newAuditCmd(),
 		newBundleCmd(),
+		newValidateCmd(&configDir),
+		newPolicyCmd(&configDir),
+		newProfileCmd(&configDir),
+		newReplayCmd(&configDir),
+		newRuntimeCmd(&configDir),
 		newVersionCmd(),
 	)
 	return root

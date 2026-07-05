@@ -766,6 +766,70 @@ body {
 }
 .requeue-box { accent-color: var(--accent); cursor: pointer; }
 
+/* ---------- Identity chip ---------- */
+.identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.identity-glyph { color: var(--accent); }
+.identity-name { color: var(--text); font-weight: 600; }
+.identity-role {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sb-owner { color: var(--accent); opacity: 0.85; }
+
+/* ---------- Login overlay ---------- */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 8, 13, 0.82);
+  backdrop-filter: blur(4px);
+}
+.login-card {
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.login-logo { width: 40px; height: 40px; object-fit: contain; align-self: center; }
+.login-title { margin: 0; font-size: 20px; font-weight: 650; }
+.login-sub { margin: 0; color: var(--text-dim); font-size: 13px; }
+.login-card .field { text-align: left; }
+.login-submit { width: 100%; margin-top: 4px; }
+.login-hint { margin: 0; color: var(--text-faint); font-size: 11px; }
+.login-error {
+  color: var(--red);
+  font-size: 12.5px;
+  background: rgba(242, 109, 109, 0.1);
+  border: 1px solid rgba(242, 109, 109, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 780px) {
   .sidebar { width: 210px; }

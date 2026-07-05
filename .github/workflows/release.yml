@@ -38,7 +38,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # PAT with write access to adefemi171/homebrew-tap. If the secret is
+          # PAT with write access to Runewardd/homebrew-tap. If the secret is
           # unset this is empty and the Homebrew upload is skipped (see the
           # skip_upload guard in .goreleaser.yaml), so releases still succeed.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -52,6 +52,9 @@ jobs:
       DOCKER_BUILD_SUMMARY: "false"
     steps:
       - uses: actions/checkout@v7
+      # GHCR only accepts lowercase repository paths; the org name is mixed-case.
+      - name: Compute lowercase image name
+        run: echo "IMAGE=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: sigstore/cosign-installer@v4
@@ -72,8 +75,8 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ github.repository }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
           cache-from: type=gha,scope=runeward
           cache-to: type=gha,mode=max,scope=runeward
 
@@ -86,24 +89,56 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}-egress:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ github.repository }}-egress:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-egress:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-egress:latest
           cache-from: type=gha,scope=runeward-egress
           cache-to: type=gha,mode=max,scope=runeward-egress
 
+      - name: Build & push runeward-agent image
+        id: agent
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-agent:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-agent:latest
+          cache-from: type=gha,scope=runeward-agent
+          cache-to: type=gha,mode=max,scope=runeward-agent
+
+      - name: Build & push runeward-sandbox image
+        id: sandbox
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.sandbox
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-sandbox:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-sandbox:latest
+          cache-from: type=gha,scope=runeward-sandbox
+          cache-to: type=gha,mode=max,scope=runeward-sandbox
+
       # Keyless (Fulcio/Rekor) signature over each image by digest. Signing the
       # digest covers every tag that points at it. Verify with:
-      #   cosign verify ghcr.io/adefemi171/runeward:<tag> \
-      #     --certificate-identity-regexp 'https://github.com/adefemi171/runeward' \
+      #   cosign verify ghcr.io/runewardd/runeward:<tag> \
+      #     --certificate-identity-regexp 'https://github.com/Runewardd/runeward' \
       #     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
       - name: Sign images with cosign (keyless)
         env:
           COSIGN_YES: "true"
           RUNEWARD_DIGEST: ${{ steps.runeward.outputs.digest }}
           EGRESS_DIGEST: ${{ steps.egress.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+          SANDBOX_DIGEST: ${{ steps.sandbox.outputs.digest }}
         run: |
-          cosign sign "${REGISTRY}/${{ github.repository }}@${RUNEWARD_DIGEST}"
-          cosign sign "${REGISTRY}/${{ github.repository }}-egress@${EGRESS_DIGEST}"
+          cosign sign "${REGISTRY}/${IMAGE}@${RUNEWARD_DIGEST}"
+          cosign sign "${REGISTRY}/${IMAGE}-egress@${EGRESS_DIGEST}"
+          cosign sign "${REGISTRY}/${IMAGE}-agent@${AGENT_DIGEST}"
+          cosign sign "${REGISTRY}/${IMAGE}-sandbox@${SANDBOX_DIGEST}"
 
   # Package the Helm chart and attach it to the release GoReleaser created.
   chart:

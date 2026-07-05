@@ -10,7 +10,7 @@ responsible disclosure.
 
 Report privately via one of:
 
-- GitHub's **[Report a vulnerability](https://github.com/adefemi171/runeward/security/advisories/new)**
+- GitHub's **[Report a vulnerability](https://github.com/Runewardd/runeward/security/advisories/new)**
   (Security Advisories) — preferred.
 - Email **adefemi171@gmail.com** with the subject line `runeward security`.
 

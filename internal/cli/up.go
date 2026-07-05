@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/adefemi171/runeward/internal/manifests"
+	"github.com/Runewardd/runeward/internal/manifests"
 	"github.com/spf13/cobra"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"

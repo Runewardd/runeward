@@ -7,6 +7,25 @@ import (
 	"testing"
 )
 
+func TestCompleteFailRejectWrongOwner(t *testing.T) {
+	b := Seed([]string{"a", "b"})
+	ca, _ := b.Claim("w1")
+	if err := b.Complete(ca.ID, "w2", "done"); !errors.Is(err, ErrIllegalTransition) {
+		t.Fatalf("Complete by wrong owner err = %v, want ErrIllegalTransition", err)
+	}
+	if err := b.Complete(ca.ID, "w1", "done"); err != nil {
+		t.Fatalf("Complete by correct owner: %v", err)
+	}
+
+	cb, _ := b.Claim("w1")
+	if err := b.Fail(cb.ID, "w2", "boom", false); !errors.Is(err, ErrIllegalTransition) {
+		t.Fatalf("Fail by wrong owner err = %v, want ErrIllegalTransition", err)
+	}
+	if err := b.Fail(cb.ID, "w1", "boom", false); err != nil {
+		t.Fatalf("Fail by correct owner: %v", err)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	b := NewBoard()
 	added := b.Add("build")
@@ -32,7 +51,7 @@ func TestLifecycle(t *testing.T) {
 		t.Fatalf("stats after claim = %+v", got)
 	}
 
-	if err := b.Complete(claimed.ID, "ok"); err != nil {
+	if err := b.Complete(claimed.ID, "w1", "ok"); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	done, _ := b.Get(claimed.ID)
@@ -79,7 +98,7 @@ func TestFailRequeue(t *testing.T) {
 		t.Fatalf("first claim attempts = %d, want 1", c1.Attempts)
 	}
 
-	if err := b.Fail(c1.ID, "boom", true); err != nil {
+	if err := b.Fail(c1.ID, "w1", "boom", true); err != nil {
 		t.Fatalf("Fail requeue: %v", err)
 	}
 	requeued, _ := b.Get(c1.ID)
@@ -109,7 +128,7 @@ func TestFailNoRequeue(t *testing.T) {
 	b := Seed([]string{"x"})
 	c, _ := b.Claim("w1")
 
-	if err := b.Fail(c.ID, "boom", false); err != nil {
+	if err := b.Fail(c.ID, "w1", "boom", false); err != nil {
 		t.Fatalf("Fail: %v", err)
 	}
 	failed, _ := b.Get(c.ID)
@@ -128,21 +147,21 @@ func TestIllegalTransition(t *testing.T) {
 	b := Seed([]string{"x"})
 	pending := b.List()[0]
 
-	err := b.Complete(pending.ID, "res")
+	err := b.Complete(pending.ID, "", "res")
 	if !errors.Is(err, ErrIllegalTransition) {
 		t.Fatalf("Complete on pending err = %v, want ErrIllegalTransition", err)
 	}
 
-	err = b.Fail(pending.ID, "e", false)
+	err = b.Fail(pending.ID, "", "e", false)
 	if !errors.Is(err, ErrIllegalTransition) {
 		t.Fatalf("Fail on pending err = %v, want ErrIllegalTransition", err)
 	}
 
 	c, _ := b.Claim("w")
-	if err := b.Complete(c.ID, "ok"); err != nil {
+	if err := b.Complete(c.ID, "w", "ok"); err != nil {
 		t.Fatalf("first Complete: %v", err)
 	}
-	if err := b.Complete(c.ID, "again"); !errors.Is(err, ErrIllegalTransition) {
+	if err := b.Complete(c.ID, "w", "again"); !errors.Is(err, ErrIllegalTransition) {
 		t.Fatalf("second Complete err = %v, want ErrIllegalTransition", err)
 	}
 }
@@ -152,10 +171,10 @@ func TestNotFound(t *testing.T) {
 	if _, ok := b.Get("nope"); ok {
 		t.Fatal("Get on missing id returned ok=true")
 	}
-	if err := b.Complete("nope", "x"); !errors.Is(err, ErrNotFound) {
+	if err := b.Complete("nope", "", "x"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Complete missing err = %v, want ErrNotFound", err)
 	}
-	if err := b.Fail("nope", "x", false); !errors.Is(err, ErrNotFound) {
+	if err := b.Fail("nope", "", "x", false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Fail missing err = %v, want ErrNotFound", err)
 	}
 }
@@ -214,7 +233,7 @@ func TestConcurrentClaim(t *testing.T) {
 				completed++
 				claimMu.Unlock()
 
-				if err := b.Complete(task.ID, "done"); err != nil {
+				if err := b.Complete(task.ID, task.Owner, "done"); err != nil {
 					t.Errorf("Complete(%q): %v", task.ID, err)
 					return
 				}
@@ -275,13 +294,13 @@ func TestConcurrentClaimWithRequeue(t *testing.T) {
 				mu.Unlock()
 
 				if firstTime {
-					if err := b.Fail(task.ID, "transient", true); err != nil {
+					if err := b.Fail(task.ID, task.Owner, "transient", true); err != nil {
 						t.Errorf("Fail(%q): %v", task.ID, err)
 						return
 					}
 					continue
 				}
-				if err := b.Complete(task.ID, "done"); err != nil {
+				if err := b.Complete(task.ID, task.Owner, "done"); err != nil {
 					t.Errorf("Complete(%q): %v", task.ID, err)
 					return
 				}

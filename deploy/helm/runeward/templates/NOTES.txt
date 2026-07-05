@@ -26,9 +26,9 @@ Control plane (REST + dashboard + MCP) is available in-cluster:
   open http://localhost:{{ .Values.server.service.port }}/
 {{- end }}
 
-{{ if not (or .Values.profiles.create .Values.profiles.existingConfigMap) }}
-NOTE: no profiles are mounted. Provide them via a ConfigMap named
-"{{ include "runeward.profilesConfigMap" . }}", e.g.:
+{{ if not (or .Values.profiles.create .Values.profiles.existingSecret .Values.profiles.existingConfigMap) }}
+NOTE: no profiles are mounted. Provide them via a Secret named
+"{{ include "runeward.profilesSecretName" . }}", e.g.:
 
-  kubectl -n {{ .Release.Namespace }} create configmap {{ include "runeward.profilesConfigMap" . }} --from-file=examples/
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "runeward.profilesSecretName" . }} --from-file=examples/
 {{- end }}

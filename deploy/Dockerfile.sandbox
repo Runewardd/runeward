@@ -22,5 +22,11 @@ RUN apt-get update \
         nodejs \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/runeward-browser /usr/local/bin/runeward-browser
+
+RUN useradd -m -u 1000 sandbox \
+    && mkdir -p /workspace \
+    && chown -R sandbox:sandbox /workspace
+USER sandbox
+ENV HOME=/home/sandbox
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

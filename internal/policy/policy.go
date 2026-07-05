@@ -6,7 +6,9 @@
 package policy
 
 import (
-	"github.com/adefemi171/runeward/internal/profile"
+	"strings"
+
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // Action is a single tool invocation the engine is asked to authorize.
@@ -15,6 +17,9 @@ type Action struct {
 	Tool string
 	// Arg is the command line, path, or hostname the tool acts on.
 	Arg string
+	// Args is the raw argument vector when the tool is invoked with one (e.g.
+	// shell). It powers argv-aware rule matching; nil for tools without argv.
+	Args []string
 }
 
 // Evaluator renders a Decision for an Action, so the control plane can select
@@ -61,9 +66,73 @@ func (e *Engine) Evaluate(a Action) Decision {
 		if r.Match != "" && !matchGlob(r.Match, a.Arg) {
 			continue
 		}
+		if r.MatchArgv != "" && !argvMatches(r.MatchArgv, a) {
+			continue
+		}
 		return Decision{Verdict: r.Verdict, Reason: r.Reason, Rule: r}
 	}
 	return Decision{Verdict: e.def, Reason: "", Rule: nil}
+}
+
+// argvMatches reports whether the action's executable matches pattern. It
+// inspects argv[0], and when the command runs through a shell wrapper
+// (sh/bash -c "…") it also matches against the first token of the wrapped
+// script, so `sh -c 'rm -rf /'` is caught by a match_argv rule on "rm".
+func argvMatches(pattern string, a Action) bool {
+	for _, cand := range argvCandidates(a) {
+		if matchGlob(pattern, cand) {
+			return true
+		}
+	}
+	return false
+}
+
+// argvCandidates returns the executable names a match_argv rule should test:
+// argv[0], its basename, and (for shell wrappers) the first token of the
+// -c script plus its basename.
+func argvCandidates(a Action) []string {
+	argv := a.Args
+	if len(argv) == 0 {
+		argv = strings.Fields(a.Arg)
+	}
+	if len(argv) == 0 {
+		return nil
+	}
+	out := []string{argv[0], baseName(argv[0])}
+	if isShell(argv[0]) {
+		for i := 1; i < len(argv); i++ {
+			if argv[i] == "-c" && i+1 < len(argv) {
+				if tok := firstToken(argv[i+1]); tok != "" {
+					out = append(out, tok, baseName(tok))
+				}
+				break
+			}
+		}
+	}
+	return out
+}
+
+func isShell(p string) bool {
+	switch baseName(p) {
+	case "sh", "bash", "dash", "ash", "zsh":
+		return true
+	}
+	return false
+}
+
+func baseName(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+func firstToken(s string) string {
+	f := strings.Fields(s)
+	if len(f) == 0 {
+		return ""
+	}
+	return f[0]
 }
 
 func toolMatches(ruleTool, actionTool string) bool {

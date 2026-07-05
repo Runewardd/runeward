@@ -1,0 +1,42 @@
+# CodeQL static analysis for Go. Findings land in the Security > Code scanning
+# tab as SARIF uploaded by the analyze step.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly deep scan (Mondays 07:23 UTC).
+    - cron: "23 7 * * 1"
+
+# Least-privilege: read the repo, write code-scanning results.
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: analyze (go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          config-file: ./.github/codeql/codeql-config.yml
+
+      # Explicit build so CodeQL observes the full compilation of the module.
+      - name: Build
+        run: go build ./...
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"

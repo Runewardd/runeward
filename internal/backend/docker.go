@@ -12,11 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/egress"
+	"github.com/Runewardd/runeward/internal/profile"
 	"github.com/creack/pty"
 )
 
@@ -28,6 +30,9 @@ type Docker struct {
 
 	proxyMu sync.Mutex
 	proxies map[string]*hostProxy
+	// egressCtr maps a sandbox id to its transparent-egress sidecar container
+	// name (strict mode only), so it can be torn down with the sandbox.
+	egressCtr map[string]string
 }
 
 const (
@@ -64,7 +69,12 @@ func NewDocker() (*Docker, error) {
 	if err := os.MkdirAll(snapDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create snapshot dir: %w", err)
 	}
-	return &Docker{bin: bin, snapDir: snapDir, proxies: make(map[string]*hostProxy)}, nil
+	return &Docker{
+		bin:       bin,
+		snapDir:   snapDir,
+		proxies:   make(map[string]*hostProxy),
+		egressCtr: make(map[string]string),
+	}, nil
 }
 
 func (d *Docker) Name() string { return "docker" }
@@ -84,17 +94,31 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		workdir = "/workspace"
 	}
 
-	// Deny-by-default profiles get an egress proxy on the host, reached via HTTP(S)_PROXY.
 	var hp *hostProxy
 	var egressEnv map[string]string
+	var egressCtrName string // transparent-egress sidecar (strict mode)
 	if spec.Network.DenyByDefault() {
-		p, err := startHostProxy(policyFromNetwork(spec.Network), log.New(os.Stderr, "runeward-egress "+id+" ", log.LstdFlags))
-		if err != nil {
-			_ = d.run(context.Background(), "volume", "rm", "-f", vol)
-			return nil, fmt.Errorf("start egress proxy: %w", err)
+		if spec.Network.StrictEgress() {
+			// Transparent L3 enforcement: a sidecar container owns the network
+			// namespace, installs iptables REDIRECT rules, and runs the
+			// transparent proxy; the sandbox joins that netns so *all* TCP is
+			// forced through the proxy regardless of proxy env vars. This can't
+			// be bypassed by code that ignores HTTP(S)_PROXY.
+			ctrName, err := d.startEgressContainer(ctx, id, spec.Network)
+			if err != nil {
+				_ = d.run(context.Background(), "volume", "rm", "-f", vol)
+				return nil, err
+			}
+			egressCtrName = ctrName
+		} else {
+			p, err := startHostProxy(policyFromNetwork(spec.Network), log.New(os.Stderr, "runeward-egress "+id+" ", log.LstdFlags))
+			if err != nil {
+				_ = d.run(context.Background(), "volume", "rm", "-f", vol)
+				return nil, fmt.Errorf("start egress proxy: %w", err)
+			}
+			hp = p
+			egressEnv = proxyEnv(fmt.Sprintf("http://%s:%s@host.docker.internal:%d", p.user, p.pass, p.port))
 		}
-		hp = p
-		egressEnv = proxyEnv(fmt.Sprintf("http://host.docker.internal:%d", p.port))
 	}
 
 	args := []string{"run", "-d",
@@ -106,16 +130,37 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		"-w", workdir,
 		"-v", vol + ":" + workdir,
 	}
+	if egressCtrName != "" {
+		// Share the sidecar's network namespace; enforcement is transparent at
+		// L3, so no HTTP(S)_PROXY env and no host-gateway mapping.
+		args = append(args, "--network", "container:"+egressCtrName)
+	}
 	if hp != nil {
-		// host.docker.internal doesn't resolve on Linux without this.
 		args = append(args, "--add-host", "host.docker.internal:host-gateway")
 	}
-	// A runtime class selects a VM/sandboxed OCI runtime (e.g. "runsc" for
-	// gVisor, "kata-runtime") for stronger-than-shared-kernel isolation. It must
-	// be registered with the docker engine; an unknown runtime fails the run
-	// rather than silently downgrading to the default shared-kernel runtime.
 	if spec.RuntimeClass != "" {
 		args = append(args, "--runtime", spec.RuntimeClass)
+	}
+
+	args = append(args,
+		"--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges",
+	)
+	// Docker applies its default seccomp profile unless overridden; allow a
+	// profile to point at a stricter one, and optionally pin AppArmor.
+	if spec.Seccomp != "" {
+		args = append(args, "--security-opt", "seccomp="+spec.Seccomp)
+	}
+	if spec.AppArmor != "" {
+		args = append(args, "--security-opt", "apparmor="+spec.AppArmor)
+	}
+	if spec.ReadOnly {
+		// Read-only root with a writable tmpfs for /tmp; the workspace volume
+		// stays writable via its own mount.
+		args = append(args, "--read-only", "--tmpfs", "/tmp:rw,exec,nosuid,size=512m")
+	}
+	if pids := defaultPidsLimit(); pids > 0 {
+		args = append(args, "--pids-limit", strconv.FormatInt(pids, 10))
 	}
 	if spec.User != "" {
 		args = append(args, "-u", spec.User)
@@ -129,21 +174,33 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	for k, v := range spec.Labels {
 		args = append(args, "--label", kv(k, v))
 	}
-	if spec.Resources.MemoryBytes > 0 {
-		args = append(args, "--memory", fmt.Sprintf("%d", spec.Resources.MemoryBytes))
+
+	mem := spec.Resources.MemoryBytes
+	if mem == 0 {
+		mem = defaultMemoryBytes()
 	}
-	if spec.Resources.NanoCPUs > 0 {
-		args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(spec.Resources.NanoCPUs)/1e9))
+	if mem > 0 {
+		args = append(args, "--memory", fmt.Sprintf("%d", mem))
+	}
+	nanoCPUs := spec.Resources.NanoCPUs
+	if nanoCPUs == 0 {
+		nanoCPUs = defaultNanoCPUs()
+	}
+	if nanoCPUs > 0 {
+		args = append(args, "--cpus", fmt.Sprintf("%.3f", float64(nanoCPUs)/1e9))
 	}
 	image := spec.Image
 	if image == "" {
 		image = "debian:stable-slim"
 	}
-	// Keep the container alive so we can exec into it repeatedly.
+
 	args = append(args, image, "sleep", "infinity")
 
 	if err := d.run(ctx, args...); err != nil {
 		hp.stop()
+		if egressCtrName != "" {
+			_ = d.run(context.Background(), "rm", "-f", egressCtrName)
+		}
 		_ = d.run(context.Background(), "volume", "rm", "-f", vol)
 		if spec.RuntimeClass != "" {
 			return nil, fmt.Errorf("run container with runtime %q: is it registered with the docker engine? (see docs/security-model.md): %w", spec.RuntimeClass, err)
@@ -156,8 +213,12 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		d.proxies[id] = hp
 		d.proxyMu.Unlock()
 	}
+	if egressCtrName != "" {
+		d.proxyMu.Lock()
+		d.egressCtr[id] = egressCtrName
+		d.proxyMu.Unlock()
+	}
 
-	// Seed before projecting [[file]] entries so those can sit on top.
 	if spec.SeedDir != "" {
 		if err := d.seedWorkspace(ctx, id, workdir, spec.SeedDir); err != nil {
 			_ = d.Kill(context.Background(), id)
@@ -235,8 +296,6 @@ func (d *Docker) AttachPTY(ctx context.Context, id string, s PTYStream) error {
 
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 
-	// Non-TTY: use plain pipes so stdin EOF propagates; a PTY slave never
-	// sees EOF and the inner shell would hang.
 	if !s.TTY {
 		cmd.Stdin = s.Stdin
 		cmd.Stdout = s.Stdout
@@ -265,7 +324,6 @@ func (d *Docker) AttachPTY(ctx context.Context, id string, s PTYStream) error {
 	if s.Stdin != nil {
 		go func() {
 			_, _ = io.Copy(f, s.Stdin)
-			// Close so the remote shell sees EOF and exits.
 			_ = f.Close()
 		}()
 	}
@@ -277,6 +335,12 @@ func (d *Docker) AttachPTY(ctx context.Context, id string, s PTYStream) error {
 
 func (d *Docker) CopyFiles(ctx context.Context, id string, files []profile.File) error {
 	for _, f := range files {
+		if err := validateProjectionPath(f.Path); err != nil {
+			return err
+		}
+		if err := validateFileMode(f.Mode); err != nil {
+			return err
+		}
 		var data []byte
 		if f.Content != "" {
 			data = []byte(f.Content)
@@ -322,11 +386,12 @@ func (d *Docker) CopyFiles(ctx context.Context, id string, files []profile.File)
 }
 
 // seedWorkspace streams srcDir as a tar and extracts it inside the container.
-// Extraction runs as the container's default user so files end up owned by
-// the sandbox user; the host directory is only read.
 func (d *Docker) seedWorkspace(ctx context.Context, id, workdir, srcDir string) error {
 	if fi, err := os.Stat(srcDir); err != nil || !fi.IsDir() {
 		return fmt.Errorf("copy_from %q must be an existing directory: %v", srcDir, err)
+	}
+	if err := validateSeedDir(srcDir); err != nil {
+		return err
 	}
 	pr, pw := io.Pipe()
 	go func() { pw.CloseWithError(writeDirTar(pw, srcDir)) }()
@@ -384,11 +449,18 @@ func (d *Docker) Snapshot(ctx context.Context, id, name string) (*SnapshotRef, e
 		os.Remove(loc)
 		return nil, fmt.Errorf("snapshot tar: %w: %s", err, stderr.String())
 	}
+	_ = out.Close()
+	sum, err := hashFile(loc)
+	if err != nil {
+		os.Remove(loc)
+		return nil, fmt.Errorf("snapshot hash: %w", err)
+	}
 	return &SnapshotRef{
 		ID:       snapID,
 		Name:     name,
 		Backend:  d.Name(),
 		Location: loc,
+		Sha256:   sum,
 		Created:  time.Now(),
 	}, nil
 }
@@ -403,6 +475,10 @@ func (d *Docker) Restore(ctx context.Context, ref SnapshotRef) (*Sandbox, error)
 		_ = d.Kill(context.Background(), sb.ID)
 		return nil, err
 	}
+	if err := verifySnapshot(ref); err != nil {
+		_ = d.Kill(context.Background(), sb.ID)
+		return nil, err
+	}
 	in, err := os.Open(ref.Location)
 	if err != nil {
 		_ = d.Kill(context.Background(), sb.ID)
@@ -410,8 +486,11 @@ func (d *Docker) Restore(ctx context.Context, ref SnapshotRef) (*Sandbox, error)
 	}
 	defer in.Close()
 
+	pr, pw := io.Pipe()
+	go func() { pw.CloseWithError(filterTarSafe(pw, in)) }()
+
 	cmd := exec.CommandContext(ctx, d.bin, "exec", "-i", containerName(sb.ID), "tar", "-C", workdir, "-xf", "-")
-	cmd.Stdin = in
+	cmd.Stdin = pr
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -425,6 +504,8 @@ func (d *Docker) Kill(ctx context.Context, id string) error {
 	d.proxyMu.Lock()
 	hp := d.proxies[id]
 	delete(d.proxies, id)
+	egressCtrName := d.egressCtr[id]
+	delete(d.egressCtr, id)
 	d.proxyMu.Unlock()
 	hp.stop()
 
@@ -432,10 +513,83 @@ func (d *Docker) Kill(ctx context.Context, id string) error {
 	if err := d.run(ctx, "rm", "-f", containerName(id)); err != nil {
 		return fmt.Errorf("remove container: %w", err)
 	}
+	// Tear down the transparent-egress sidecar after the sandbox that shared
+	// its netns is gone.
+	if egressCtrName != "" {
+		_ = d.run(ctx, "rm", "-f", egressCtrName)
+	}
 	if vol != "" {
 		_ = d.run(ctx, "volume", "rm", "-f", vol)
 	}
 	return nil
+}
+
+// egressContainerName is the sidecar name for a sandbox's transparent egress.
+func egressContainerName(id string) string { return "runeward-egress-" + id }
+
+// startEgressContainer launches the transparent-egress sidecar for strict-mode
+// Docker sandboxes. The container installs iptables REDIRECT rules (NET_ADMIN),
+// drops to the exempt uid, and serves the transparent proxy; the sandbox then
+// joins its network namespace. Returns the sidecar container name.
+func (d *Docker) startEgressContainer(ctx context.Context, id string, net profile.Network) (string, error) {
+	img := os.Getenv("RUNEWARD_EGRESS_IMAGE")
+	if img == "" {
+		img = "runeward-egress:latest"
+	}
+	name := egressContainerName(id)
+
+	polJSON, err := json.Marshal(policyFromNetwork(net))
+	if err != nil {
+		return "", fmt.Errorf("marshal egress policy: %w", err)
+	}
+
+	args := []string{"run", "-d",
+		"--name", name,
+		"--label", kv(labelManaged, "true"),
+		"--label", kv(labelID, id),
+		"--cap-add", "NET_ADMIN",
+		"--cap-add", "NET_RAW",
+		"-e", "RUNEWARD_EGRESS_POLICY=" + string(polJSON),
+	}
+	// Propagate optional DNS-resolver pinning into the sidecar's netns.
+	if r := strings.TrimSpace(os.Getenv("RUNEWARD_DNS_RESOLVERS")); r != "" {
+		args = append(args, "-e", "RUNEWARD_DNS_RESOLVERS="+r)
+	}
+	args = append(args, img,
+		"--setup-iptables", "--transparent",
+		"--redirect-port", strconv.Itoa(egress.StrictRedirectPort),
+		"--proxy-uid", strconv.Itoa(egress.StrictProxyUID),
+	)
+
+	if err := d.run(ctx, args...); err != nil {
+		return "", fmt.Errorf("start transparent egress sidecar: %w", err)
+	}
+	if err := d.waitEgressReady(ctx, name); err != nil {
+		_ = d.run(context.Background(), "rm", "-f", name)
+		return "", err
+	}
+	return name, nil
+}
+
+// waitEgressReady blocks until the sidecar's transparent proxy is listening
+// (which happens only after the iptables rules are installed), or errors if the
+// container exits first. This closes the window where a sandbox could egress
+// before enforcement is in place.
+func (d *Docker) waitEgressReady(ctx context.Context, name string) error {
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, _ := d.output(ctx, "logs", name)
+		if strings.Contains(logs, "transparent proxy listening") {
+			return nil
+		}
+		if st, err := d.output(ctx, "inspect", "-f", "{{.State.Running}}", name); err == nil {
+			if strings.TrimSpace(st) == "false" {
+				return fmt.Errorf("egress sidecar exited before it was ready: %s", strings.TrimSpace(logs))
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for transparent egress proxy to become ready")
 }
 
 func (d *Docker) List(ctx context.Context) ([]Sandbox, error) {
@@ -508,12 +662,93 @@ func (d *Docker) volumeOf(ctx context.Context, id string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// Secure-by-default resource ceilings for a cell. Each is overridable via an
+// environment variable; setting the variable to "0" or "off" disables that cap.
+const (
+	fallbackMemoryBytes int64 = 4 << 30 // 4 GiB
+	fallbackNanoCPUs    int64 = 2e9     // 2.0 CPUs
+	fallbackPidsLimit   int64 = 1024
+)
+
+// defaultMemoryBytes returns the default memory cap in bytes, honoring
+// RUNEWARD_SANDBOX_MEMORY (accepts a byte count or a k/m/g suffix; "0"/"off"
+// disables the cap).
+func defaultMemoryBytes() int64 {
+	return limitFromEnv("RUNEWARD_SANDBOX_MEMORY", fallbackMemoryBytes, parseSize)
+}
+
+// defaultNanoCPUs returns the default CPU cap in nano-CPUs, honoring
+// RUNEWARD_SANDBOX_CPUS (a float like "1.5"; "0"/"off" disables the cap).
+func defaultNanoCPUs() int64 {
+	return limitFromEnv("RUNEWARD_SANDBOX_CPUS", fallbackNanoCPUs, func(s string) (int64, bool) {
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil || f < 0 {
+			return 0, false
+		}
+		return int64(f * 1e9), true
+	})
+}
+
+// defaultPidsLimit returns the default max process count, honoring
+// RUNEWARD_SANDBOX_PIDS ("0"/"off" disables the cap).
+func defaultPidsLimit() int64 {
+	return limitFromEnv("RUNEWARD_SANDBOX_PIDS", fallbackPidsLimit, func(s string) (int64, bool) {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || n < 0 {
+			return 0, false
+		}
+		return n, true
+	})
+}
+
+// limitFromEnv resolves a resource limit: the fallback when unset, 0 (disabled)
+// for "0"/"off"/"none", or the parsed value; an unparseable value keeps the
+// fallback.
+func limitFromEnv(key string, fallback int64, parse func(string) (int64, bool)) int64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	switch strings.ToLower(v) {
+	case "":
+		return fallback
+	case "0", "off", "none":
+		return 0
+	}
+	if n, ok := parse(v); ok {
+		return n
+	}
+	return fallback
+}
+
+// parseSize parses a byte size that may carry a k/m/g/t suffix (base-2, case
+// insensitive; a bare number is bytes).
+func parseSize(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	mult := int64(1)
+	switch last := s[len(s)-1]; last {
+	case 'k', 'K':
+		mult, s = 1<<10, s[:len(s)-1]
+	case 'm', 'M':
+		mult, s = 1<<20, s[:len(s)-1]
+	case 'g', 'G':
+		mult, s = 1<<30, s[:len(s)-1]
+	case 't', 'T':
+		mult, s = 1<<40, s[:len(s)-1]
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n * mult, true
+}
+
 func containerName(id string) string { return "runeward-" + id }
 func volumeName(id string) string    { return "runeward-vol-" + id }
 func kv(k, v string) string          { return k + "=" + v }
 
 func newID() string {
-	b := make([]byte, 6)
+	b := make([]byte, 16) // 128-bit: unguessable even without auth
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }

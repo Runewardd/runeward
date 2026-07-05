@@ -7,10 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adefemi171/runeward/internal/controlplane"
+	"github.com/Runewardd/runeward/internal/controlplane"
 )
 
 func newTestServer(t *testing.T) http.Handler {
+	t.Helper()
+	return newTestServerWithToken(t, "")
+}
+
+func newTestServerWithToken(t *testing.T, token string) http.Handler {
 	t.Helper()
 	t.Setenv("RUNEWARD_STATE_DIR", t.TempDir())
 	mgr, err := controlplane.New(t.TempDir())
@@ -18,7 +23,52 @@ func newTestServer(t *testing.T) http.Handler {
 		t.Fatalf("controlplane.New: %v", err)
 	}
 	t.Cleanup(func() { _ = mgr.Close() })
-	return New(mgr, nil, nil).Handler()
+	srv := New(mgr, nil, nil)
+	srv.AuthToken = token
+	return srv.Handler()
+}
+
+func TestAuthTokenRequired(t *testing.T) {
+	h := newTestServerWithToken(t, "s3cret")
+
+	// No token: rejected.
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: status = %d, want 401", rr.Code)
+	}
+
+	// Wrong token: rejected.
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes", nil)
+	req.Header.Set("Authorization", "Bearer nope")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token: status = %d, want 401", rr.Code)
+	}
+
+	// Correct bearer token: allowed.
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/sandboxes", nil)
+	req.Header.Set("Authorization", "Bearer s3cret")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("valid token: status = %d, want 200", rr.Code)
+	}
+
+	// Query-param token (used by the browser WebSocket): allowed.
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes?token=s3cret", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("query token: status = %d, want 200", rr.Code)
+	}
+
+	// /healthz is always exempt.
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("healthz: status = %d, want 200", rr.Code)
+	}
 }
 
 func TestHealth(t *testing.T) {

@@ -1,17 +1,31 @@
 # REST API
 
-`runeward serve` exposes the control plane over HTTP (default `:8080`). All
-actions flow through the same governed path as every other surface.
+`runeward serve` exposes the control plane over HTTP (default `127.0.0.1:8080`).
+All actions flow through the same governed path as every other surface.
 
-!!! warning "Protect the control plane"
-    The API has no built-in auth. Bind it to a trusted interface or place it
-    behind your own auth/proxy in production. See the [Security model](security-model.md).
+## Authentication
 
-## Health
+`serve` binds `127.0.0.1` by default and refuses a non-loopback `--bind` unless
+authentication is configured. Set a bearer token with `--token` /
+`RUNEWARD_API_TOKEN`, or point `RUNEWARD_AUTHZ_FILE` at a JSON store of named
+principals (each with its own token, an allowed-profile glob list, and
+approval/admin flags) for multi-principal RBAC. When set, the token is required
+on every request except `/healthz` and the static dashboard shell — pass it as
+`Authorization: Bearer <token>`, an `X-Runeward-Token` header, or a `?token=`
+query param (the last is required for the terminal WebSocket). Optional TLS via
+`--tls-cert`/`--tls-key`; request bodies are capped at 16 MiB. See the
+[Security model](security-model.md).
+
+Under RBAC, a non-admin principal sees and can act on only the sandboxes it
+created; admins see all.
+
+## Health & identity
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/healthz` | Liveness probe. |
+| `GET` | `/healthz` | Liveness probe (unauthenticated). |
+| `GET` | `/v1/whoami` | The authenticated caller's identity and capabilities (name, admin, can_approve, allowed_profiles). |
+| `GET` | `/metrics` | Prometheus metrics. |
 
 ## Profiles
 
@@ -24,8 +38,8 @@ actions flow through the same governed path as every other surface.
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/v1/sandboxes` | Create a sandbox. Body: `{"profile":"...","copy_from":"..."}` (`copy_from` optional). |
-| `GET` | `/v1/sandboxes` | List sandboxes. |
-| `GET` | `/v1/sandboxes/{id}` | Get one sandbox. |
+| `GET` | `/v1/sandboxes` | List sandboxes (scoped to the caller under RBAC). |
+| `GET` | `/v1/sandboxes/{id}` | Get one sandbox (includes `owner` and cumulative `usage`). |
 | `DELETE` | `/v1/sandboxes/{id}` | Kill and remove a sandbox. |
 
 ### Actions (governed)
@@ -39,6 +53,7 @@ actions flow through the same governed path as every other surface.
 | `POST` | `/v1/sandboxes/{id}/file/write` | Write a file. |
 | `POST` | `/v1/sandboxes/{id}/file/list` | List files. |
 | `POST` | `/v1/sandboxes/{id}/file/search` | Search files. |
+| `POST` | `/v1/sandboxes/{id}/usage` | Report model usage. Body: `{"tokens":123,"cost_usd":0.04}`; accrues toward the profile's `limits.max_tokens`/`max_cost_usd` budget. |
 | `GET` | `/v1/sandboxes/{id}/terminal` | WebSocket terminal (same-origin only). |
 
 ### Browser
@@ -93,8 +108,10 @@ actions flow through the same governed path as every other surface.
 ## Example
 
 ```bash
-SB=$(curl -sX POST localhost:8080/v1/sandboxes -d '{"profile":"ns-auto"}' | jq -r .id)
-curl -sX POST "localhost:8080/v1/sandboxes/$SB/shell/exec" -d '{"cmd":"echo hi"}'
-curl -s  "localhost:8080/v1/audit/verify"
-curl -sX DELETE "localhost:8080/v1/sandboxes/$SB"
+AUTH="-H Authorization:Bearer $RUNEWARD_API_TOKEN"   # omit if serving without a token
+SB=$(curl -s $AUTH -X POST localhost:8080/v1/sandboxes -d '{"profile":"ns-auto"}' | jq -r .id)
+curl -s $AUTH -X POST "localhost:8080/v1/sandboxes/$SB/shell/exec" -d '{"command":["echo","hi"]}'
+curl -s $AUTH -X POST "localhost:8080/v1/sandboxes/$SB/usage" -d '{"tokens":1200,"cost_usd":0.03}'
+curl -s $AUTH "localhost:8080/v1/audit/verify"
+curl -s $AUTH -X DELETE "localhost:8080/v1/sandboxes/$SB"
 ```

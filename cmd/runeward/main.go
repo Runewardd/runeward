@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/adefemi171/runeward/internal/cli"
+	"github.com/Runewardd/runeward/internal/cli"
 )
 
 func main() {

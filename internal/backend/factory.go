@@ -3,7 +3,7 @@ package backend
 import (
 	"fmt"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/profile"
 )
 
 // For returns the backend implementing the profile's execution host.
@@ -31,8 +31,27 @@ func SpecFromProfile(p *profile.Profile, env map[string]string) Spec {
 		SeedDir:      expandHome(p.Host.CopyFrom),
 		Network:      p.Network,
 		RuntimeClass: p.Host.RuntimeClass,
+		ReadOnly:     p.Host.ReadOnly,
+		Seccomp:      p.Host.Seccomp,
+		AppArmor:     p.Host.AppArmor,
+		Resources:    resourcesFromLimits(p.Limits),
 		Labels: map[string]string{
 			labelProfile: p.Name,
 		},
 	}
+}
+
+// resourcesFromLimits maps a profile's declared CPU/memory limits onto backend
+// resource caps. Previously these limits were parsed but never applied.
+func resourcesFromLimits(l profile.Limits) Resources {
+	var r Resources
+	if l.Memory != "" {
+		if b, ok := parseSize(l.Memory); ok {
+			r.MemoryBytes = b
+		}
+	}
+	if l.CPUs > 0 {
+		r.NanoCPUs = int64(l.CPUs * 1e9)
+	}
+	return r
 }

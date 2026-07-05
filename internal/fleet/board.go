@@ -207,8 +207,10 @@ func (b *Board) Sweep(now time.Time) []Task {
 	return requeued
 }
 
-// Complete marks the claimed task id as done with the given result.
-func (b *Board) Complete(id, result string) error {
+// Complete marks the claimed task id as done with the given result. owner must
+// match the worker that claimed the task (empty owner skips the check, for
+// trusted/local callers).
+func (b *Board) Complete(id, owner, result string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -218,6 +220,9 @@ func (b *Board) Complete(id, result string) error {
 	}
 	if t.State != StateClaimed {
 		return fmt.Errorf("%w: complete requires claimed, task %q is %s", ErrIllegalTransition, id, t.State)
+	}
+	if owner != "" && t.Owner != owner {
+		return fmt.Errorf("%w: task %q is owned by %q, not %q", ErrIllegalTransition, id, t.Owner, owner)
 	}
 	t.State = StateDone
 	t.Result = result
@@ -229,8 +234,9 @@ func (b *Board) Complete(id, result string) error {
 
 // Fail marks the claimed task id as failed with errMsg. When requeue is true
 // the task instead goes back to the pending pool (owner cleared, attempts
-// kept) so another worker can retry it.
-func (b *Board) Fail(id, errMsg string, requeue bool) error {
+// kept) so another worker can retry it. owner must match the claiming worker
+// (empty owner skips the check, for trusted/local callers).
+func (b *Board) Fail(id, owner, errMsg string, requeue bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -240,6 +246,9 @@ func (b *Board) Fail(id, errMsg string, requeue bool) error {
 	}
 	if t.State != StateClaimed {
 		return fmt.Errorf("%w: fail requires claimed, task %q is %s", ErrIllegalTransition, id, t.State)
+	}
+	if owner != "" && t.Owner != owner {
+		return fmt.Errorf("%w: task %q is owned by %q, not %q", ErrIllegalTransition, id, t.Owner, owner)
 	}
 	t.Error = errMsg
 	t.UpdatedAt = time.Now().UTC()

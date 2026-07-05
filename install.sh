@@ -2,7 +2,7 @@
 # runeward installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/adefemi171/runeward/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
 #
 # Environment overrides:
 #   RUNEWARD_VERSION   release tag to install (default: latest)
@@ -10,7 +10,7 @@
 #
 set -eu
 
-REPO="adefemi171/runeward"
+REPO="Runewardd/runeward"
 BIN_NAME="runeward"
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -67,25 +67,28 @@ trap 'rm -rf "$tmp"' EXIT
 info "Downloading ${asset}"
 $DLO "$tmp/$asset" "$base/$asset" || err "download failed: $base/$asset"
 
-# --- verify checksum if published ---------------------------------------------
-if $DLO "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
+# --- verify checksum (fail closed) --------------------------------------------
+# Set RUNEWARD_INSECURE_SKIP_CHECKSUM=1 to bypass (NOT recommended). By default a
+# missing checksums.txt, a missing entry, or a missing sha256 tool is a fatal
+# error rather than a silent skip, so a tampered download can't slip through.
+skip_checksum="${RUNEWARD_INSECURE_SKIP_CHECKSUM:-0}"
+if [ "$skip_checksum" = "1" ]; then
+  warn "RUNEWARD_INSECURE_SKIP_CHECKSUM=1 set; skipping checksum verification"
+elif $DLO "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
   info "Verifying checksum"
   want=$(grep " $asset\$" "$tmp/checksums.txt" 2>/dev/null | awk '{print $1}' | head -n1)
-  if [ -n "$want" ]; then
-    if command -v sha256sum >/dev/null 2>&1; then
-      got=$(sha256sum "$tmp/$asset" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-      got=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
-    else
-      warn "no sha256 tool found; skipping checksum verification"
-      got="$want"
-    fi
-    [ "$got" = "$want" ] || err "checksum mismatch for $asset (expected $want, got $got)"
+  [ -n "$want" ] || err "no checksum entry for $asset in checksums.txt (set RUNEWARD_INSECURE_SKIP_CHECKSUM=1 to override)"
+  if command -v sha256sum >/dev/null 2>&1; then
+    got=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    got=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
   else
-    warn "no checksum entry for $asset; skipping verification"
+    err "no sha256 tool found (need sha256sum or shasum) to verify the download; set RUNEWARD_INSECURE_SKIP_CHECKSUM=1 to override"
   fi
+  [ "$got" = "$want" ] || err "checksum mismatch for $asset (expected $want, got $got)"
+  info "Checksum OK"
 else
-  warn "no checksums.txt published for $version; skipping verification"
+  err "no checksums.txt published for $version; refusing to install unverified binary (set RUNEWARD_INSECURE_SKIP_CHECKSUM=1 to override)"
 fi
 
 # --- extract -------------------------------------------------------------------

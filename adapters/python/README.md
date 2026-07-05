@@ -1,20 +1,24 @@
 # runeward (Python)
 
 A dependency-light Python client and agent-framework adapters for the
-[runeward](https://github.com/adefemi171/runeward) **governed execution cell** —
+[runeward](https://github.com/Runewardd/runeward) **governed execution cell** —
 provision isolated sandboxes and run shell / Python / Node / file tools through a
 policy engine, audit ledger, guardrails, and human-in-the-loop approval gates.
 
-The core client uses **only the Python standard library** (`urllib`). LangChain
-and CrewAI helpers are optional extras and are imported lazily, so the base
-client works with nothing else installed.
+The core client uses **only the Python standard library** (`urllib`). The
+LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, and Strands helpers are
+optional extras and are imported lazily, so the base client works with nothing
+else installed.
 
 ## Install
 
 ```bash
-pip install runeward                # core client only (no third-party deps)
-pip install "runeward[langchain]"   # + LangChain tools
-pip install "runeward[crewai]"      # + CrewAI tools
+pip install runeward                    # core client only (no third-party deps)
+pip install "runeward[langchain]"       # + LangChain tools
+pip install "runeward[crewai]"          # + CrewAI tools
+pip install "runeward[llamaindex]"      # + LlamaIndex tools
+pip install "runeward[openai-agents]"   # + OpenAI Agents SDK tools
+pip install "runeward[strands]"         # + Strands Agents SDK tools
 ```
 
 During local development from this directory:
@@ -116,6 +120,49 @@ from runeward.crewai_tools import make_runeward_tools
 tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
 # Attach `tools` to a crewai.Agent(tools=tools, ...).
 ```
+
+## LlamaIndex
+
+```python
+from runeward import RunewardClient
+from runeward.llamaindex_tools import make_runeward_tools
+
+tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
+# Pass `tools` to a FunctionAgent / ReActAgent / AgentRunner.
+```
+
+Returns `llama_index.core.tools.FunctionTool` instances; the tool schema is
+derived from each function's type hints and docstring.
+
+## OpenAI Agents SDK
+
+```python
+from agents import Agent, Runner
+from runeward import RunewardClient
+from runeward.openai_agents_tools import make_runeward_tools
+
+tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
+agent = Agent(name="builder", instructions="Use the sandbox tools.", tools=tools)
+result = Runner.run_sync(agent, "Create a dev sandbox, run `node --version`, then tear it down.")
+```
+
+Returns `@function_tool`-built tools; the SDK derives each schema from the
+function's type hints and docstring.
+
+## Strands Agents SDK
+
+```python
+from strands import Agent
+from runeward import RunewardClient
+from runeward.strands_tools import make_runeward_tools
+
+tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
+agent = Agent(tools=tools)
+agent("Create a dev sandbox, run `node --version`, then tear it down.")
+```
+
+Returns `@tool`-decorated functions; Strands derives each schema from the
+function's type hints and docstring.
 
 ## Notes
 

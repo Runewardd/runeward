@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
@@ -13,11 +14,41 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adefemi171/runeward/internal/egress"
+	"github.com/Runewardd/runeward/internal/egress"
 )
 
+// policyEnv lets the Docker backend pass the egress policy inline (JSON) instead
+// of a mounted file, so no host bind-mount is needed for the sidecar.
+const policyEnv = "RUNEWARD_EGRESS_POLICY"
+
+// dropPrivileges switches the process to uid/gid so the transparent proxy's own
+// upstream traffic runs as the iptables-exempt uid. Since Go 1.16 syscall.Setuid
+// applies process-wide. Used by the combined setup+serve (Docker) mode.
+func dropPrivileges(uid int) error {
+	if err := syscall.Setgid(uid); err != nil {
+		return err
+	}
+	return syscall.Setuid(uid)
+}
+
+// loadPolicy resolves the egress policy from --policy (file) or the
+// RUNEWARD_EGRESS_POLICY env var (inline JSON); empty means deny-all.
+func loadPolicy(path string) (egress.Policy, error) {
+	if path != "" {
+		return egress.LoadPolicy(path)
+	}
+	if raw := os.Getenv(policyEnv); raw != "" {
+		var p egress.Policy
+		if err := json.Unmarshal([]byte(raw), &p); err != nil {
+			return egress.Policy{}, err
+		}
+		return p, nil
+	}
+	return egress.Policy{Default: "deny"}, nil
+}
+
 func main() {
-	addr := flag.String("addr", ":8888", "forward-proxy listen address (cooperative HTTP(S)_PROXY mode)")
+	addr := flag.String("addr", "127.0.0.1:8888", "forward-proxy listen address (cooperative HTTP(S)_PROXY mode); loopback by default")
 	policyPath := flag.String("policy", "", "path to a JSON policy file; if empty, deny all by default")
 	transparent := flag.Bool("transparent", false, "run as a transparent proxy for iptables-redirected traffic (linux only)")
 	redirectPort := flag.Int("redirect-port", egress.StrictRedirectPort, "transparent proxy listen port / iptables REDIRECT target")
@@ -27,26 +58,28 @@ func main() {
 
 	logger := log.New(os.Stderr, "runeward-egress ", log.LstdFlags|log.LUTC)
 
-	// Init-container mode: install the iptables rules and exit.
 	if *setupIptables {
 		if err := egress.SetupRedirect(*proxyUID, *redirectPort); err != nil {
 			logger.Fatalf("setup-iptables: %v", err)
 		}
 		logger.Printf("iptables redirect installed (uid=%d -> :%d)", *proxyUID, *redirectPort)
-		return
-	}
-
-	// Default to deny-all when no policy file is supplied.
-	policy := egress.Policy{Default: "deny"}
-	if *policyPath != "" {
-		p, err := egress.LoadPolicy(*policyPath)
-		if err != nil {
-			logger.Fatalf("load policy %q: %v", *policyPath, err)
+		if !*transparent {
+			// Init-container mode: rules installed, nothing more to do.
+			return
 		}
-		policy = p
+		// Combined mode (Docker single-container sidecar): drop to the exempt
+		// uid, then fall through to serve the transparent proxy below.
+		if err := dropPrivileges(*proxyUID); err != nil {
+			logger.Fatalf("drop privileges to uid %d: %v", *proxyUID, err)
+		}
+		logger.Printf("dropped privileges to uid %d", *proxyUID)
 	}
 
-	// Transparent mode: enforce policy on iptables-redirected connections.
+	policy, err := loadPolicy(*policyPath)
+	if err != nil {
+		logger.Fatalf("load policy: %v", err)
+	}
+
 	if *transparent {
 		tp := &egress.TransparentProxy{Policy: policy, Logger: logger}
 		listen := ":" + strconv.Itoa(*redirectPort)

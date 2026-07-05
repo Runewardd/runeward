@@ -22,8 +22,9 @@ profile. It has its own filesystem workspace, its own egress policy, and its own
 resource limits. Backends:
 
 - **Docker/Podman** — zero-setup, ideal for laptops and CI.
-- **Kubernetes** — Pods + PVCs, strict L3 egress via a sidecar, CRDs, and an
-  admission webhook for org-wide guardrails.
+- **Kubernetes** — Pods + PVCs, strict L3 egress via a sidecar, CRDs, an
+  admission webhook for org-wide guardrails, and multi-tenancy hardening (Pod
+  Security Admission labels + optional default-deny NetworkPolicy).
 
 Everything above the backend is identical, so a profile runs the same either way.
 
@@ -73,8 +74,9 @@ own isolated workspace, and mark completion. See [Fleets](fleets.md).
 
 ## Guardrails
 
-Hard limits per sandbox: wall-clock time, exec count, and egress request count,
-plus retry-loop detection. When a cap is hit, further actions are denied and
+Hard limits per sandbox: wall-clock time, exec count, egress request count, and
+token/spend budgets (`limits.max_tokens`, `limits.max_cost_usd`, fed by the usage
+API), plus retry-loop detection. When a cap is hit, further actions are denied and
 logged.
 
 ## Surfaces

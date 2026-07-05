@@ -3,7 +3,7 @@ package cli
 import (
 	"os"
 
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/profile"
 	"github.com/spf13/cobra"
 )
 

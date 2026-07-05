@@ -129,6 +129,46 @@ func TestHTTPDenied(t *testing.T) {
 	}
 }
 
+func TestProxyAuthRequired(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "ok")
+	}))
+	defer origin.Close()
+	host, _, _ := net.SplitHostPort(strings.TrimPrefix(origin.URL, "http://"))
+
+	p := &Proxy{
+		Policy:   Policy{Default: "deny", Rules: []Rule{{Verdict: "allow", Hostname: host}}},
+		AuthUser: "runeward",
+		AuthPass: "s3cret",
+	}
+	srv := newProxyServer(t, p)
+	proxyURL, _ := url.Parse(srv.URL)
+
+	// No credentials -> 407.
+	noAuth := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	resp, err := noAuth.Get(origin.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusProxyAuthRequired {
+		t.Fatalf("without creds status = %d, want 407", resp.StatusCode)
+	}
+
+	// Correct credentials in the proxy URL -> forwarded.
+	authURL, _ := url.Parse(srv.URL)
+	authURL.User = url.UserPassword("runeward", "s3cret")
+	withAuth := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(authURL)}}
+	resp2, err := withAuth.Get(origin.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("with creds status = %d, want 200", resp2.StatusCode)
+	}
+}
+
 func TestHTTPAllowedForwards(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "hello-from-origin")

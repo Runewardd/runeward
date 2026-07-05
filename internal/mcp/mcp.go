@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/adefemi171/runeward/internal/browser"
-	"github.com/adefemi171/runeward/internal/controlplane"
-	"github.com/adefemi171/runeward/internal/profile"
+	"github.com/Runewardd/runeward/internal/browser"
+	"github.com/Runewardd/runeward/internal/controlplane"
+	"github.com/Runewardd/runeward/internal/profile"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -326,9 +326,10 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager) {
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
 		Fleet  string `json:"fleet" jsonschema:"the fleet id"`
 		Task   string `json:"task" jsonschema:"the task id"`
+		Owner  string `json:"owner,omitempty" jsonschema:"the worker that holds the claim"`
 		Result string `json:"result,omitempty" jsonschema:"the successful result output"`
 	}) (*sdk.CallToolResult, any, error) {
-		if err := mgr.CompleteTask(in.Fleet, in.Task, in.Result); err != nil {
+		if err := mgr.CompleteTask(in.Fleet, in.Task, in.Owner, in.Result); err != nil {
 			return errText(err), nil, nil
 		}
 		return text("task " + in.Task + " completed"), nil, nil
@@ -340,10 +341,11 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager) {
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
 		Fleet   string `json:"fleet" jsonschema:"the fleet id"`
 		Task    string `json:"task" jsonschema:"the task id"`
+		Owner   string `json:"owner,omitempty" jsonschema:"the worker that holds the claim"`
 		Error   string `json:"error,omitempty" jsonschema:"the failure message"`
 		Requeue bool   `json:"requeue,omitempty" jsonschema:"whether to requeue the task for retry"`
 	}) (*sdk.CallToolResult, any, error) {
-		if err := mgr.FailTask(in.Fleet, in.Task, in.Error, in.Requeue); err != nil {
+		if err := mgr.FailTask(in.Fleet, in.Task, in.Owner, in.Error, in.Requeue); err != nil {
 			return errText(err), nil, nil
 		}
 		verb := "failed"

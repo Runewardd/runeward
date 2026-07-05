@@ -11,6 +11,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"sync"
+	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,11 +34,24 @@ var clusterPolicyGVR = schema.GroupVersionResource{
 // default.
 const defaultedAnnotation = "runeward.dev/cluster-policy-defaulted"
 
+// defaultPolicyCacheTTL bounds how stale a cached policy snapshot may be before
+// the webhook stops trusting it during an API-server outage.
+const defaultPolicyCacheTTL = 10 * time.Minute
+
 // Server serves the admission webhook endpoints. It lists ClusterPolicies on
 // every request so policy changes take effect without a restart.
 type Server struct {
 	dyn    dynamic.Interface
 	logger *log.Logger
+
+	// Last-known-good policy cache: when a live list fails, a recent cached
+	// snapshot is used so a transient API-server blip doesn't deny every
+	// admission. A never-populated or too-stale cache still fails closed.
+	cacheMu     sync.RWMutex
+	cached      []Policy
+	cachedAt    time.Time
+	cacheTTL    time.Duration
+	cacheLoaded bool
 }
 
 // NewServer builds a Server backed by the given dynamic client. A nil logger
@@ -44,7 +60,47 @@ func NewServer(dyn dynamic.Interface, logger *log.Logger) *Server {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Server{dyn: dyn, logger: logger}
+	return &Server{dyn: dyn, logger: logger, cacheTTL: policyCacheTTL()}
+}
+
+// policyCacheTTL reads RUNEWARD_WEBHOOK_POLICY_CACHE_TTL (a duration) or falls
+// back to the default. "0"/"off" disables the cache (strict fail-closed).
+func policyCacheTTL() time.Duration {
+	v := os.Getenv("RUNEWARD_WEBHOOK_POLICY_CACHE_TTL")
+	switch v {
+	case "":
+		return defaultPolicyCacheTTL
+	case "0", "off", "none":
+		return 0
+	}
+	if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+		return d
+	}
+	return defaultPolicyCacheTTL
+}
+
+// policySnapshot returns the current policy set. On a live-list success it
+// refreshes the last-known-good cache. On failure it falls back to a cached
+// snapshot within the TTL (fromCache=true); otherwise it returns the error so
+// the caller can fail closed.
+func (s *Server) policySnapshot(ctx context.Context) (policies []Policy, fromCache bool, err error) {
+	live, listErr := s.listPolicies(ctx)
+	if listErr == nil {
+		s.cacheMu.Lock()
+		s.cached = live
+		s.cachedAt = time.Now()
+		s.cacheLoaded = true
+		s.cacheMu.Unlock()
+		return live, false, nil
+	}
+
+	s.cacheMu.RLock()
+	loaded, cached, at, ttl := s.cacheLoaded, s.cached, s.cachedAt, s.cacheTTL
+	s.cacheMu.RUnlock()
+	if loaded && ttl > 0 && time.Since(at) <= ttl {
+		return cached, true, nil
+	}
+	return nil, false, listErr
 }
 
 // Handler returns the HTTP multiplexer exposing /validate, /mutate, and
@@ -92,11 +148,22 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policies, err := s.listPolicies(r.Context())
+	policies, fromCache, err := s.policySnapshot(r.Context())
 	if err != nil {
-		s.logger.Printf("webhook: validate %s: %v", req.Resource.Resource, err)
-		writeReview(w, review, allowedResponse(req.UID))
+		// Fail closed: if we can't read the policy set (and have no fresh
+		// cached snapshot) we can't prove the resource is allowed, so deny
+		// rather than admit it ungoverned.
+		s.logger.Printf("webhook: validate %s: %v (denying, fail-closed)", req.Resource.Resource, err)
+		resp := &admissionv1.AdmissionResponse{
+			UID:     req.UID,
+			Allowed: false,
+			Result:  &metav1.Status{Message: "runeward webhook could not evaluate ClusterPolicies: " + err.Error()},
+		}
+		writeReview(w, review, resp)
 		return
+	}
+	if fromCache {
+		s.logger.Printf("webhook: validate %s using last-known-good policy cache (live list failed)", req.Resource.Resource)
 	}
 
 	profileName, _, _ := unstructured.NestedString(obj.Object, "spec", "profile")
@@ -117,7 +184,7 @@ func (s *Server) handleMutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policies, err := s.listPolicies(r.Context())
+	policies, _, err := s.policySnapshot(r.Context())
 	if err != nil {
 		s.logger.Printf("webhook: mutate %s: %v", req.Resource.Resource, err)
 		writeReview(w, review, allowedResponse(req.UID))

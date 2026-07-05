@@ -14,7 +14,7 @@ dashboard.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/adefemi171/runeward/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
 ```
 
 Homebrew, container images, and building from source are covered in
@@ -39,10 +39,14 @@ enforcing the rules outside the model instead of hoping it was trained to behave
   verifiable transcript.
 - **Human-in-the-loop where it matters.** Per-action `allow` / `deny` /
   `require-approval` verdicts pause risky operations for an operator.
-- **Cost and loop guardrails.** Hard caps on wall-clock, exec count, and egress
-  requests, plus retry-loop detection.
+- **Cost and loop guardrails.** Hard caps on wall-clock, exec count, egress
+  requests, and token/spend budgets, plus retry-loop detection.
+- **Authenticated, multi-user control plane.** Bearer-token auth by default off
+  loopback, optional multi-principal RBAC (per-token profile/approval scopes),
+  and per-principal dashboard views with an interactive login.
 - **Pluggable backends.** Docker/Podman for zero-setup laptop use, or Kubernetes
-  (strict L3 egress, CRDs, admission webhook) for production and fleets.
+  (strict L3 egress, CRDs, admission webhook, PSA + NetworkPolicy multi-tenancy)
+  for production and fleets.
 
 ## How it compares
 
@@ -54,6 +58,7 @@ enforcing the rules outside the model instead of hoping it was trained to behave
 | Tamper-evident, signed audit trail | rare                  | yes; hash-chained + ed25519, verifiable       |
 | Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, loop caps      |
 | Multi-agent fleets                 | rare                  | yes; N cells + atomic task board              |
+| Control-plane auth + multi-user    | rare                  | yes; bearer token + RBAC principals + per-user views |
 | Agent-native surface               | partial               | REST + MCP + CLI + dashboard + SKILL/adapters |
 | Signed release artifacts           | rare                  | yes; cosign keyless + SBOMs                    |
 | Operable as a service              | rare                  | yes; `/metrics` + structured logs             |
@@ -67,9 +72,10 @@ enforcing the rules outside the model instead of hoping it was trained to behave
 - :material-rocket-launch: **[Quickstart](quickstart.md)** — a governed sandbox in ~60 seconds.
 - :material-lightbulb: **[Concepts](concepts.md)** — sandboxes, fleets, policy, egress, the ledger.
 - :material-file-cog: **[Profiles](profiles.md)** — the declarative security contract.
+- :material-toy-brick: **[Adapters](adapters.md)** — LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, Strands, Vercel AI SDK, LangChain.js.
 - :material-shield-lock: **[Security model](security-model.md)** — what runeward does and does not protect.
 - :material-chart-line: **[Observability](observability.md)** — metrics, structured logs, and telemetry.
 
 </div>
 
-runeward is open source under the [Apache License 2.0](https://github.com/adefemi171/runeward/blob/main/LICENSE).
+runeward is open source under the [Apache License 2.0](https://github.com/Runewardd/runeward/blob/main/LICENSE).

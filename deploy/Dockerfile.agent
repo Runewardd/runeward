@@ -8,7 +8,9 @@ RUN apt-get update \
         git curl ca-certificates python3 nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @openai/codex @anthropic-ai/claude-code
+ARG CODEX_VERSION=latest
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 RUN useradd -m -u 1000 agent \
     && mkdir -p /workspace \
@@ -18,7 +20,22 @@ USER agent
 ENV HOME=/home/agent
 
 # Cursor CLI installs into the user's home (~/.local/bin or ~/.cursor/bin).
-RUN curl https://cursor.com/install -fsS | bash
+# Rather than piping a remote script straight into a shell, download it to a
+# file first so it can be pinned/inspected. Set INSTALL_CURSOR=false to skip,
+# or CURSOR_INSTALLER_SHA256 to require the installer match a known digest
+# (build fails on mismatch, so a tampered/updated script can't run silently).
+ARG INSTALL_CURSOR=true
+ARG CURSOR_INSTALLER_SHA256=""
+RUN if [ "$INSTALL_CURSOR" = "true" ]; then \
+      curl -fsS https://cursor.com/install -o /tmp/cursor-install.sh \
+      && if [ -n "$CURSOR_INSTALLER_SHA256" ]; then \
+           echo "${CURSOR_INSTALLER_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - ; \
+         else \
+           echo "WARNING: installing Cursor CLI without a pinned checksum; set CURSOR_INSTALLER_SHA256 to verify" >&2 ; \
+         fi \
+      && bash /tmp/cursor-install.sh \
+      && rm -f /tmp/cursor-install.sh ; \
+    fi
 ENV PATH="/home/agent/.local/bin:/home/agent/.cursor/bin:${PATH}"
 
 WORKDIR /workspace

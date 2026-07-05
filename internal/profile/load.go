@@ -149,7 +149,7 @@ func applyDefaults(p *Profile) {
 		p.Host.Workdir = "/workspace"
 	}
 	if p.Host.Image == "" {
-		p.Host.Image = "ghcr.io/adefemi171/runeward-sandbox:latest"
+		p.Host.Image = "ghcr.io/runewardd/runeward-sandbox:latest"
 	}
 }
 

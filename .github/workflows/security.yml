@@ -1,0 +1,131 @@
+# Security automation: SAST (gosec), Go vuln scanning (govulncheck), and
+# repo + container image scanning (Trivy). Results are uploaded as SARIF so
+# they surface in the repository's Security > Code scanning tab.
+#
+# NOTE: the scan steps use `continue-on-error: true` so a finding does not
+# block the PR gate initially — the goal is regression *visibility* first.
+# Once the backlog is triaged these gates can be tightened by removing the
+# `continue-on-error` flags (or promoting specific severities to failures).
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly full sweep (Mondays 06:17 UTC) to catch newly disclosed CVEs
+    # even when the repo is quiet.
+    - cron: "17 6 * * 1"
+
+# Least-privilege default: jobs only read the repo. Jobs that upload SARIF
+# opt into `security-events: write` explicitly below.
+permissions:
+  contents: read
+
+jobs:
+  # SAST: static analysis of the Go source with gosec.
+  gosec:
+    name: gosec (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Run gosec
+        continue-on-error: true
+        run: |
+          go run github.com/securego/gosec/v2/cmd/gosec@latest \
+            -no-fail -fmt sarif -out gosec.sarif ./...
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+  # Dependency + Go stdlib vulnerability scanning. govulncheck only reports
+  # vulnerabilities that are actually reachable from this codebase.
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Run govulncheck
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  # Filesystem scan of the repo: vulnerable dependencies, committed secrets,
+  # and IaC/Dockerfile misconfigurations.
+  trivy-fs:
+    name: trivy (fs)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Trivy filesystem scan
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy-fs.sarif
+      - name: Upload Trivy fs SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # Container image scan. Each Dockerfile is built locally (no push) and then
+  # scanned for CRITICAL/HIGH OS + library vulnerabilities. A distinct SARIF
+  # `category` per image keeps the uploads from colliding in the Security tab.
+  trivy-image:
+    name: trivy (image)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: deploy/Dockerfile
+            image: runeward
+          - dockerfile: deploy/Dockerfile.egress
+            image: runeward-egress
+          - dockerfile: deploy/Dockerfile.agent
+            image: runeward-agent
+          - dockerfile: deploy/Dockerfile.sandbox
+            image: runeward-sandbox
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build ${{ matrix.image }} image
+        run: |
+          docker build -f ${{ matrix.dockerfile }} -t ${{ matrix.image }}:ci .
+      - name: Trivy image scan (${{ matrix.image }})
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:ci
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+      - name: Upload Trivy image SARIF (${{ matrix.image }})
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-image-${{ matrix.image }}

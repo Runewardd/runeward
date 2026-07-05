@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
-	"github.com/adefemi171/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/backend"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -100,16 +98,10 @@ func attachShell(ctx context.Context, be backend.Backend, id string) error {
 		resize := make(chan backend.TermSize, 1)
 		stream.Resize = resize
 
-		// Prime with the current size, then follow SIGWINCH.
-		sendSize(resize)
-		winch := make(chan os.Signal, 1)
-		signal.Notify(winch, syscall.SIGWINCH)
-		defer signal.Stop(winch)
-		go func() {
-			for range winch {
-				sendSize(resize)
-			}
-		}()
+		// Prime with the current size, then follow terminal resizes on
+		// platforms that support them (unix SIGWINCH; no-op on windows).
+		stop := watchResize(resize)
+		defer stop()
 	}
 
 	return be.AttachPTY(ctx, id, stream)
