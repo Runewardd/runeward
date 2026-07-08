@@ -60,7 +60,7 @@ jobs:
           exit 1
 
       - name: ZAP baseline scan
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: http://127.0.0.1:8080
           # -a: also report alerts marked "IGNORE"/informational; keeps the
