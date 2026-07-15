@@ -16,7 +16,7 @@ query param (the last is required for the terminal WebSocket). Optional TLS via
 `--tls-cert`/`--tls-key`; request bodies are capped at 16 MiB. See the
 [Security model](security-model.md).
 
-Under RBAC, a non-admin principal sees and can act on only the sandboxes it
+Under RBAC, a non-admin principal sees and can act on only the Citadels it
 created; admins see all.
 
 ## Health & identity
@@ -27,91 +27,92 @@ created; admins see all.
 | `GET` | `/v1/whoami` | The authenticated caller's identity and capabilities (name, admin, can_approve, allowed_profiles). |
 | `GET` | `/metrics` | Prometheus metrics. |
 
-## Profiles
+## Charters
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/profiles` | List reachable profiles. |
+| `GET` | `/v1/charters` | List reachable Charters. |
 
-## Sandboxes
+## Citadels
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/sandboxes` | Create a sandbox. Body: `{"profile":"...","copy_from":"..."}` (`copy_from` optional). |
-| `GET` | `/v1/sandboxes` | List sandboxes (scoped to the caller under RBAC). |
-| `GET` | `/v1/sandboxes/{id}` | Get one sandbox (includes `owner` and cumulative `usage`). |
-| `DELETE` | `/v1/sandboxes/{id}` | Kill and remove a sandbox. |
+| `POST` | `/v1/citadels` | Create a Citadel. Body: `{"profile":"...","copy_from":"..."}` (`copy_from` optional). |
+| `GET` | `/v1/citadels` | List Citadels (scoped to the caller under RBAC). |
+| `GET` | `/v1/citadels/{id}` | Get one Citadel (includes `owner` and cumulative `usage`). |
+| `DELETE` | `/v1/citadels/{id}` | Kill and remove a Citadel. |
 
 ### Actions (governed)
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/sandboxes/{id}/shell/exec` | Run a shell command. |
-| `POST` | `/v1/sandboxes/{id}/code/python` | Run Python. |
-| `POST` | `/v1/sandboxes/{id}/code/node` | Run Node. |
-| `POST` | `/v1/sandboxes/{id}/file/read` | Read a file. |
-| `POST` | `/v1/sandboxes/{id}/file/write` | Write a file. |
-| `POST` | `/v1/sandboxes/{id}/file/list` | List files. |
-| `POST` | `/v1/sandboxes/{id}/file/search` | Search files. |
-| `POST` | `/v1/sandboxes/{id}/usage` | Report model usage. Body: `{"tokens":123,"cost_usd":0.04}`; accrues toward the profile's `limits.max_tokens`/`max_cost_usd` budget. |
-| `GET` | `/v1/sandboxes/{id}/terminal` | WebSocket terminal (same-origin only). |
+| `POST` | `/v1/citadels/{id}/shell/exec` | Run a shell command. |
+| `POST` | `/v1/citadels/{id}/code/python` | Run Python. |
+| `POST` | `/v1/citadels/{id}/code/node` | Run Node. |
+| `POST` | `/v1/citadels/{id}/file/read` | Read a file. |
+| `POST` | `/v1/citadels/{id}/file/write` | Write a file. |
+| `POST` | `/v1/citadels/{id}/file/list` | List files. |
+| `POST` | `/v1/citadels/{id}/file/search` | Search files. |
+| `POST` | `/v1/citadels/{id}/usage` | Report model usage. Body: `{"tokens":123,"cost_usd":0.04}`; accrues toward the Charter's `rationing.max_tokens`/`max_cost_usd` budget. |
+| `GET` | `/v1/citadels/{id}/perimeter` | Egress (Perimeter) decision log for the Citadel. |
+| `GET` | `/v1/citadels/{id}/terminal` | WebSocket terminal (same-origin only). |
 
 ### Browser
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/sandboxes/{id}/browser` | One-shot browser action. |
-| `POST` | `/v1/sandboxes/{id}/browser/sessions` | Open a stateful session. |
-| `POST` | `/v1/sandboxes/{id}/browser/sessions/{sid}/act` | Act in a session. |
-| `DELETE` | `/v1/sandboxes/{id}/browser/sessions/{sid}` | Close a session. |
+| `POST` | `/v1/citadels/{id}/browser` | One-shot browser action. |
+| `POST` | `/v1/citadels/{id}/browser/sessions` | Open a stateful session. |
+| `POST` | `/v1/citadels/{id}/browser/sessions/{sid}/act` | Act in a session. |
+| `DELETE` | `/v1/citadels/{id}/browser/sessions/{sid}` | Close a session. |
 
-## Fleets
+## Cohorts
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/fleets` | Create a fleet. |
-| `GET` | `/v1/fleets` | List fleets. |
-| `GET` | `/v1/fleets/{id}` | Get a fleet. |
-| `DELETE` | `/v1/fleets/{id}` | Tear down a fleet. |
-| `GET` | `/v1/fleets/{id}/tasks` | List tasks. |
-| `POST` | `/v1/fleets/{id}/tasks` | Add a task. |
-| `POST` | `/v1/fleets/{id}/claim` | Claim the next task (lease). |
-| `POST` | `/v1/fleets/{id}/tasks/{taskID}/complete` | Mark complete. |
-| `POST` | `/v1/fleets/{id}/tasks/{taskID}/fail` | Mark failed. |
-| `POST` | `/v1/fleets/{id}/tasks/{taskID}/heartbeat` | Renew the lease. |
+| `POST` | `/v1/cohorts` | Create a Cohort. |
+| `GET` | `/v1/cohorts` | List Cohorts. |
+| `GET` | `/v1/cohorts/{id}` | Get a Cohort. |
+| `DELETE` | `/v1/cohorts/{id}` | Tear down a Cohort. |
+| `GET` | `/v1/cohorts/{id}/tasks` | List tasks. |
+| `POST` | `/v1/cohorts/{id}/tasks` | Add a task. |
+| `POST` | `/v1/cohorts/{id}/claim` | Claim the next task (lease). |
+| `POST` | `/v1/cohorts/{id}/tasks/{taskID}/complete` | Mark complete. |
+| `POST` | `/v1/cohorts/{id}/tasks/{taskID}/fail` | Mark failed. |
+| `POST` | `/v1/cohorts/{id}/tasks/{taskID}/heartbeat` | Renew the lease. |
 
 ## Snapshots
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/sandboxes/{id}/snapshot` | Snapshot a workspace. |
+| `POST` | `/v1/citadels/{id}/snapshot` | Snapshot a workspace. |
 | `GET` | `/v1/snapshots` | List snapshots. |
 | `POST` | `/v1/snapshots/{id}/restore` | Restore a snapshot. |
 
-## Audit
+## Chronicle
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/sandboxes/{id}/audit` | Audit events for a sandbox. |
-| `GET` | `/v1/audit/verify` | Verify the on-disk hash chain. |
-| `GET` | `/v1/audit/pubkey` | The ledger's ed25519 public key. |
-| `GET` | `/v1/audit/export` | Export a signed transcript bundle. |
+| `GET` | `/v1/citadels/{id}/chronicle` | Chronicle (audit) events for a Citadel. |
+| `GET` | `/v1/chronicle/verify` | Verify the on-disk hash chain. |
+| `GET` | `/v1/chronicle/pubkey` | The ledger's ed25519 public key. |
+| `GET` | `/v1/chronicle/export` | Export a signed transcript bundle. |
 
-## Approvals
+## Conclave
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/approvals` | Pending approvals. |
-| `POST` | `/v1/approvals/{id}/approve` | Approve a paused action. |
-| `POST` | `/v1/approvals/{id}/deny` | Deny a paused action. |
+| `GET` | `/v1/conclave` | Pending approvals. |
+| `POST` | `/v1/conclave/{id}/approve` | Approve a paused action. |
+| `POST` | `/v1/conclave/{id}/deny` | Deny a paused action. |
 
 ## Example
 
 ```bash
 AUTH=(-H "Authorization: Bearer $RUNEWARD_API_TOKEN")   # omit when serving without a token: AUTH=()
-SB=$(curl -s "${AUTH[@]}" -X POST localhost:8080/v1/sandboxes -d '{"profile":"ns-auto"}' | jq -r .id)
-curl -s "${AUTH[@]}" -X POST "localhost:8080/v1/sandboxes/$SB/shell/exec" -d '{"command":["echo","hi"]}'
-curl -s "${AUTH[@]}" -X POST "localhost:8080/v1/sandboxes/$SB/usage" -d '{"tokens":1200,"cost_usd":0.03}'
-curl -s "${AUTH[@]}" "localhost:8080/v1/audit/verify"
-curl -s "${AUTH[@]}" -X DELETE "localhost:8080/v1/sandboxes/$SB"
+SB=$(curl -s "${AUTH[@]}" -X POST localhost:8080/v1/citadels -d '{"profile":"ns-auto"}' | jq -r .id)
+curl -s "${AUTH[@]}" -X POST "localhost:8080/v1/citadels/$SB/shell/exec" -d '{"command":["echo","hi"]}'
+curl -s "${AUTH[@]}" -X POST "localhost:8080/v1/citadels/$SB/usage" -d '{"tokens":1200,"cost_usd":0.03}'
+curl -s "${AUTH[@]}" "localhost:8080/v1/chronicle/verify"
+curl -s "${AUTH[@]}" -X DELETE "localhost:8080/v1/citadels/$SB"
 ```

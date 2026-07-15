@@ -39,6 +39,6 @@ ref = "oci://ghcr.io/runewardd/policies/shell-guard:v1"
 verify_key = ""
 # plain_http = true  # only for local/insecure http registries
 
-[limits]
+[rationing]
 wall_clock = "30m"
 max_execs  = 200

@@ -40,7 +40,7 @@ match   = "/etc/*"
 verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed"
 
-[limits]
+[rationing]
 wall_clock      = "45m"
 max_execs       = 600
 egress_requests = 1200
@@ -67,5 +67,5 @@ op   = "env://OPENAI_API_KEY"
 name  = "NODE_USE_ENV_PROXY"
 value = "1"
 
-[audit]
+[chronicle]
 redact = true

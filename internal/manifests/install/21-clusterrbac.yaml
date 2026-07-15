@@ -7,10 +7,10 @@ metadata:
 rules:
   # Reconcile the cluster-scoped custom resources and their status.
   - apiGroups: ["runeward.dev"]
-    resources: ["clustersandboxes", "clusterfleets"]
+    resources: ["clustercitadels", "clustercohorts"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["runeward.dev"]
-    resources: ["clustersandboxes/status", "clusterfleets/status"]
+    resources: ["clustercitadels/status", "clustercohorts/status"]
     verbs: ["get", "update", "patch"]
   # The k8s backend calls ensureNamespace (get + best-effort PSA-label patch,
   # and create when provisioning into a namespace that does not yet exist).

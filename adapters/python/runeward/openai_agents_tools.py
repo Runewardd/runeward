@@ -63,20 +63,20 @@ def make_runeward_tools(client: RunewardClient) -> List[Any]:
         return wrapped
 
     @function_tool
-    def runeward_create_sandbox(profile: str) -> str:
-        """Provision a governed sandbox from a runeward profile (e.g. 'dev').
+    def runeward_create_citadel(profile: str) -> str:
+        """Provision a governed Citadel from a runeward Charter (e.g. 'dev').
 
         Args:
-            profile: Profile name, e.g. 'dev' or 'governed'.
+            profile: Charter name, e.g. 'dev' or 'governed'.
         """
         return _guard(client.create_sandbox)(profile)
 
     @function_tool
     def runeward_shell(sandbox: str, command: List[str], workdir: str = "") -> str:
-        """Run a shell command in a sandbox; returns verdict, exit_code, stdout, stderr.
+        """Run a shell command in a Citadel; returns verdict, exit_code, stdout, stderr.
 
         Args:
-            sandbox: Sandbox id from runeward_create_sandbox.
+            sandbox: Citadel id from runeward_create_citadel.
             command: argv list, e.g. ['ls', '-la'].
             workdir: Optional working directory.
         """
@@ -84,40 +84,40 @@ def make_runeward_tools(client: RunewardClient) -> List[Any]:
 
     @function_tool
     def runeward_python(sandbox: str, code: str) -> str:
-        """Run a Python code snippet inside the sandbox.
+        """Run a Python code snippet inside the Citadel.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
             code: Python source to execute.
         """
         return _guard(client.python)(sandbox, code)
 
     @function_tool
     def runeward_node(sandbox: str, code: str) -> str:
-        """Run a Node.js code snippet inside the sandbox.
+        """Run a Node.js code snippet inside the Citadel.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
             code: JavaScript source to execute.
         """
         return _guard(client.node)(sandbox, code)
 
     @function_tool
     def runeward_read_file(sandbox: str, path: str) -> str:
-        """Read a file's contents from the sandbox.
+        """Read a file's contents from the Citadel.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
             path: File path to read.
         """
         return _guard(client.read_file)(sandbox, path)
 
     @function_tool
     def runeward_write_file(sandbox: str, path: str, content: str) -> str:
-        """Write content to a file in the sandbox.
+        """Write content to a file in the Citadel.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
             path: File path to write.
             content: Content to write.
         """
@@ -129,46 +129,46 @@ def make_runeward_tools(client: RunewardClient) -> List[Any]:
 
     @function_tool
     def runeward_list_files(sandbox: str, path: str) -> str:
-        """List a directory in the sandbox.
+        """List a directory in the Citadel.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
             path: Directory path to list.
         """
         return _guard(client.list_files)(sandbox, path)
 
     @function_tool
     def runeward_search_files(sandbox: str, query: str, path: str) -> str:
-        """Search for a query string under a path in the sandbox.
+        """Search for a query string under a path in the Citadel.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
             query: Search query.
             path: Path to search under.
         """
         return _guard(client.search_files)(sandbox, query, path)
 
     @function_tool
-    def runeward_list_approvals() -> str:
-        """List pending human-in-the-loop approval requests."""
+    def runeward_list_conclave() -> str:
+        """List pending human-in-the-loop Conclave requests."""
         return _guard(client.list_approvals)()
 
     @function_tool
-    def runeward_kill_sandbox(sandbox: str) -> str:
-        """Tear down a sandbox when the task is finished.
+    def runeward_kill_citadel(sandbox: str) -> str:
+        """Tear down a Citadel when the task is finished.
 
         Args:
-            sandbox: Sandbox id.
+            sandbox: Citadel id.
         """
 
         def _kill() -> str:
             client.kill_sandbox(sandbox)
-            return f"sandbox {sandbox} terminated"
+            return f"Citadel {sandbox} terminated"
 
         return _guard(_kill)()
 
     return [
-        runeward_create_sandbox,
+        runeward_create_citadel,
         runeward_shell,
         runeward_python,
         runeward_node,
@@ -176,6 +176,6 @@ def make_runeward_tools(client: RunewardClient) -> List[Any]:
         runeward_write_file,
         runeward_list_files,
         runeward_search_files,
-        runeward_list_approvals,
-        runeward_kill_sandbox,
+        runeward_list_conclave,
+        runeward_kill_citadel,
     ]

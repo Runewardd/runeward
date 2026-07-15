@@ -35,6 +35,6 @@ decision := {"verdict": "require-approval", "reason": "writes under /etc must be
 }
 """
 
-[limits]
+[rationing]
 wall_clock = "30m"
 max_execs  = 200

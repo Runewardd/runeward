@@ -10,9 +10,9 @@ type    = "container"
 image   = "debian:stable-slim"
 workdir = "/workspace"
 
-[fleet]
+[cohort]
 replicas   = 2
 task_board = ["build module A", "build module B", "run integration tests"]
 
-[limits]
+[rationing]
 max_execs = 500

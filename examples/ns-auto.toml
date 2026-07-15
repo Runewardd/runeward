@@ -50,7 +50,7 @@ verdict = "require-approval"
 reason  = "writing outside the workspace"
 
 # Cost and loop guardrails.
-[limits]
+[rationing]
 wall_clock      = "45m"
 max_execs       = 1000
 egress_requests = 2000
@@ -63,5 +63,5 @@ loop_threshold  = 8
 name = "AZURE_DEVOPS_EXT_PAT"
 op   = "op://vault/ns-auto/credential"
 
-[audit]
+[chronicle]
 redact = true

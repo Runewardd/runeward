@@ -10,7 +10,7 @@ type    = "container"
 image   = "runeward-sandbox:dev"
 workdir = "/workspace"
 
-[fleet]
+[cohort]
 replicas   = 3
 task_board = ["lint module A", "build module B", "run tests for C", "package release"]
 
@@ -29,11 +29,11 @@ match   = "rm -rf*"
 verdict = "deny"
 reason  = "destructive recursive delete blocked by policy"
 
-[limits]
+[rationing]
 wall_clock     = "30m"
 max_execs      = 500
 loop_window    = "30s"
 loop_threshold = 15
 
-[audit]
+[chronicle]
 redact = true

@@ -10,6 +10,6 @@ workdir = "/workspace"
 # No [network] block => egress is fully open. See ns-auto.toml for a
 # deny-by-default contract.
 
-[limits]
+[rationing]
 wall_clock = "30m"
 max_execs  = 500

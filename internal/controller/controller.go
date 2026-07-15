@@ -1,9 +1,9 @@
-// Package controller reconciles runeward Sandbox and Fleet custom resources
+// Package controller reconciles runeward Citadel and Cohort custom resources
 // onto the control-plane Manager.
 //
 // It deliberately avoids controller-runtime: dynamic informers feed a work
 // queue, backing runeward ids live in status, and a finalizer guarantees
-// teardown of the underlying sandboxes/fleets on CR deletion.
+// teardown of the underlying citadels/cohorts on CR deletion.
 package controller
 
 import (
@@ -33,17 +33,17 @@ const (
 )
 
 var (
-	sandboxGVR = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "sandboxes"}
-	fleetGVR   = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "fleets"}
+	citadelGVR = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "citadels"}
+	cohortGVR  = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "cohorts"}
 	// Cluster-scoped variants carry no namespace; backing resources land in
 	// the controller's own namespace.
-	clusterSandboxGVR = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "clustersandboxes"}
-	clusterFleetGVR   = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "clusterfleets"}
+	clusterCitadelGVR = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "clustercitadels"}
+	clusterCohortGVR  = schema.GroupVersionResource{Group: Group, Version: Version, Resource: "clustercohorts"}
 )
 
 var clusterScoped = map[schema.GroupVersionResource]bool{
-	clusterSandboxGVR: true,
-	clusterFleetGVR:   true,
+	clusterCitadelGVR: true,
+	clusterCohortGVR:  true,
 }
 
 // item identifies one custom resource on the work queue.
@@ -82,10 +82,10 @@ func New(mgr *controlplane.Manager, dyn dynamic.Interface, namespace string, log
 		),
 		logger: logger,
 	}
-	c.addInformer(factory, sandboxGVR)
-	c.addInformer(factory, fleetGVR)
-	c.addInformer(clusterFactory, clusterSandboxGVR)
-	c.addInformer(clusterFactory, clusterFleetGVR)
+	c.addInformer(factory, citadelGVR)
+	c.addInformer(factory, cohortGVR)
+	c.addInformer(clusterFactory, clusterCitadelGVR)
+	c.addInformer(clusterFactory, clusterCohortGVR)
 	return c
 }
 
@@ -194,22 +194,22 @@ func (c *Controller) reconcile(ctx context.Context, it item) error {
 	}
 
 	switch it.gvr {
-	case sandboxGVR, clusterSandboxGVR:
-		return c.reconcileSandbox(ctx, client, obj)
-	case fleetGVR, clusterFleetGVR:
-		return c.reconcileFleet(ctx, client, obj)
+	case citadelGVR, clusterCitadelGVR:
+		return c.reconcileCitadel(ctx, client, obj)
+	case cohortGVR, clusterCohortGVR:
+		return c.reconcileCohort(ctx, client, obj)
 	default:
 		return nil
 	}
 }
 
-func (c *Controller) reconcileSandbox(ctx context.Context, client dynamic.ResourceInterface, obj *unstructured.Unstructured) error {
-	if id, _, _ := unstructured.NestedString(obj.Object, "status", "sandboxId"); id != "" {
+func (c *Controller) reconcileCitadel(ctx context.Context, client dynamic.ResourceInterface, obj *unstructured.Unstructured) error {
+	if id, _, _ := unstructured.NestedString(obj.Object, "status", "citadelId"); id != "" {
 		// Already provisioned; verify it still exists in the manager.
 		if _, ok := c.mgr.Sandbox(id); ok {
 			return nil
 		}
-		// Backing sandbox vanished (e.g. controller restart); reprovision.
+		// Backing citadel vanished (e.g. controller restart); reprovision.
 	}
 
 	profileName, _, _ := unstructured.NestedString(obj.Object, "spec", "profile")
@@ -225,23 +225,23 @@ func (c *Controller) reconcileSandbox(ctx context.Context, client dynamic.Resour
 			"phase": "Failed", "message": err.Error(),
 		})
 	}
-	c.logger.Info("sandbox reconciled", "namespace", obj.GetNamespace(), "name", obj.GetName(), "sandboxId", sb.ID)
+	c.logger.Info("citadel reconciled", "namespace", obj.GetNamespace(), "name", obj.GetName(), "citadelId", sb.ID)
 	return c.setStatus(ctx, client, obj, map[string]any{
 		"phase":     "Running",
-		"sandboxId": sb.ID,
+		"citadelId": sb.ID,
 		"backend":   sb.Backend,
 		"image":     sb.Image,
 		"message":   "",
 	})
 }
 
-func (c *Controller) reconcileFleet(ctx context.Context, client dynamic.ResourceInterface, obj *unstructured.Unstructured) error {
-	fid, _, _ := unstructured.NestedString(obj.Object, "status", "fleetId")
+func (c *Controller) reconcileCohort(ctx context.Context, client dynamic.ResourceInterface, obj *unstructured.Unstructured) error {
+	fid, _, _ := unstructured.NestedString(obj.Object, "status", "cohortId")
 	if fid != "" {
 		if v, ok := c.mgr.FleetView(fid); ok {
-			return c.setStatus(ctx, client, obj, fleetStatus("Running", v))
+			return c.setStatus(ctx, client, obj, cohortStatus("Running", v))
 		}
-		// Fleet gone; recreate below.
+		// Cohort gone; recreate below.
 	}
 
 	profileName, _, _ := unstructured.NestedString(obj.Object, "spec", "profile")
@@ -257,23 +257,23 @@ func (c *Controller) reconcileFleet(ctx context.Context, client dynamic.Resource
 			"phase": "Failed", "message": err.Error(),
 		})
 	}
-	c.logger.Info("fleet reconciled", "namespace", obj.GetNamespace(), "name", obj.GetName(), "fleetId", v.ID, "sandboxes", len(v.Sandboxes))
-	return c.setStatus(ctx, client, obj, fleetStatus("Running", v))
+	c.logger.Info("cohort reconciled", "namespace", obj.GetNamespace(), "name", obj.GetName(), "cohortId", v.ID, "citadels", len(v.Sandboxes))
+	return c.setStatus(ctx, client, obj, cohortStatus("Running", v))
 }
 
-// teardown removes the backing sandbox or fleet for a CR being deleted.
+// teardown removes the backing citadel or cohort for a CR being deleted.
 func (c *Controller) teardown(ctx context.Context, gvr schema.GroupVersionResource, obj *unstructured.Unstructured) error {
 	switch gvr {
-	case sandboxGVR, clusterSandboxGVR:
-		if id, _, _ := unstructured.NestedString(obj.Object, "status", "sandboxId"); id != "" {
+	case citadelGVR, clusterCitadelGVR:
+		if id, _, _ := unstructured.NestedString(obj.Object, "status", "citadelId"); id != "" {
 			if err := c.mgr.KillSandbox(ctx, id); err != nil {
-				c.logger.Error("kill sandbox failed, continuing", "sandboxId", id, "err", err)
+				c.logger.Error("kill citadel failed, continuing", "citadelId", id, "err", err)
 			}
 		}
-	case fleetGVR, clusterFleetGVR:
-		if id, _, _ := unstructured.NestedString(obj.Object, "status", "fleetId"); id != "" {
+	case cohortGVR, clusterCohortGVR:
+		if id, _, _ := unstructured.NestedString(obj.Object, "status", "cohortId"); id != "" {
 			if err := c.mgr.KillFleet(ctx, id); err != nil {
-				c.logger.Error("kill fleet failed, continuing", "fleetId", id, "err", err)
+				c.logger.Error("kill cohort failed, continuing", "cohortId", id, "err", err)
 			}
 		}
 	}
@@ -297,15 +297,15 @@ func (c *Controller) setStatus(ctx context.Context, client dynamic.ResourceInter
 	return err
 }
 
-func fleetStatus(phase string, v *controlplane.FleetView) map[string]any {
-	sandboxes := make([]any, len(v.Sandboxes))
+func cohortStatus(phase string, v *controlplane.FleetView) map[string]any {
+	citadels := make([]any, len(v.Sandboxes))
 	for i, s := range v.Sandboxes {
-		sandboxes[i] = s
+		citadels[i] = s
 	}
 	return map[string]any{
 		"phase":        phase,
-		"fleetId":      v.ID,
-		"sandboxes":    sandboxes,
+		"cohortId":     v.ID,
+		"citadels":     citadels,
 		"tasksTotal":   int64(v.Stats.Total),
 		"tasksPending": int64(v.Stats.Pending),
 		"tasksClaimed": int64(v.Stats.Claimed),

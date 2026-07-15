@@ -31,6 +31,6 @@ reason  = "writes under /etc must be reviewed by an operator"
 expr    = 'tool == "shell" && arg.matches("^(apt|apt-get|pip3?) .*")'
 verdict = "allow"
 
-[limits]
+[rationing]
 wall_clock = "30m"
 max_execs  = 200

@@ -25,7 +25,7 @@ stopped it.
 ## runeward's model: mediate every action against a contract
 
 The agent can only touch the world — shell, files, network, code execution —
-through runeward's governed path. That path is driven by a **profile**: a
+through runeward's governed path. That path is driven by a **Charter**: a
 declarative security contract, authored once by whoever owns security, enforced
 on every action, and **deny-by-default**.
 
@@ -83,7 +83,7 @@ and "train it to be safe" are both allow-by-default, so a control the operator
 runeward inverts the default. The contract is **deny-by-default** and authored
 once by the security owner — not re-derived from each prompt. The person driving
 the agent can forget to ask for a control; they cannot accidentally *grant* one
-the profile never granted. The blast radius is exactly what the profile allows,
+the Charter never granted. The blast radius is exactly what the Charter allows,
 and omissions fail safe.
 
 > runeward doesn't ask the agent to remember the rules. It makes the rules a
@@ -101,21 +101,21 @@ plane required.
 
 ```bash
 # Export the signed transcript from a running control plane
-curl -s localhost:8080/v1/audit/export > transcript.json
+curl -s localhost:8080/v1/chronicle/export > transcript.json
 
 # Verify the chain + signatures offline (e.g. on an auditor's machine)
-runeward audit verify transcript.json
+runeward chronicle verify transcript.json
 # ok: 128 events verified (hash chain + signatures intact)
 ```
 
-You can also verify a live instance and scope a transcript to a single sandbox:
+You can also verify a live instance and scope a transcript to a single Citadel:
 
 ```bash
-curl -s localhost:8080/v1/audit/verify              # verify the live ledger
-curl -s localhost:8080/v1/sandboxes/$SB/audit       # one sandbox's events + verdicts
+curl -s localhost:8080/v1/chronicle/verify          # verify the live ledger
+curl -s localhost:8080/v1/citadels/$SB/chronicle    # one Citadel's events + verdicts
 ```
 
-The mapping to a control framework is then concrete: the **profile is the
+The mapping to a control framework is then concrete: the **Charter is the
 documented control** (deny-by-default egress, per-action policy, approval gates,
 guardrails), and the **verified transcript is the evidence** that every action
 was evaluated against it. If a record were altered or dropped, verification
@@ -139,16 +139,16 @@ points:
 | | Identity / authorization (AAuth, SPIFFE, OAuth) | runeward (execution governance) |
 | --- | --- | --- |
 | Question | Who is this agent, and may it reach that resource? | What may it do when it executes here, and what happened? |
-| Where | At the edge, across trust domains | Inside the sandbox you control |
+| Where | At the edge, across trust domains | Inside the Citadel you control |
 | When | Before the request leaves | At tool-execution time — physically able to block |
 
 They compose well: an agent can carry a cryptographic identity for its outbound
 calls *while* runeward isolates, gates, and audits everything it executes
 locally — defense in depth (runeward's egress allowlist plus a key-bound caller
 identity). It also names an honest gap. runeward today authenticates its own API
-with bearer tokens and *injects* outbound secrets into the sandbox — exactly the
+with bearer tokens and *injects* outbound secrets into the Citadel — exactly the
 copyable-secret model that key-bound agent identity is designed to replace.
-Adopting proof-of-possession identity for the API and for the sandbox's outbound
+Adopting proof-of-possession identity for the API and for the Citadel's outbound
 calls is tracked in the
 [roadmap](https://github.com/Runewardd/runeward/blob/main/ROADMAP.md).
 
@@ -158,15 +158,15 @@ Governance is defense-in-depth, not magic. Being precise about the limits is
 what makes the claim credible:
 
 - runeward governs **mediated actions** — what the agent does *through* its
-  sandbox, tools, egress, and file ops. It is not model alignment and cannot
+  Citadel, tools, egress, and file ops. It is not model alignment and cannot
   police reasoning, nor an action it never mediates (e.g. an agent handed live
   production credentials and a network path you explicitly allowlisted).
 - It is a **control plane**: someone still authors the contract and staffs the
   approvals inbox. runeward's job is to make that contract unbypassable and
   auditable, and to make the default *deny* so omissions are safe.
 - For compliance frameworks, this shows up as **policy-as-code + audit
-  evidence**: the profile is the documented control, the ledger is proof it ran.
-  runeward provides the mechanism and the evidence; it does not certify you.
+  evidence**: the Charter is the documented control, the Chronicle is proof it
+  ran. runeward provides the mechanism and the evidence; it does not certify you.
 
 See the [Security model](security-model.md) for exactly what is and isn't in
-scope, and [Profiles](profiles.md) to write your own contract.
+scope, and [Charters](profiles.md) to write your own contract.

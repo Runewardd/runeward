@@ -163,21 +163,21 @@ async function refreshHealth() {
 async function refreshAuditVerify() {
   const badge = $("#audit-badge");
   try {
-    const { data } = await api("GET", "/v1/audit/verify");
+    const { data } = await api("GET", "/v1/chronicle/verify");
     if (data && data.ok) {
       badge.className = "badge ok";
-      badge.title = "Audit ledger verified";
+      badge.title = "Chronicle verified";
       badge.querySelector(".badge-dot") || badge.prepend(el("span", { class: "badge-dot" }));
-      badge.lastChild.textContent = " Audit verified";
+      badge.lastChild.textContent = " Chronicle verified";
     } else {
       badge.className = "badge bad";
-      badge.title = (data && data.error) || "Audit verification failed";
-      badge.lastChild.textContent = " Audit tampered";
+      badge.title = (data && data.error) || "Chronicle verification failed";
+      badge.lastChild.textContent = " Chronicle tampered";
     }
   } catch (e) {
     badge.className = "badge bad";
     badge.title = e.message;
-    badge.lastChild.textContent = " Audit ?";
+    badge.lastChild.textContent = " Chronicle ?";
   }
 }
 
@@ -190,7 +190,7 @@ function fillProfileSelect(sel, text) {
     return;
   }
   if (state.profiles.length === 0) {
-    sel.appendChild(el("option", { value: "", text: "No profiles" }));
+    sel.appendChild(el("option", { value: "", text: "No charters" }));
     return;
   }
   for (const p of state.profiles) {
@@ -202,23 +202,23 @@ function fillProfileSelect(sel, text) {
 
 async function loadProfiles() {
   try {
-    const { data } = await api("GET", "/v1/profiles");
+    const { data } = await api("GET", "/v1/charters");
     state.profiles = (data && data.profiles) || [];
     fillProfileSelect($("#profile-select"));
     fillProfileSelect($("#fleet-profile-select"));
     fillProfileSelect($("#sim-profile-select"));
   } catch (e) {
-    fillProfileSelect($("#profile-select"), "profiles unavailable");
-    fillProfileSelect($("#fleet-profile-select"), "profiles unavailable");
-    fillProfileSelect($("#sim-profile-select"), "profiles unavailable");
-    toast("Could not load profiles: " + e.message, "error");
+    fillProfileSelect($("#profile-select"), "charters unavailable");
+    fillProfileSelect($("#fleet-profile-select"), "charters unavailable");
+    fillProfileSelect($("#sim-profile-select"), "charters unavailable");
+    toast("Could not load charters: " + e.message, "error");
   }
 }
 
 /* ---------------- Sandboxes ---------------- */
 async function loadSandboxes() {
   try {
-    const { data } = await api("GET", "/v1/sandboxes");
+    const { data } = await api("GET", "/v1/citadels");
     state.sandboxes = (data && data.sandboxes) || [];
   } catch (e) {
     state.sandboxes = [];
@@ -234,7 +234,7 @@ function renderSandboxList() {
   const list = $("#sandbox-list");
   list.innerHTML = "";
   if (state.sandboxes.length === 0) {
-    list.appendChild(el("li", { class: "empty-note", text: "No sandboxes yet." }));
+    list.appendChild(el("li", { class: "empty-note", text: "No Citadels yet." }));
     return;
   }
   for (const s of state.sandboxes) {
@@ -261,7 +261,7 @@ function renderSandboxList() {
         ]),
         el("button", {
           class: "kill-btn",
-          title: "Kill sandbox",
+          title: "Remove Citadel",
           text: "✕",
           onClick: (ev) => {
             ev.stopPropagation();
@@ -277,7 +277,7 @@ function renderSandboxList() {
 function openNewSandboxModal() {
   const profile = $("#profile-select").value;
   if (!profile) {
-    toast("Pick a profile first.", "warn");
+    toast("Pick a charter first.", "warn");
     return;
   }
   $("#new-modal-profile").textContent = profile;
@@ -293,7 +293,7 @@ function closeNewSandboxModal() {
 async function createSandbox() {
   const profile = $("#new-modal-profile").textContent.trim();
   if (!profile) {
-    toast("Pick a profile first.", "warn");
+    toast("Pick a charter first.", "warn");
     return;
   }
   const copyFrom = $("#new-modal-copyfrom").value.trim();
@@ -302,8 +302,8 @@ async function createSandbox() {
   try {
     const body = { profile };
     if (copyFrom) body.copy_from = copyFrom;
-    const { data } = await api("POST", "/v1/sandboxes", body);
-    toast(`Sandbox ${data.id} created`, "success");
+    const { data } = await api("POST", "/v1/citadels", body);
+    toast(`Citadel ${data.id} created`, "success");
     closeNewSandboxModal();
     await loadSandboxes();
     if (data.id) selectSandbox(data.id);
@@ -316,8 +316,8 @@ async function createSandbox() {
 
 async function killSandbox(id) {
   try {
-    await api("DELETE", "/v1/sandboxes/" + encodeURIComponent(id));
-    toast(`Sandbox ${id} killed`, "info");
+    await api("DELETE", "/v1/citadels/" + encodeURIComponent(id));
+    toast(`Citadel ${id} removed`, "info");
     if (state.selected === id) selectSandbox(null);
     await loadSandboxes();
   } catch (e) {
@@ -377,7 +377,7 @@ function switchView(name) {
 
 /* ---------------- Fleets ---------------- */
 function fleetPath(suffix) {
-  return `/v1/fleets/${encodeURIComponent(state.fleetSelected)}${suffix || ""}`;
+  return `/v1/cohorts/${encodeURIComponent(state.fleetSelected)}${suffix || ""}`;
 }
 
 async function refreshFleets() {
@@ -387,7 +387,7 @@ async function refreshFleets() {
 
 async function loadFleets() {
   try {
-    const { data } = await api("GET", "/v1/fleets");
+    const { data } = await api("GET", "/v1/cohorts");
     state.fleets = (data && data.fleets) || [];
   } catch (e) {
     state.fleets = [];
@@ -403,7 +403,7 @@ function renderFleetList() {
   const list = $("#fleet-list");
   list.innerHTML = "";
   if (state.fleets.length === 0) {
-    list.appendChild(el("li", { class: "empty-note", text: "No fleets yet." }));
+    list.appendChild(el("li", { class: "empty-note", text: "No Cohorts yet." }));
     return;
   }
   for (const f of state.fleets) {
@@ -429,7 +429,7 @@ function renderFleetList() {
         ]),
         el("button", {
           class: "kill-btn",
-          title: "Delete fleet",
+          title: "Delete Cohort",
           text: "✕",
           onClick: (ev) => {
             ev.stopPropagation();
@@ -445,18 +445,18 @@ function renderFleetList() {
 async function createFleet() {
   const profile = $("#fleet-profile-select").value;
   if (!profile) {
-    toast("Pick a profile first.", "warn");
+    toast("Pick a charter first.", "warn");
     return;
   }
   const btn = $("#fleet-create-btn");
   btn.disabled = true;
   try {
-    const { data } = await api("POST", "/v1/fleets", { profile });
-    toast(`Fleet ${data.id} created`, "success");
+    const { data } = await api("POST", "/v1/cohorts", { profile });
+    toast(`Cohort ${data.id} created`, "success");
     await loadFleets();
     if (data.id) selectFleet(data.id);
   } catch (e) {
-    toast("Create fleet failed: " + e.message, "error");
+    toast("Create Cohort failed: " + e.message, "error");
   } finally {
     btn.disabled = false;
   }
@@ -464,8 +464,8 @@ async function createFleet() {
 
 async function deleteFleet(id) {
   try {
-    await api("DELETE", "/v1/fleets/" + encodeURIComponent(id));
-    toast(`Fleet ${id} deleted`, "info");
+    await api("DELETE", "/v1/cohorts/" + encodeURIComponent(id));
+    toast(`Cohort ${id} deleted`, "info");
     if (state.fleetSelected === id) selectFleet(null);
     await loadFleets();
   } catch (e) {
@@ -502,7 +502,7 @@ async function refreshFleetDetail() {
     renderFleetDetail(fleetRes.data || {});
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
-      toast("Fleet no longer exists", "warn");
+      toast("Cohort no longer exists", "warn");
       selectFleet(null);
       loadFleets();
     }
@@ -515,7 +515,7 @@ function renderFleetDetail(fleet) {
   const sbCount = sbs.length;
   $("#fleet-sel-id").textContent = fleet.id || state.fleetSelected;
   $("#fleet-sel-meta").textContent =
-    `${fleet.profile || "—"} · ${sbCount} sandbox${sbCount === 1 ? "" : "es"}`;
+    `${fleet.profile || "—"} · ${sbCount} Citadel${sbCount === 1 ? "" : "s"}`;
   $("#fleet-sb-count").textContent = `${sbCount} member${sbCount === 1 ? "" : "s"}`;
 
   renderFleetStats(fleet.stats || {});
@@ -540,7 +540,7 @@ function renderFleetChips(ids) {
   const wrap = $("#fleet-chips");
   wrap.innerHTML = "";
   if (!ids.length) {
-    wrap.appendChild(el("span", { class: "empty-note", text: "No member sandboxes." }));
+    wrap.appendChild(el("span", { class: "empty-note", text: "No member Citadels." }));
     return;
   }
   for (const id of ids) {
@@ -793,7 +793,7 @@ function connectTerminal(forceReconnect = false) {
   requestTerminalTicket(state.selected)
     .then((ticket) => {
       const url =
-        `${proto}//${location.host}/v1/sandboxes/${encodeURIComponent(state.selected)}/terminal` +
+        `${proto}//${location.host}/v1/citadels/${encodeURIComponent(state.selected)}/terminal` +
         `?ticket=${encodeURIComponent(ticket)}`;
       const socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
@@ -844,7 +844,7 @@ async function requestTerminalTicket(sandboxID) {
 
 /* ---------------- Files tab ---------------- */
 function sbPath(suffix) {
-  return `/v1/sandboxes/${encodeURIComponent(state.selected)}${suffix}`;
+  return `/v1/citadels/${encodeURIComponent(state.selected)}${suffix}`;
 }
 
 async function fileList() {
@@ -1016,7 +1016,7 @@ async function refreshAudit() {
   if (!state.selected) return;
   const body = $("#audit-body");
   try {
-    const { data } = await api("GET", sbPath("/audit"));
+    const { data } = await api("GET", sbPath("/chronicle"));
     const events = (data && data.events) || [];
     if (events.length === 0) {
       body.innerHTML = "";
@@ -1058,7 +1058,7 @@ function stopAuditPoll() {
 /* ---------------- Approvals ---------------- */
 async function refreshApprovals() {
   try {
-    const { data } = await api("GET", "/v1/approvals");
+    const { data } = await api("GET", "/v1/conclave");
     state.approvals = (data && data.approvals) || [];
   } catch {
     state.approvals = state.approvals || [];
@@ -1075,7 +1075,7 @@ function renderApprovals() {
   const list = $("#approvals-list");
   list.innerHTML = "";
   if (n === 0) {
-    list.appendChild(el("li", { class: "empty-note", text: "No pending approvals." }));
+    list.appendChild(el("li", { class: "empty-note", text: "No pending Conclave decisions." }));
     return;
   }
   for (const a of state.approvals) {
@@ -1101,7 +1101,7 @@ function renderApprovals() {
                 onClick: () => decideApproval(a.id, "deny"),
               }),
             ])
-          : el("div", { class: "approval-meta", text: "You do not have permission to resolve approvals." }),
+          : el("div", { class: "approval-meta", text: "You do not have permission to resolve Conclave decisions." }),
       ])
     );
   }
@@ -1109,7 +1109,7 @@ function renderApprovals() {
 
 async function decideApproval(id, decision) {
   try {
-    await api("POST", `/v1/approvals/${encodeURIComponent(id)}/${decision}`);
+    await api("POST", `/v1/conclave/${encodeURIComponent(id)}/${decision}`);
     toast(`Approval ${decision === "approve" ? "approved" : "denied"}`, decision === "approve" ? "success" : "info");
     await refreshApprovals();
   } catch (e) {
@@ -1147,7 +1147,7 @@ async function runPolicySimulation() {
   note.textContent = "";
   if (!state.selected) {
     note.className = "note warn";
-    note.textContent = "Select a sandbox first.";
+    note.textContent = "Select a Citadel first.";
     return;
   }
   const raw = $("#sim-actions").value;
@@ -1169,7 +1169,7 @@ async function runPolicySimulation() {
   const profileName = useSelected ? (selectedSB.profile || "") : ($("#sim-profile-select").value || "");
   if (!profileName) {
     note.className = "note warn";
-    note.textContent = "Pick a profile to simulate.";
+    note.textContent = "Pick a charter to simulate.";
     return;
   }
   const btn = $("#sim-run");
@@ -1230,7 +1230,7 @@ function renderSimulationResults() {
 async function refreshEgress() {
   if (!state.selected) return;
   try {
-    const { data } = await api("GET", sbPath("/egress"));
+    const { data } = await api("GET", sbPath("/perimeter"));
     state.egress = (data && data.decisions) || [];
   } catch (e) {
     state.egress = [];
@@ -1243,7 +1243,7 @@ function renderEgress() {
   if (!body) return;
   body.innerHTML = "";
   if (!state.selected) {
-    body.appendChild(el("tr", {}, el("td", { colspan: "5", class: "empty-note", text: "Select a sandbox first." })));
+    body.appendChild(el("tr", {}, el("td", { colspan: "5", class: "empty-note", text: "Select a Citadel first." })));
     return;
   }
   if (!state.egress.length) {
@@ -1267,7 +1267,7 @@ async function refreshBudget() {
   try {
     const [sbRes, auditRes] = await Promise.all([
       api("GET", sbPath("")),
-      api("GET", sbPath("/audit")),
+      api("GET", sbPath("/chronicle")),
     ]);
     state.budget = deriveBudget(sbRes.data || {}, (auditRes.data && auditRes.data.events) || []);
   } catch (e) {
@@ -1333,7 +1333,7 @@ function renderBudget() {
   if (!grid) return;
   grid.innerHTML = "";
   if (!state.selected) {
-    grid.appendChild(el("div", { class: "empty-note", text: "Select a sandbox first." }));
+    grid.appendChild(el("div", { class: "empty-note", text: "Select a Citadel first." }));
     return;
   }
   if (!state.budget) {

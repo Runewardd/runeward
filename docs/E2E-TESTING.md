@@ -2,7 +2,7 @@
 
 A hands-on walkthrough for exercising the whole stack on your laptop: the
 **Docker** and **Kubernetes** backends, deny-by-default and **strict (L3)**
-egress, the governed REST API, snapshots, multi-agent fleets, and wiring the
+egress, the governed REST API, snapshots, multi-agent Cohorts, and wiring the
 **MCP server** into **Claude Desktop**, **Cursor**, and **VS Code**.
 
 It also covers the governance/ops surface added since: the **framework
@@ -95,9 +95,9 @@ The example profiles live in `[examples/](https://github.com/Runewardd/runeward/
 | `policy-bundle` | Docker  | signed OCI policy bundle (`[policy_bundle]`)      |
 | `egress-demo`   | Docker  | deny-by-default egress (cooperative proxy)        |
 | `egress-strict` | K8s     | strict L3 egress (iptables + transparent proxy)   |
-| `fleet-demo`    | Docker  | multi-agent fleet + atomic task board             |
+| `fleet-demo`    | Docker  | multi-agent Cohort + atomic Command Board         |
 | `ns-auto`       | Docker  | fully worked autonomous-agent contract            |
-| `k8s`           | K8s     | minimal Kubernetes-backed sandbox                 |
+| `k8s`           | K8s     | minimal Kubernetes-backed Citadel                 |
 
 
 ---
@@ -145,10 +145,10 @@ export RUNEWARD_API_TOKEN=dev-local   # pick any secret; reuse it in the dashboa
 ```
 
 Open [http://localhost:8080/](http://localhost:8080/) — you get the dashboard (create a sandbox, live
-terminal, files, shell/code, audit timeline, approvals inbox, and the **Fleets**
+terminal, files, shell/code, Chronicle timeline, Conclave inbox, and the **Cohorts**
 view). Leave `serve` running and drive it from a second terminal.
 
-### 2a. Sandbox lifecycle over REST
+### 2a. Citadel lifecycle over REST
 
 In a **second terminal**, set the API base URL and auth header (match how you
 started `serve` above):
@@ -170,29 +170,29 @@ serving without a token. `/healthz` is always open; everything under `/v1`,
 
 ```bash
 # Create a sandbox from the dev profile
-SID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"dev"}' | jq -r .id)
+SID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"dev"}' | jq -r .id)
 echo "sandbox=$SID"
 
 # Run a shell command
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/shell/exec \
   -d '{"command":["echo","hello from runeward"]}' | jq
 
 # Run Python (NB: the sandbox image must ship python3 — the `dev` profile's
 # debian:stable-slim does not. See the note below to test the code runner.)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/code/python \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/code/python \
   -d '{"code":"print(6*7)"}' | jq '.stdout'
 
 # Write + read a file (read returns content under .content)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/file/write \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/file/write \
   -d '{"path":"note.txt","content":"remember me"}' | jq '.verdict'
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/file/read \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/file/read \
   -d '{"path":"note.txt"}' | jq -r '.content'
 
 # List sandboxes (array is under .sandboxes)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes | jq '.sandboxes[].id'
+curl -s "${AUTH[@]}" $BASE/v1/citadels | jq '.sandboxes[].id'
 
 # Tear down
-curl -s "${AUTH[@]}" -X DELETE $BASE/v1/sandboxes/$SID | jq
+curl -s "${AUTH[@]}" -X DELETE $BASE/v1/citadels/$SID | jq
 ```
 
 Every response carries a `verdict` (`allow`/`deny`/`require-approval`),
@@ -206,14 +206,14 @@ through `| jq` (not `| jq '.stdout'`) so you see the real error body.
 > needs a Python image (the `dev` profile's `debian:stable-slim` has none) — point
 > a profile at e.g. `python:3.12-slim` and restart `serve` to see it return `42`.
 
-### 2b. Audit ledger + tamper-evidence
+### 2b. Chronicle + tamper-evidence
 
 ```bash
 # This sandbox's events (events are under .events)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/audit | jq '.events[].tool'
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/chronicle | jq '.events[].tool'
 
 # Verify the hash chain across the whole ledger
-curl -s "${AUTH[@]}" $BASE/v1/audit/verify | jq
+curl -s "${AUTH[@]}" $BASE/v1/chronicle/verify | jq
 # => {"ok":true,"signed":true}
 ```
 
@@ -235,28 +235,28 @@ rejected before policy runs and never creates an approval).
 
 ```bash
 # NB: don't name the variable GID/UID/EUID — those are read-only in zsh.
-SB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"governed"}' | jq -r .id)
+SB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"governed"}' | jq -r .id)
 echo "sandbox=$SB"
 
 # Denied outright by policy -> HTTP 403 + verdict "deny"
 curl -s "${AUTH[@]}" -o /dev/null -w "%{http_code}\n" \
-  $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["rm","-rf","/tmp/x"]}'
+  $BASE/v1/citadels/$SB/shell/exec -d '{"command":["rm","-rf","/tmp/x"]}'
 # => 403
 
 # Requires approval: blocks up to 5 min, then returns 202 + approval_id.
 # Run in the background (&) so you can approve from another command while it waits.
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/file/write \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/file/write \
   -d '{"path":"config/app.conf","content":"reviewed"}' &
 
 # See the pending approval (list is under .approvals)
 sleep 1
-curl -s "${AUTH[@]}" $BASE/v1/approvals | jq
+curl -s "${AUTH[@]}" $BASE/v1/conclave | jq
 # => {"approvals":[{"id":"…","sandbox_id":"…","tool":"file.write",…}]}
-AID=$(curl -s "${AUTH[@]}" $BASE/v1/approvals | jq -r '.approvals[0].id')
+AID=$(curl -s "${AUTH[@]}" $BASE/v1/conclave | jq -r '.approvals[0].id')
 echo "approval=$AID"
 
 # Approve it (or /deny) — the blocked background call now proceeds
-curl -s "${AUTH[@]}" -X POST $BASE/v1/approvals/$AID/approve | jq
+curl -s "${AUTH[@]}" -X POST $BASE/v1/conclave/$AID/approve | jq
 # => {"ok":true}
 # The background file/write job prints {"bytes":…,"verdict":"allow"} when done
 ```
@@ -270,15 +270,15 @@ The same verdicts can be expressed in CEL or OPA/Rego by setting `policy_engine`
 in the profile. `examples/rego.toml` mirrors `governed`'s rules in Rego:
 
 ```bash
-RID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"rego"}' | jq -r .id)
+RID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"rego"}' | jq -r .id)
 
 # Denied by the Rego module (data.runeward.decision)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$RID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$RID/shell/exec \
   -d '{"command":["rm","-rf","/tmp/x"]}' | jq '{verdict,reason}'
 # => {"verdict":"deny","reason":"destructive command blocked by policy"}
 
 # Allowed (default decision)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$RID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$RID/shell/exec \
   -d '{"command":["echo","hi"]}' | jq '{verdict,exit_code}'
 # => {"verdict":"allow","exit_code":0}
 ```
@@ -308,7 +308,7 @@ Build the sandbox image once, then create a `browser-stateful` sandbox:
 
 ```bash
 docker build -f deploy/Dockerfile.sandbox -t runeward-sandbox:dev .   # one-time
-BID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"browser-stateful"}' | jq -r .id)
+BID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"browser-stateful"}' | jq -r .id)
 echo "browser sandbox=$BID"
 # Sanity check the container stayed up (Status should be "Up …", not "Exited"):
 docker ps --filter "label=runeward.profile=browser-stateful" --format '{{.Status}}'
@@ -318,12 +318,12 @@ docker ps --filter "label=runeward.profile=browser-stateful" --format '{{.Status
 
 ```bash
 # mode "text" returns rendered DOM in .stdout
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BID/browser \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BID/browser \
   -d '{"url":"https://example.com/","mode":"text"}' | jq -r '.stdout' | head
 # => <!doctype html> … <title>Example Domain</title> … <h1>Example Domain</h1> …
 
 # mode "screenshot" returns a base64 PNG in .stdout — decode it to a file:
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BID/browser \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BID/browser \
   -d '{"url":"https://example.com/","mode":"screenshot"}' \
   | jq -r '.stdout' | base64 -d > shot.png
 file shot.png     # => shot.png: PNG image data, … (a real PNG, not 0 bytes)
@@ -336,23 +336,23 @@ is individually governed and audited:
 
 ```bash
 # open -> returns a session id
-SESS=$(curl -s "${AUTH[@]}" -X POST $BASE/v1/sandboxes/$BID/browser/sessions | jq -r .session_id)
+SESS=$(curl -s "${AUTH[@]}" -X POST $BASE/v1/citadels/$BID/browser/sessions | jq -r .session_id)
 
 # act: navigate, then evaluate JS / extract text / screenshot on the SAME page
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BID/browser/sessions/$SESS/act \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BID/browser/sessions/$SESS/act \
   -d '{"action":"navigate","url":"https://example.com/"}' | jq '{verdict,exit_code}'
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BID/browser/sessions/$SESS/act \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BID/browser/sessions/$SESS/act \
   -d '{"action":"title"}' | jq -r .stdout        # => Example Domain
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BID/browser/sessions/$SESS/act \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BID/browser/sessions/$SESS/act \
   -d '{"action":"eval","expr":"document.querySelectorAll(\"a\").length"}' | jq -r .stdout   # => 1
 
 # screenshot returns a base64 PNG in .stdout — decode the same page to a file:
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BID/browser/sessions/$SESS/act \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BID/browser/sessions/$SESS/act \
   -d '{"action":"screenshot"}' | jq -r .stdout | base64 -d > session-shot.png
 file session-shot.png    # => PNG image data …
 
 # close -> shuts down the in-sandbox Chromium
-curl -s "${AUTH[@]}" -X DELETE $BASE/v1/sandboxes/$BID/browser/sessions/$SESS | jq
+curl -s "${AUTH[@]}" -X DELETE $BASE/v1/citadels/$BID/browser/sessions/$SESS | jq
 ```
 
 Over MCP the session is `runeward_browser_open` → `runeward_browser_act`
@@ -375,7 +375,7 @@ the profile's `[policy_bundle]` block for the test.
 ```bash
 # 1. Local registry + signing key (host 5001 -> registry 5000; avoids AirPlay)
 docker run -d --rm -p 5001:5000 --name rw-registry registry:2
-./bin/runeward bundle keygen --out /tmp/rw-keys      # writes bundle.key + bundle.pub
+./bin/runeward archive keygen --out /tmp/rw-keys      # writes bundle.key + bundle.pub
 
 # 2. Author a policy and push it (rego here; --engine cel also works)
 cat > /tmp/prod.rego <<'EOF'
@@ -387,11 +387,11 @@ decision := {"verdict": "deny", "reason": "destructive command blocked by bundle
   contains(input.arg, "rm ")
 }
 EOF
-./bin/runeward bundle push oci://localhost:5001/policies:v1 \
+./bin/runeward archive push oci://localhost:5001/policies:v1 \
   --policy /tmp/prod.rego --engine rego --key /tmp/rw-keys/bundle.key --plain-http
 
 # 3. Verify the pull independently (tamper the tag or key to see it fail closed)
-./bin/runeward bundle pull oci://localhost:5001/policies:v1 \
+./bin/runeward archive pull oci://localhost:5001/policies:v1 \
   --verify-key /tmp/rw-keys/bundle.pub --plain-http
 
 # 4. A profile that consumes it (examples/policy-bundle.toml as a template):
@@ -414,15 +414,15 @@ starts an in-process host proxy and points the container at it via
 `HTTP(S)_PROXY`.
 
 ```bash
-EID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"egress-demo"}' | jq -r .id)
+EID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"egress-demo"}' | jq -r .id)
 
 # Allowed host -> succeeds
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$EID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$EID/shell/exec \
   -d '{"command":["wget","-qO-","http://example.com/"]}' | jq '.exit_code'
 # => 0
 
 # Disallowed host -> blocked by the proxy (non-zero exit)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$EID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$EID/shell/exec \
   -d '{"command":["wget","-qO-","http://api.github.com/"]}' | jq '.exit_code'
 # => non-zero
 ```
@@ -436,16 +436,16 @@ curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$EID/shell/exec \
 ## 5. Snapshots (Docker)
 
 ```bash
-SID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"dev"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/file/write -d '{"path":"state.txt","content":"v1"}' >/dev/null
+SID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"dev"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/file/write -d '{"path":"state.txt","content":"v1"}' >/dev/null
 
 # Capture a snapshot of the workspace
-SNAP=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/snapshot -d '{"name":"v1"}' | jq -r .id)
+SNAP=$(curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/snapshot -d '{"name":"v1"}' | jq -r .id)
 curl -s "${AUTH[@]}" $BASE/v1/snapshots | jq
 
 # Restore into a brand-new governed sandbox
 RID=$(curl -s "${AUTH[@]}" -X POST $BASE/v1/snapshots/$SNAP/restore | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$RID/file/read -d '{"path":"state.txt"}' | jq -r .stdout
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$RID/file/read -d '{"path":"state.txt"}' | jq -r .stdout
 # => v1
 ```
 
@@ -476,7 +476,7 @@ inline test using the CLI against a k8s profile — create `examples/k8s.toml`:
 type    = "k8s"
 image   = "debian:stable-slim"
 workdir = "/workspace"
-[limits]
+[rationing]
 max_execs = 100
 ```
 
@@ -484,16 +484,16 @@ Then:
 
 ```bash
 ./bin/runeward --config-dir examples serve      # same control plane, now k8s-capable
-KID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"k8s"}' | jq -r .id)
+KID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"k8s"}' | jq -r .id)
 
 # Watch the pod come up
 kubectl -n runeward get pods
 
 # Exec through the governed API (goes via client-go remotecommand)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$KID/shell/exec -d '{"command":["hostname"]}' | jq -r .stdout
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$KID/shell/exec -d '{"command":["hostname"]}' | jq -r .stdout
 # => runeward-<id>   (the pod name; matches `kubectl -n runeward get pods`)
 
-curl -s "${AUTH[@]}" -X DELETE $BASE/v1/sandboxes/$KID    # deletes the Pod + PVC
+curl -s "${AUTH[@]}" -X DELETE $BASE/v1/citadels/$KID    # deletes the Pod + PVC
 ```
 
 ### 6b. Strict L3 egress (iptables + transparent SNI proxy)
@@ -510,7 +510,7 @@ Run a sandbox from the `egress-strict` profile (allowlist: `example.com`,
 `*.githubusercontent.com`):
 
 ```bash
-SID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"egress-strict"}' | jq -r .id)
+SID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"egress-strict"}' | jq -r .id)
 
 # Inspect the pod — you should see an init container (egress-init) and the
 # egress sidecar alongside the sandbox container:
@@ -518,11 +518,11 @@ kubectl -n runeward get pod -l runeward.profile=egress-strict -o jsonpath='{.ite
 
 # Allowed host succeeds (traffic is transparently redirected through the proxy,
 # which reads the TLS SNI / HTTP Host and matches the allowlist):
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/shell/exec \
   -d '{"command":["curl","-sS","-o","/dev/null","-w","%{http_code}","https://example.com/"]}' | jq -r .stdout
 
 # Disallowed host is dropped even though nothing set HTTP_PROXY inside the app:
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SID/shell/exec \
   -d '{"command":["curl","-sS","--max-time","8","https://api.github.com/"]}' | jq '.exit_code'
 # => non-zero (connection refused/reset by the proxy)
 
@@ -565,28 +565,28 @@ Then drive it declaratively (create `examples/k8s.toml` per 6a first):
 ```bash
 cat <<'EOF' | kubectl apply -f -
 apiVersion: runeward.dev/v1alpha1
-kind: Sandbox
+kind: Citadel
 metadata: { name: demo, namespace: runeward }
 spec: { profile: k8s }
 EOF
 
 # The controller provisions the pod and fills in .status
-kubectl -n runeward get sandboxes
-kubectl -n runeward get sandbox demo -o jsonpath='{.status}' ; echo
-# => {"phase":"Running","sandboxId":"...","backend":"k8s","image":"debian:stable-slim"}
+kubectl -n runeward get citadels
+kubectl -n runeward get citadel demo -o jsonpath='{.status}' ; echo
+# => {"phase":"Running","citadelId":"...","backend":"k8s","image":"debian:stable-slim"}
 kubectl -n runeward get pods
 
-# A Fleet works the same way
+# A Cohort works the same way
 cat <<'EOF' | kubectl apply -f -
 apiVersion: runeward.dev/v1alpha1
-kind: Fleet
+kind: Cohort
 metadata: { name: crew, namespace: runeward }
 spec: { profile: fleet-demo }
 EOF
-kubectl -n runeward get fleets
+kubectl -n runeward get cohorts
 
-# Deleting a CR tears down the backing pods/fleet via a finalizer
-kubectl -n runeward delete sandbox demo
+# Deleting a CR tears down the backing pods/Cohort via a finalizer
+kubectl -n runeward delete citadel demo
 ```
 
 Via Helm instead of `runeward up` (use **one** installer — they manage the same
@@ -610,7 +610,7 @@ Uninstall: `helm uninstall runeward -n runeward` (Helm), or for `runeward up`:
 ```bash
 kubectl delete namespace runeward
 kubectl delete clusterrole,clusterrolebinding runeward-controller --ignore-not-found
-kubectl delete crd sandboxes.runeward.dev fleets.runeward.dev clusterpolicies.runeward.dev clustersandboxes.runeward.dev clusterfleets.runeward.dev
+kubectl delete crd citadels.runeward.dev cohorts.runeward.dev clusterpolicies.runeward.dev clustercitadels.runeward.dev clustercohorts.runeward.dev
 ```
 
 ### 6d. Org-wide policy defaults (`ClusterPolicy` + admission webhook)
@@ -625,7 +625,7 @@ helm upgrade --install runeward deploy/helm/runeward -n runeward --create-namesp
 kubectl -n runeward rollout status deploy/runeward-webhook
 ```
 
-Apply an org policy, then watch it default and gate Sandbox/Fleet creation:
+Apply an org policy, then watch it default and gate Citadel/Cohort creation:
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
@@ -642,16 +642,16 @@ EOF
 # Missing spec.profile -> mutating webhook fills in defaultProfile ("k8s")
 cat <<'EOF' | kubectl apply -f -
 apiVersion: runeward.dev/v1alpha1
-kind: Sandbox
+kind: Citadel
 metadata: { name: defaulted, namespace: runeward, labels: { owner: alice } }
 spec: {}
 EOF
-kubectl -n runeward get sandbox defaulted -o jsonpath='{.spec.profile}'; echo   # => k8s
+kubectl -n runeward get citadel defaulted -o jsonpath='{.spec.profile}'; echo   # => k8s
 
 # A denied profile is rejected by the validating webhook
 cat <<'EOF' | kubectl apply -f -
 apiVersion: runeward.dev/v1alpha1
-kind: Sandbox
+kind: Citadel
 metadata: { name: blocked, namespace: runeward, labels: { owner: alice } }
 spec: { profile: super-admin }
 EOF
@@ -665,10 +665,10 @@ EOF
 > (defaulting, allow/deny globs, namespace + required-label checks) is
 > unit-tested in `internal/webhook`.
 
-### 6e. Cluster-scoped cells (`ClusterSandbox` / `ClusterFleet`)
+### 6e. Cluster-scoped cells (`ClusterCitadel` / `ClusterCohort`)
 
 For org-shared cells that shouldn't belong to any single team namespace, the
-controller also reconciles the cluster-scoped `ClusterSandbox` / `ClusterFleet`.
+controller also reconciles the cluster-scoped `ClusterCitadel` / `ClusterCohort`.
 `runeward up` installs all five CRDs; the controller watches the cluster-scoped
 ones cluster-wide (via a `ClusterRole`) regardless of `--all-namespaces`:
 
@@ -679,29 +679,29 @@ ones cluster-wide (via a `ClusterRole`) regardless of `--all-namespaces`:
 ```bash
 cat <<'EOF' | kubectl apply -f -
 apiVersion: runeward.dev/v1alpha1
-kind: ClusterSandbox
+kind: ClusterCitadel
 metadata: { name: shared-cell, labels: { owner: alice } }
 spec: { profile: k8s }
 EOF
 
-kubectl get clustersandboxes            # short name: csbx
-kubectl get clustersandbox shared-cell -o jsonpath='{.status.phase} {.status.sandboxId}'; echo
+kubectl get clustercitadels            # short name: cctd
+kubectl get clustercitadel shared-cell -o jsonpath='{.status.phase} {.status.citadelId}'; echo
 
-# A ClusterFleet fans out the profile's [fleet] replicas onto a shared board.
+# A ClusterCohort fans out the profile's [cohort] replicas onto a shared board.
 # Use a k8s-backed fleet profile (fleet-k8s) — the in-cluster controller has no
 # Docker daemon, so container-backed fleet-demo would fail with "docker CLI not
 # found in PATH".
 cat <<'EOF' | kubectl apply -f -
 apiVersion: runeward.dev/v1alpha1
-kind: ClusterFleet
+kind: ClusterCohort
 metadata: { name: shared-crew, labels: { owner: alice } }
 spec: { profile: fleet-k8s }
 EOF
-kubectl get clusterfleets               # short name: cflt
+kubectl get clustercohorts               # short name: ccoh
 
-# Deleting the CR tears down the backing sandbox/fleet via its finalizer.
-kubectl delete clustersandbox shared-cell
-kubectl delete clusterfleet shared-crew
+# Deleting the CR tears down the backing Citadel/Cohort via its finalizer.
+kubectl delete clustercitadel shared-cell
+kubectl delete clustercohort shared-crew
 ```
 
 Cluster-scoped cells carry no `namespace`; the controller provisions their
@@ -711,32 +711,32 @@ backing Pods/PVCs in its own namespace. When the admission webhook is enabled,
 
 ---
 
-## 7. Multi-agent fleets
+## 7. Multi-agent Cohorts
 
-A fleet is N sandboxes sharing one atomic task board.
+A Cohort is N Citadels sharing one atomic Command Board.
 
 ```bash
-# Create the fleet (fleet-demo => 2 sandboxes seeded with 3 tasks)
-FID=$(curl -s "${AUTH[@]}" $BASE/v1/fleets -d '{"profile":"fleet-demo"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/fleets/$FID | jq '{sandboxes, stats}'
+# Create the Cohort (fleet-demo => 2 Citadels seeded with 3 tasks)
+FID=$(curl -s "${AUTH[@]}" $BASE/v1/cohorts -d '{"profile":"fleet-demo"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/cohorts/$FID | jq '{sandboxes, stats}'
 
 # A worker atomically claims the next task
-TASK=$(curl -s "${AUTH[@]}" $BASE/v1/fleets/$FID/claim -d '{"owner":"worker-1"}')
+TASK=$(curl -s "${AUTH[@]}" $BASE/v1/cohorts/$FID/claim -d '{"owner":"worker-1"}')
 echo "$TASK" | jq
 TID=$(echo "$TASK" | jq -r '.task.id')
 
 # Complete it (or /fail with {"error":"...","requeue":true})
-curl -s "${AUTH[@]}" -X POST $BASE/v1/fleets/$FID/tasks/$TID/complete -d '{"result":"done"}' | jq
+curl -s "${AUTH[@]}" -X POST $BASE/v1/cohorts/$FID/tasks/$TID/complete -d '{"result":"done"}' | jq
 
 # Add a new task and list the board
-curl -s "${AUTH[@]}" $BASE/v1/fleets/$FID/tasks -d '{"payload":"extra work"}' | jq
-curl -s "${AUTH[@]}" $BASE/v1/fleets/$FID/tasks | jq '.tasks[] | {id, state, owner}'
+curl -s "${AUTH[@]}" $BASE/v1/cohorts/$FID/tasks -d '{"payload":"extra work"}' | jq
+curl -s "${AUTH[@]}" $BASE/v1/cohorts/$FID/tasks | jq '.tasks[] | {id, state, owner}'
 
-# Tear the whole fleet down
-curl -s "${AUTH[@]}" -X DELETE $BASE/v1/fleets/$FID | jq
+# Tear the whole Cohort down
+curl -s "${AUTH[@]}" -X DELETE $BASE/v1/cohorts/$FID | jq
 ```
 
-The dashboard's **Fleets** view shows the same board live, with per-task
+The dashboard's **Cohorts** view shows the same board live, with per-task
 claim/complete/fail controls.
 
 ---
@@ -747,13 +747,13 @@ runeward speaks the Model Context Protocol over **stdio** (for editor/desktop
 clients) or **streamable HTTP** (mounted at `/mcp` on `serve`, or standalone via
 `runeward mcp --http`). Tools exposed:
 
-- Sandboxes: `runeward_create_sandbox`, `runeward_shell`, `runeward_python`,
+- Citadels: `runeward_create_citadel`, `runeward_shell`, `runeward_python`,
 `runeward_node`, `runeward_browser`, `runeward_read_file`, `runeward_write_file`,
-`runeward_list_files`, `runeward_search_files`, `runeward_list_approvals`,
-`runeward_kill_sandbox`.
-- Fleets: `runeward_create_fleet`, `runeward_list_fleets`, `runeward_list_tasks`,
+`runeward_list_files`, `runeward_search_files`, `runeward_list_conclave`,
+`runeward_kill_citadel`.
+- Cohorts: `runeward_create_cohort`, `runeward_list_cohorts`, `runeward_list_tasks`,
 `runeward_add_task`, `runeward_claim_task`, `runeward_complete_task`,
-`runeward_fail_task`, `runeward_kill_fleet`.
+`runeward_fail_task`, `runeward_kill_cohort`.
 
 Use an **absolute path** to the binary and profiles in client configs. Get them:
 
@@ -868,7 +868,7 @@ then verify:
 
 ```bash
 curl -s $BASE/healthz                  # {"status":"ok"} — always open
-curl -s "${AUTH[@]}" $BASE/v1/profiles        # array of profile names (needs $AUTH when auth is on)
+curl -s "${AUTH[@]}" $BASE/v1/charters        # array of profile names (needs $AUTH when auth is on)
 ```
 
 ### 9a. Python (`runeward`)
@@ -1022,11 +1022,11 @@ EOF
 ### 10c. Sign & verify a profile (provenance)
 
 ```bash
-./bin/runeward bundle keygen --out /tmp/rw-keys           # ed25519 keypair
-./bin/runeward profile sign examples/governed.toml --key /tmp/rw-keys/bundle.key
+./bin/runeward archive keygen --out /tmp/rw-keys           # ed25519 keypair
+./bin/runeward charter sign examples/governed.toml --key /tmp/rw-keys/bundle.key
 # writes examples/governed.toml.sig
 
-./bin/runeward profile verify examples/governed.toml --verify-key /tmp/rw-keys/bundle.pub
+./bin/runeward charter verify examples/governed.toml --verify-key /tmp/rw-keys/bundle.pub
 # => verified: <key-id>
 
 # Tamper check: edit the profile, re-verify -> non-zero "signature mismatch".
@@ -1089,8 +1089,8 @@ export RUNEWARD_API_TOKEN=s3cret
 BASE=http://localhost:8080
 AUTH=(-H "Authorization: Bearer $RUNEWARD_API_TOKEN")
 
-curl -s -o /dev/null -w '%{http_code}\n' $BASE/v1/sandboxes                       # 401 without $AUTH
-curl -s "${AUTH[@]}" $BASE/v1/profiles | jq .                                              # 200
+curl -s -o /dev/null -w '%{http_code}\n' $BASE/v1/citadels                       # 401 without $AUTH
+curl -s "${AUTH[@]}" $BASE/v1/charters | jq .                                              # 200
 curl -s $BASE/healthz                                                             # 200 (always open)
 curl -s -o /dev/null -w '%{http_code}\n' "${AUTH[@]}" $BASE/metrics                        # 200 with auth; 401 without
 ```
@@ -1114,9 +1114,9 @@ curl -s -H "Authorization: Bearer tok-dev" $BASE/v1/whoami | jq .
 # => {"authenticated":true,"rbac":true,"principal":{"name":"dev","allowed_profiles":["dev"],...}}
 
 # dev may launch "dev"...
-curl -s -H "Authorization: Bearer tok-dev" -d '{"profile":"dev"}' $BASE/v1/sandboxes | jq .id
+curl -s -H "Authorization: Bearer tok-dev" -d '{"profile":"dev"}' $BASE/v1/citadels | jq .id
 # ...but not "governed" -> 403
-curl -s -H "Authorization: Bearer tok-dev" -d '{"profile":"governed"}' $BASE/v1/sandboxes | jq .
+curl -s -H "Authorization: Bearer tok-dev" -d '{"profile":"governed"}' $BASE/v1/citadels | jq .
 # => {"error":"not authorized to launch profile governed"}
 ```
 
@@ -1128,7 +1128,7 @@ satisfied by `--token`, `RUNEWARD_API_TOKEN`, **or** `RUNEWARD_AUTHZ_FILE`.
 
 ## 12. Cost & loop guardrails + usage API
 
-Guardrails live in `[limits]` and are enforced **after** policy passes; a breach
+Guardrails live in `[rationing]` and are enforced **after** policy passes; a breach
 returns HTTP **403** with `verdict:"deny"` and a `reason`, and is recorded in the
 ledger. Create a scratch profile:
 
@@ -1137,7 +1137,7 @@ cat > examples/limits-demo.toml <<'EOF'
 [host]
 type  = "container"
 image = "debian:stable-slim"
-[limits]
+[rationing]
 max_execs      = 1     # 12a
 loop_window    = "60s" # 12b (max_execs stays high enough not to fire first)
 loop_threshold = 3
@@ -1155,9 +1155,9 @@ call for the budget test and the loop trips on failures, not the exec cap — bu
 ### 12a. max_execs
 
 ```bash
-SB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"limits-demo"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["echo","1"]}' | jq .verdict   # allow
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["echo","2"]}' | jq '{verdict,reason}'
+SB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"limits-demo"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec -d '{"command":["echo","1"]}' | jq .verdict   # allow
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec -d '{"command":["echo","2"]}' | jq '{verdict,reason}'
 # => {"verdict":"deny","reason":"policy: max execs exceeded"}
 ```
 
@@ -1170,16 +1170,16 @@ cat > examples/loop-demo.toml <<'EOF'
 [host]
 type  = "container"
 image = "debian:stable-slim"
-[limits]
+[rationing]
 max_execs      = 50
 loop_window    = "60s"
 loop_threshold = 3
 EOF
 # restart serve, then repeat a *failing* command (non-zero exit = a failure) on
 # the same key tool|arg (here shell|false):
-LB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"loop-demo"}' | jq -r .id)
-for i in 1 2 3; do curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$LB/shell/exec -d '{"command":["false"]}' | jq -r .verdict; done
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$LB/shell/exec -d '{"command":["false"]}' | jq '{verdict,reason}'
+LB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"loop-demo"}' | jq -r .id)
+for i in 1 2 3; do curl -s "${AUTH[@]}" $BASE/v1/citadels/$LB/shell/exec -d '{"command":["false"]}' | jq -r .verdict; done
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$LB/shell/exec -d '{"command":["false"]}' | jq '{verdict,reason}'
 # => {"verdict":"deny","reason":"policy: runaway loop detected"}
 ```
 
@@ -1194,13 +1194,13 @@ cat > examples/budget-demo.toml <<'EOF'
 [host]
 type  = "container"
 image = "debian:stable-slim"
-[limits]
+[rationing]
 max_cost_usd = 0.01
 EOF
 # restart serve
-BB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"budget-demo"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BB/usage -d '{"tokens":0,"cost_usd":0.02}' | jq .   # 200, cumulative
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$BB/shell/exec -d '{"command":["echo","blocked"]}' | jq '{verdict,reason}'
+BB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"budget-demo"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BB/usage -d '{"tokens":0,"cost_usd":0.02}' | jq .   # 200, cumulative
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$BB/shell/exec -d '{"command":["echo","blocked"]}' | jq '{verdict,reason}'
 # => {"verdict":"deny","reason":"cost budget exhausted: $0.0200/$0.0100 spent"}
 
 # Usage also feeds Prometheus:
@@ -1231,12 +1231,12 @@ op   = "env://MY_SECRET"
 EOF
 # restart serve (so it inherits MY_SECRET and re-reads examples/)
 
-SB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"secret-env"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["printenv","MY_SECRET"]}' | jq -r .stdout
+SB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"secret-env"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec -d '{"command":["printenv","MY_SECRET"]}' | jq -r .stdout
 # => [REDACTED]  — the value is live inside the sandbox but scrubbed from output.
 
 # Prove it's actually set without leaking it (length only, never the value):
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec \
   -d '{"command":["sh","-lc","test -n \"$MY_SECRET\" && echo present len=${#MY_SECRET}"]}' | jq -r .stdout
 # => present len=11
 ```
@@ -1249,7 +1249,7 @@ curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec \
 **Fail-closed:** point `op` at an unset var and creation aborts with **400**:
 
 ```bash
-# op = "env://DOES_NOT_EXIST"  ->  POST /v1/sandboxes returns
+# op = "env://DOES_NOT_EXIST"  ->  POST /v1/citadels returns
 # {"error":"env \"...\": resolve \"env://DOES_NOT_EXIST\": ... unset or empty"}
 ```
 
@@ -1259,7 +1259,7 @@ Other schemes (need their backend): `vault://kv/path#field`
 
 ---
 
-## 14. Audit sinks + offline transcript verification
+## 14. Chronicle sinks + offline transcript verification
 
 ### 14a. Stream every event to a file / webhook
 
@@ -1291,14 +1291,14 @@ Both sinks can run at once.
 
 ```bash
 # Export the whole signed transcript (embeds the public key) from a live serve:
-curl -s "${AUTH[@]}" $BASE/v1/audit/export -o /tmp/bundle.json
+curl -s "${AUTH[@]}" $BASE/v1/chronicle/export -o /tmp/bundle.json
 
 # Verify with no server running — checks the hash chain AND signatures:
-./bin/runeward audit verify /tmp/bundle.json
+./bin/runeward chronicle verify /tmp/bundle.json
 # => ok: N events verified (hash chain + signatures intact)
 ```
 
-`GET /v1/audit/verify` (live) and `GET /v1/audit/pubkey` complement this.
+`GET /v1/chronicle/verify` (live) and `GET /v1/chronicle/pubkey` complement this.
 
 ---
 
@@ -1312,8 +1312,8 @@ the `serve` logger (not audit events or API fields), rate-limited to one per
 RUNEWARD_ANOMALY_EXEC_BURST=3 RUNEWARD_ANOMALY_WINDOW=1m \
   ./bin/runeward --config-dir examples serve --no-ui 2>&1 | tee /tmp/serve.log &
 
-SB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"dev"}' | jq -r .id)
-for i in 1 2 3 4 5; do curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["echo","'$i'"]}' >/dev/null; done
+SB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"dev"}' | jq -r .id)
+for i in 1 2 3 4 5; do curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec -d '{"command":["echo","'$i'"]}' >/dev/null; done
 grep 'anomaly=exec_burst' /tmp/serve.log
 ```
 
@@ -1344,10 +1344,10 @@ reason     = "no rm via argv"
 EOF
 # restart serve
 
-SB=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"argv-guard"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["sh","-c","rm -rf /tmp/x"]}' | jq '{verdict,reason}'
+SB=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"argv-guard"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec -d '{"command":["sh","-c","rm -rf /tmp/x"]}' | jq '{verdict,reason}'
 # => {"verdict":"deny","reason":"no rm via argv"}
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["ls","-la"]}' | jq -r .verdict   # allow
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$SB/shell/exec -d '{"command":["ls","-la"]}' | jq -r .verdict   # allow
 ```
 
 ### 16b. CEL policy engine
@@ -1356,10 +1356,10 @@ curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$SB/shell/exec -d '{"command":["ls","-la
 and `[[cel]]` rules over the `tool`/`arg` variables:
 
 ```bash
-CID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"cel-policy"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/shell/exec -d '{"command":["rm","-rf","/tmp/x"]}' | jq '{verdict,reason}'
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"cel-policy"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/shell/exec -d '{"command":["rm","-rf","/tmp/x"]}' | jq '{verdict,reason}'
 # => deny (destructive command blocked by CEL policy)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/shell/exec -d '{"command":["echo","hi"]}' | jq -r .verdict   # allow
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/shell/exec -d '{"command":["echo","hi"]}' | jq -r .verdict   # allow
 ```
 
 You can also unit-test CEL/Rego/argv rules offline with `policy test` (10b).
@@ -1374,7 +1374,7 @@ curl -s "${AUTH[@]}" $BASE/metrics | grep -E '^runeward_(actions_total|sandboxes
 
 # Structured JSON logs to a shipper:
 RUNEWARD_LOG_FORMAT=json RUNEWARD_LOG_LEVEL=debug ./bin/runeward --config-dir examples serve --no-ui
-# => {"time":"...","level":"INFO","msg":"request","method":"POST","path":"/v1/sandboxes","status":200,...}
+# => {"time":"...","level":"INFO","msg":"request","method":"POST","path":"/v1/citadels","status":200,...}
 
 # Telemetry is OFF by default; startup logs its state. It only sends when BOTH
 # are set (and DO_NOT_TRACK always wins):
@@ -1403,8 +1403,8 @@ image   = "debian:stable-slim"
 workdir = "/workspace"
 EOF
 # restart serve, then an unmatched action is denied (no explicit [[policy]] needed):
-CID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"deny-default"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/shell/exec -d '{"command":["echo","hi"]}' | jq -r .verdict
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"deny-default"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/shell/exec -d '{"command":["echo","hi"]}' | jq -r .verdict
 # => deny
 
 # Operator-wide switch (no profile edit) — flips the fallback for every profile;
@@ -1417,7 +1417,7 @@ RUNEWARD_POLICY_DEFAULT=deny ./bin/runeward --config-dir examples serve --no-ui
 
 ---
 
-## 19. Custom audit scrub patterns
+## 19. Custom Chronicle scrub patterns
 
 Operators can add their own secret shapes on top of the built-in scrubber; a bad
 regex fails closed at creation.
@@ -1429,17 +1429,17 @@ type    = "container"
 image   = "debian:stable-slim"
 workdir = "/workspace"
 
-[audit]
+[chronicle]
 scrub_patterns = ["ACME-[A-Z0-9]{6}"]
 EOF
 # Invalid regex is rejected at sandbox creation (fail-closed):
-#   scrub_patterns = ["("]  ->  POST /v1/sandboxes => 400  "audit.scrub_patterns \"(\": …"
+#   scrub_patterns = ["("]  ->  POST /v1/citadels => 400  "chronicle.scrub_patterns \"(\": …"
 
 # restart serve; the pattern is masked in returned output AND in the ledger:
-CID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"scrub-demo"}' | jq -r .id)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/shell/exec -d '{"command":["echo","key ACME-AB12CD done"]}' | jq -r .stdout
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"scrub-demo"}' | jq -r .id)
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/shell/exec -d '{"command":["echo","key ACME-AB12CD done"]}' | jq -r .stdout
 # => the ACME-AB12CD token is replaced with a mask (raw value never returned)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/audit | jq '.events[-1].args'   # masked here too
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/chronicle | jq '.events[-1].args'   # masked here too
 ```
 
 Built-in coverage now also masks `sk-ant-`/`sk-proj-`/`sk-…` (OpenAI/Anthropic),
@@ -1454,16 +1454,16 @@ The control-plane `file.*` tools are confined to the sandbox workdir, so policy
 is no longer the only thing standing between an agent and `/etc/passwd`.
 
 ```bash
-CID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"dev"}' | jq -r .id)   # dev sets workdir=/workspace
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"dev"}' | jq -r .id)   # dev sets workdir=/workspace
 # Absolute path -> refused
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/file/read -d '{"path":"/etc/passwd"}' | jq -r .error
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/file/read -d '{"path":"/etc/passwd"}' | jq -r .error
 # => path "/etc/passwd" must be relative to workspace
 # `..` escape -> refused
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/file/read -d '{"path":"../../etc/passwd"}' | jq -r .error
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/file/read -d '{"path":"../../etc/passwd"}' | jq -r .error
 # => path "../../etc/passwd" escapes workspace root
 # In-workspace relative path -> works
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/file/write -d '{"path":"note.txt","content":"hi"}' >/dev/null
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/file/read  -d '{"path":"note.txt"}' | jq -r .content   # => hi
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/file/write -d '{"path":"note.txt","content":"hi"}' >/dev/null
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/file/read  -d '{"path":"note.txt"}' | jq -r .content   # => hi
 ```
 
 ---
@@ -1476,9 +1476,9 @@ targets by default.
 
 ```bash
 # (Uses a browser-capable sandbox image; the guard rejects before navigating.)
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/browser -d '{"url":"file:///etc/passwd","mode":"text"}' | jq -r .error
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/browser -d '{"url":"file:///etc/passwd","mode":"text"}' | jq -r .error
 # => scheme "file" not allowed
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/browser -d '{"url":"http://169.254.169.254/","mode":"text"}' | jq -r .error
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/browser -d '{"url":"http://169.254.169.254/","mode":"text"}' | jq -r .error
 # => blocked host (link-local / private)
 # Allow a trusted internal target only when you must:
 #   RUNEWARD_BROWSER_ALLOW_PRIVATE_ADDRS=1
@@ -1499,10 +1499,10 @@ A restore now runs the full profile→spec path, so egress/hardening/limits come
 back on the restored cell (it is not an open container).
 
 ```bash
-SID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/snapshot -d '{"name":"v1"}' | jq -r .id)
+SID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/snapshot -d '{"name":"v1"}' | jq -r .id)
 NID=$(curl -s "${AUTH[@]}" $BASE/v1/snapshots/$SID/restore | jq -r .id)
 # The restored sandbox re-applies the profile's egress allowlist:
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$NID/shell/exec \
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$NID/shell/exec \
   -d '{"command":["sh","-c","curl -sS https://disallowed.example >/dev/null; echo $?"]}' | jq -r .stdout
 # => non-zero (egress enforced, not open)
 # If the snapshot's source profile is gone, restore fails closed instead of
@@ -1536,8 +1536,8 @@ EOF
 
 # Signed-profile enforcement at load — tampered on-disk profiles fail closed.
 # (Reuses the keypair + sign flow from 10c.)
-./bin/runeward bundle keygen --out /tmp/rw-keys
-./bin/runeward profile sign examples/governed.toml --key /tmp/rw-keys/bundle.key
+./bin/runeward archive keygen --out /tmp/rw-keys
+./bin/runeward charter sign examples/governed.toml --key /tmp/rw-keys/bundle.key
 RUNEWARD_REQUIRE_SIGNED_PROFILES=1 RUNEWARD_PROFILE_VERIFY_KEY=/tmp/rw-keys/bundle.pub \
   ./bin/runeward --config-dir examples print governed          # loads only if the .sig verifies
 # now edit examples/governed.toml and re-run -> load fails closed (signature mismatch)
@@ -1548,22 +1548,22 @@ RUNEWARD_REQUIRE_SIGNED_PROFILES=1 RUNEWARD_PROFILE_VERIFY_KEY=/tmp/rw-keys/bund
 ## 24. RBAC tenant isolation across every resource
 
 With multi-principal RBAC (11b) a non-admin token is now scoped on fleets,
-snapshots, approvals, and audit — not just `/v1/sandboxes/{id}` — and fleet
+snapshots, Conclave, and the Chronicle — not just `/v1/citadels/{id}` — and Cohort
 create enforces `CanLaunch` like sandbox create.
 
 ```bash
 # (DEV_TOKEN is a non-admin principal from 11b; ADMIN is an admin token.)
-curl -s -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/fleets    | jq   # only dev's fleets
+curl -s -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/cohorts    | jq   # only dev's fleets
 curl -s -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/snapshots | jq   # only dev's snapshots
-curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/audit/export
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/chronicle/export
 # => 403 unless the principal is permitted
 
 # Fleet create honors the allowed-profile list:
-curl -s -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/fleets -d '{"profile":"governed"}' | jq -r .error
+curl -s -H "Authorization: Bearer $DEV_TOKEN" $BASE/v1/cohorts -d '{"profile":"governed"}' | jq -r .error
 # => not authorized to launch profile governed
 
 # Fleet complete/fail reject an empty owner (no more hijack with {}):
-curl -s -o /dev/null -w '%{http_code}\n' "${AUTH[@]}" $BASE/v1/fleets/$FID/tasks/$TID/complete -d '{}'
+curl -s -o /dev/null -w '%{http_code}\n' "${AUTH[@]}" $BASE/v1/cohorts/$FID/tasks/$TID/complete -d '{}'
 # => 400 (owner required)
 ```
 
@@ -1577,10 +1577,10 @@ Long-lived bearer tokens no longer need to ride in URLs or `localStorage`.
 # Mint a single-use, short-TTL ticket for the terminal WebSocket:
 curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"terminal","sandbox_id":"'$CID'"}' | jq
 # => {"ticket":"…","expires_at":"…","scope":{"kind":"terminal","sandbox_id":"…"}}
-# The socket accepts GET /v1/sandboxes/$CID/terminal?ticket=<one-time>; a second
+# The socket accepts GET /v1/citadels/$CID/terminal?ticket=<one-time>; a second
 # use of the same ticket is rejected. Downloads work too:
-curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"download","path":"/v1/audit/export"}' | jq -r .ticket
-# (POST /v1/sandboxes/{id}/terminal-ticket still works and delegates to this store.)
+curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"download","path":"/v1/chronicle/export"}' | jq -r .ticket
+# (POST /v1/citadels/{id}/terminal-ticket still works and delegates to this store.)
 ```
 
 ---
@@ -1609,18 +1609,18 @@ curl -s "${AUTH[@]}" $BASE/v1/policy/simulate -d '{
 ```bash
 # Per-sandbox egress decisions (host, ip, allow/deny, reason) for the dashboard
 # "Egress" panel — sourced from the in-process/cooperative proxy decision log:
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID/egress | jq '.decisions[] | {host, ip, allow, reason}'
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID/perimeter | jq '.decisions[] | {host, ip, allow, reason}'
 # (Strict out-of-process sidecar traffic is not represented by this buffer.)
 
 # Configured limits are now returned on the sandbox object, feeding a read-only
 # budget burn-down panel (usage vs caps):
-curl -s "${AUTH[@]}" $BASE/v1/sandboxes/$CID | jq '.limits'
+curl -s "${AUTH[@]}" $BASE/v1/citadels/$CID | jq '.limits'
 # => {"max_tokens":…, "max_cost_usd":…, "max_execs":…, "egress_requests":…, "wall_clock":…}
 ```
 
 ---
 
-## 28. OTLP / SIEM audit sink
+## 28. OTLP / SIEM Chronicle sink
 
 Fan the ledger out to an OpenTelemetry collector alongside the webhook/file sinks
 (14), so events land in Datadog/Splunk/Elastic with trace context.
@@ -1638,7 +1638,7 @@ RUNEWARD_AUDIT_OTLP_SERVICE_NAME=runeward \
 ```
 
 Signature verification also tightened: when a signing key is configured,
-`GET /v1/audit/verify` (and `runeward audit verify`) require **every** record to
+`GET /v1/chronicle/verify` (and `runeward chronicle verify`) require **every** record to
 be signed — an unsigned record now fails verification instead of passing.
 
 ---
@@ -1671,7 +1671,7 @@ protocol, not the vendor; nothing leaves for a hosted API.
 # OPENAI_API_BASE, and OPENAI_API_KEY so OpenAI SDK / LangChain / LiteLLM agents
 # all pick it up:
 export OPENAI_BASE_URL=http://host.docker.internal:11434/v1 OPENAI_API_KEY=local
-CID=$(curl -s "${AUTH[@]}" $BASE/v1/sandboxes -d '{"profile":"byo-model-gateway"}' | jq -r .id)
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"byo-model-gateway"}' | jq -r .id)
 # Only the runtime host is reachable; everything else is denied egress.
 ```
 
@@ -1749,12 +1749,12 @@ rm -rf "$RUNEWARD_STATE_DIR" /tmp/rw-keys /tmp/cases.toml /tmp/authz.json \
 | Strict egress: `runeward-egress` ImagePullBackOff                           | Build the image (`deploy/Dockerfile.egress`) or set `RUNEWARD_EGRESS_IMAGE` to a pushed ref.                                                                                        |
 | Strict egress: allowed host still blocked                                   | The app connected by raw IP with no SNI/Host — add a `cidr` rule, or use a hostname. Check the `egress` sidecar logs.                                                               |
 | MCP client shows no tools                                                   | Use absolute paths in the config; check the client's MCP logs; verify `bin/runeward mcp` runs standalone.                                                                           |
-| Approval call never returns                                                 | Approve/deny it via `GET /v1/approvals` + `POST /v1/approvals/{id}/approve`, or the dashboard drawer.                                                                               |
+| Approval call never returns                                                 | Approve/deny it via `GET /v1/conclave` + `POST /v1/conclave/{id}/approve`, or the dashboard drawer.                                                                               |
 | Everything returns `401`                                                    | Auth is on. Use `AUTH=(-H "Authorization: Bearer $RUNEWARD_API_TOKEN")` and `"${AUTH[@]}"` on every `curl` (2a); a bare `$AUTH="-H Authorization:Bearer …"` word-splits the token. |
-| `curl ... \| jq` prints **nothing** (no error)                               | `curl -s` swallows connection errors — usually `$BASE` is unset (§2a) or `serve` isn't up. Re-run with `-sS` to see the real error.                                                 |
+| `curl ... \| jq` prints **nothing** (no error)                               | `curl -s` swallows connection errors — usually `$BASE` is unset (2a) or `serve` isn't up. Re-run with `-sS` to see the real error.                                                 |
 | `serve` refuses to start on `--bind 0.0.0.0`                                | Non-loopback binds require a credential — add `--token`, `RUNEWARD_API_TOKEN`, or `RUNEWARD_AUTHZ_FILE`.                                                                            |
-| A tool call denies with `policy: … exceeded` / `budget exhausted`           | Not a bug — a `[limits]` guardrail fired (12). Raise the limit or start a fresh sandbox.                                                                                           |
-| `POST /v1/sandboxes` returns `400` mentioning `resolve "…"`                 | A `[[env]]` secret couldn't be resolved (fail-closed, 13). Set the source var/creds, or fix the `op` scheme.                                                                       |
+| A tool call denies with `policy: … exceeded` / `budget exhausted`           | Not a bug — a `[rationing]` guardrail fired (12). Raise the limit or start a fresh sandbox.                                                                                           |
+| `POST /v1/citadels` returns `400` mentioning `resolve "…"`                 | A `[[env]]` secret couldn't be resolved (fail-closed, 13). Set the source var/creds, or fix the `op` scheme.                                                                       |
 | New profile not picked up                                                   | `serve` reads profiles at startup — restart it after editing `examples/`. Or run `runeward validate` first (10a).                                                                  |
 | `policy test` says it can't simulate                                        | The profile sources policy from an OCI bundle; bundle-backed policy is remote and can't be tested offline (10b).                                                                   |
 | `file.*` returns `must be relative to workspace` / `escapes workspace root` | Not a bug — file tools are confined to the sandbox workdir (20). Use a path relative to the workspace.                                                                             |

@@ -54,7 +54,7 @@ func newRuntimeCmd(configDir *string) *cobra.Command {
 		Short: "Inspect and set up hardened container runtimes (gVisor/Kata)",
 		Long: "Inspect this host for VM-grade isolation runtimes (gVisor's runsc and\n" +
 			"Kata Containers) registered with Docker and/or Kubernetes, and print the\n" +
-			"steps to wire them into runeward via a profile's [host] runtime_class.\n\n" +
+			"steps to wire them into runeward via a Charter's [host] runtime_class.\n\n" +
 			"Run with no subcommand for a check; `runtime guide` prints full setup\n" +
 			"instructions. See docs/security-model.md.",
 		SilenceUsage: true,
@@ -631,7 +631,7 @@ func printNextSteps(out io.Writer, className string) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Next steps")
 	fmt.Fprintln(out, "----------")
-	fmt.Fprintf(out, "  1. Set runtime_class = %q under [host] in your profile.\n", className)
+	fmt.Fprintf(out, "  1. Set runtime_class = %q under [host] in your Charter.\n", className)
 	fmt.Fprintln(out, "  2. Verify with: runeward runtime check")
 	fmt.Fprintln(out, "  3. Details: docs/security-model.md")
 }
@@ -686,7 +686,7 @@ func runtimeCheck(ctx context.Context, out io.Writer, strict bool) error {
 
 	if anyAvailable {
 		fmt.Fprintln(out, "At least one VM-grade runtime is available. Set `runtime_class` in a")
-		fmt.Fprintln(out, "profile's [host] block to use it (see `runeward runtime guide`).")
+		fmt.Fprintln(out, "Charter's [host] block to use it (see `runeward runtime guide`).")
 	} else {
 		fmt.Fprintln(out, "No VM-grade isolation runtime detected. Run `runeward runtime guide`")
 		fmt.Fprintln(out, "for full setup instructions, or see docs/security-model.md.")
@@ -823,7 +823,7 @@ func printMissingGuidance(out io.Writer, name string) {
 		fmt.Fprintln(out, "       { \"runtimes\": { \"runsc\": { \"path\": \"/usr/local/bin/runsc\" } } }")
 		fmt.Fprintln(out, "     then `sudo systemctl restart docker`.")
 		fmt.Fprintln(out, "  3. Kubernetes: create a RuntimeClass named `gvisor` (handler: runsc).")
-		fmt.Fprintln(out, "  4. Point runeward at it: set `runtime_class = \"gvisor\"` in the profile [host].")
+		fmt.Fprintln(out, "  4. Point runeward at it: set `runtime_class = \"gvisor\"` in the Charter [host].")
 		fmt.Fprintln(out)
 	case "Kata":
 		fmt.Fprintln(out, "Kata Containers is not registered. To enable it:")
@@ -832,7 +832,7 @@ func printMissingGuidance(out io.Writer, name string) {
 		fmt.Fprintln(out, "       { \"runtimes\": { \"kata\": { \"path\": \"/usr/bin/kata-runtime\" } } }")
 		fmt.Fprintln(out, "     then `sudo systemctl restart docker`.")
 		fmt.Fprintln(out, "  3. Kubernetes: create a RuntimeClass named `kata` (handler: kata).")
-		fmt.Fprintln(out, "  4. Point runeward at it: set `runtime_class = \"kata\"` in the profile [host].")
+		fmt.Fprintln(out, "  4. Point runeward at it: set `runtime_class = \"kata\"` in the Charter [host].")
 		fmt.Fprintln(out)
 	}
 }
@@ -843,7 +843,7 @@ func printGuide(out io.Writer) {
 	const guide = `runeward VM-grade isolation setup guide
 =======================================
 
-runeward can run each sandbox under a hardened, VM-grade runtime instead of the
+runeward can run each Citadel under a hardened, VM-grade runtime instead of the
 host kernel's default runc. Two options are supported today:
 
   - gVisor (runsc): an application kernel in userspace; strong syscall isolation.
@@ -851,7 +851,7 @@ host kernel's default runc. Two options are supported today:
 
 How runeward consumes it
 ------------------------
-A profile's [host] block may set:
+A Charter's [host] block may set:
 
     [host]
     type          = "docker"   # or "k8s"
@@ -887,7 +887,7 @@ gVisor (runsc)
          name: gvisor
        handler: runsc
 
-4. Use it: set runtime_class = "gvisor" in the profile [host] block.
+4. Use it: set runtime_class = "gvisor" in the Charter [host] block.
 
 Kata Containers
 ---------------
@@ -910,7 +910,7 @@ Kata Containers
          name: kata
        handler: kata
 
-4. Use it: set runtime_class = "kata" in the profile [host] block.
+4. Use it: set runtime_class = "kata" in the Charter [host] block.
 
 Verify your setup any time with: runeward runtime check
 `

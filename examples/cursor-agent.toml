@@ -52,7 +52,7 @@ match   = "/etc/*"
 verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed"
 
-[limits]
+[rationing]
 wall_clock      = "30m"
 max_execs       = 500
 egress_requests = 2000
@@ -70,5 +70,5 @@ file = "~/.runeward-cursor.key"
 name  = "NODE_USE_ENV_PROXY"
 value = "1"
 
-[audit]
+[chronicle]
 redact = true

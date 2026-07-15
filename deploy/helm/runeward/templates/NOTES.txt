@@ -1,14 +1,14 @@
 runeward {{ .Chart.AppVersion }} installed into namespace "{{ .Release.Namespace }}".
 
 {{ if .Values.controller.enabled -}}
-Controller: reconciling runeward.dev/v1alpha1 Sandbox and Fleet resources
+Controller: reconciling runeward.dev/v1alpha1 Citadel and Cohort resources
 {{- if .Values.controller.allNamespaces }} across all namespaces.{{ else }} in namespace "{{ .Release.Namespace }}".{{ end }}
 
-Create a sandbox declaratively:
+Create a citadel declaratively:
 
   cat <<EOF | kubectl apply -f -
   apiVersion: runeward.dev/v1alpha1
-  kind: Sandbox
+  kind: Citadel
   metadata:
     name: demo
     namespace: {{ .Release.Namespace }}
@@ -16,7 +16,7 @@ Create a sandbox declaratively:
     profile: dev
   EOF
 
-  kubectl -n {{ .Release.Namespace }} get sandboxes
+  kubectl -n {{ .Release.Namespace }} get citadels
 {{- end }}
 
 {{ if .Values.server.enabled }}

@@ -39,7 +39,7 @@ verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed"
 
 # Cost + loop guardrails.
-[limits]
+[rationing]
 wall_clock      = "30m"
 max_execs       = 500
 egress_requests = 2000
@@ -58,5 +58,5 @@ file = "~/.runeward-openai.key"
 name = "OPENAI_API_KEY"
 file = "~/.runeward-openai.key"
 
-[audit]
+[chronicle]
 redact = true

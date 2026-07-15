@@ -853,7 +853,7 @@ func compileAuditScrubPatterns(patterns []string) ([]*regexp.Regexp, error) {
 		}
 		re, err := regexp.Compile(pat)
 		if err != nil {
-			return nil, fmt.Errorf("audit.scrub_patterns %q: %w", pat, err)
+			return nil, fmt.Errorf("chronicle.scrub_patterns %q: %w", pat, err)
 		}
 		compiled = append(compiled, re)
 	}

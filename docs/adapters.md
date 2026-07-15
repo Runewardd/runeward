@@ -11,8 +11,8 @@ but every call is routed through the full governance path:
 policy check  →  approval gate  →  cost/loop guardrails  →  sandbox exec  →  audit ledger
 ```
 
-So work runs in a disposable, deny-by-default sandbox; risky actions are blocked
-or escalated to a human; and everything is recorded in a tamper-evident ledger.
+So work runs in a disposable, deny-by-default Citadel; risky actions are blocked
+or escalated to a human; and everything is recorded in a tamper-evident Chronicle.
 
 ## Which one do I want?
 
@@ -28,10 +28,13 @@ or escalated to a human; and everything is recorded in a tamper-evident ledger.
   dependencies.
 
 All adapters target the same control plane started with `runeward serve` (default
-`http://localhost:8080`) and expose the same method surface, named to match the
-MCP tools: `create_sandbox`, `shell`, `python`, `node`,
+`http://localhost:8080`) and expose the same method surface, mirroring the
+governed tool set: `create_sandbox`, `shell`, `python`, `node`,
 `read_file`/`write_file`/`list_files`/`search_files`,
 `list_approvals`/`approve`/`deny`, `kill_sandbox`, plus `audit`/`verify_audit`.
+(The client method names keep their original spellings even though the matching
+MCP tools are now `runeward_create_citadel`, `runeward_kill_citadel`, and
+`runeward_list_conclave`.)
 
 ## The governance contract every adapter preserves
 
@@ -180,5 +183,5 @@ for more.
   action; pick a different, allowed approach.
 - **`require-approval` is a hard pause.** Surface the approval id to a human and
   wait for the outcome (resolve it via the dashboard, the CLI, or
-  `POST /v1/approvals/{id}/{approve,deny}`).
-- Prefer the tightest profile that lets the task succeed.
+  `POST /v1/conclave/{id}/{approve,deny}`).
+- Prefer the tightest Charter that lets the task succeed.

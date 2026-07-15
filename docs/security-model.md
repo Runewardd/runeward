@@ -30,17 +30,17 @@ Please disclose privately; do not open a public issue.
   approval/admin flags) upgrades the single shared token to per-principal
   access: the server enforces which profiles a caller may launch and whether it
   may resolve approvals, and records the principal name as the audit actor.
-  Each sandbox records its owning principal; a non-admin can see and act on only
-  its own sandboxes (an ownership guard enforces this on every
-  `/v1/sandboxes/{id}` route), while admins see all. The dashboard has an
+  Each Citadel records its owning principal; a non-admin can see and act on only
+  its own Citadels (an ownership guard enforces this on every
+  `/v1/citadels/{id}` route), while admins see all. The dashboard has an
   interactive token login (backed by `/v1/whoami`) that gates create/approve
   controls to what the caller is permitted; the static dashboard shell loads
   without a token so the login screen can render, but the API always requires
   one.
-- **Cost / token budgets.** Agents or fleet workers report model usage to
-  `POST /v1/sandboxes/{id}/usage`; usage accrues per sandbox and per profile
-  (surfaced in Prometheus and the sandbox view). A profile's `limits.max_tokens`
-  / `limits.max_cost_usd` caps are enforced fail-closed — once exceeded, further
+- **Cost / token budgets.** Agents or Cohort workers report model usage to
+  `POST /v1/citadels/{id}/usage`; usage accrues per Citadel and per Charter
+  (surfaced in Prometheus and the Citadel view). A Charter's `rationing.max_tokens`
+  / `rationing.max_cost_usd` caps are enforced fail-closed — once exceeded, further
   governed tool calls are denied.
 - **Attributed approvals.** Resolving an approval records *who* decided it (the
   RBAC principal name, else `X-Runeward-Actor`, else the peer address) in the
@@ -76,9 +76,9 @@ Please disclose privately; do not open a public issue.
   directories `copy_from` may read; sources outside the roots fail creation.
 - **Kubernetes multi-tenancy.** The managed namespace carries Pod Security
   Admission labels (`RUNEWARD_K8S_PSA_ENFORCE`, or the chart's
-  `podSecurityStandard`), sandbox containers always drop `ALL` capabilities and
+  `podSecurityStandard`), Citadel containers always drop `ALL` capabilities and
   disable privilege escalation, and an optional default-deny NetworkPolicy
-  (DNS-only egress) isolates sandbox pods (`RUNEWARD_K8S_NETWORK_POLICY`, or the
+  (DNS-only egress) isolates Citadel pods (`RUNEWARD_K8S_NETWORK_POLICY`, or the
   chart's `networkPolicy.enabled`) so cells can't reach each other or the control
   plane laterally.
 - **Admission enforcement defaults.** The validating ClusterPolicy webhook is
@@ -92,7 +92,7 @@ Please disclose privately; do not open a public issue.
 
 ## In scope (please report)
 
-- Sandbox escape from a cell to the host or another cell.
+- Citadel escape from a cell to the host or another cell.
 - Bypass of the egress allowlist, policy engine, or approval gates.
 - Audit-ledger forgery or silent tampering that verification would miss.
 - Path traversal / writes outside the intended workspace (e.g. tar-slip).
@@ -104,9 +104,9 @@ Please disclose privately; do not open a public issue.
 
 - Security of the container runtime, host kernel, and Kubernetes cluster — keep
   them patched.
-- Trustworthiness of images referenced by profiles and of the agents/CLIs you run
+- Trustworthiness of images referenced by Charters and of the agents/CLIs you run
   inside a cell.
-- Secrets you place in profiles; runeward redacts *declared* secret values from
+- Secrets you place in Charters; runeward redacts *declared* secret values from
   the ledger and additionally masks common credential shapes (API keys, bearer
   tokens, PEM keys, `password=`/`token=` pairs) wherever they appear, but
   pattern matching is best-effort and can't catch every custom format.

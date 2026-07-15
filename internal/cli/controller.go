@@ -14,15 +14,15 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-// newControllerCmd runs the Kubernetes controller that reconciles Sandbox and
-// Fleet CRs onto the control-plane Manager.
+// newControllerCmd runs the Kubernetes controller that reconciles Citadel and
+// Cohort CRs onto the control-plane Manager.
 func newControllerCmd(configDir *string) *cobra.Command {
 	var workers int
 	var allNamespaces bool
 	cmd := &cobra.Command{
 		Use:   "controller",
-		Short: "Reconcile runeward Sandbox/Fleet custom resources (Kubernetes)",
-		Long: "Watch runeward.dev/v1alpha1 Sandbox and Fleet resources and reconcile\n" +
+		Short: "Reconcile runeward Citadel/Cohort custom resources (Kubernetes)",
+		Long: "Watch runeward.dev/v1alpha1 Citadel and Cohort resources and reconcile\n" +
 			"them onto the governed Kubernetes backend. Apply the CRDs from deploy/crds\n" +
 			"first (or use `runeward up`). Profiles are resolved from --config-dir /\n" +
 			"$RUNEWARD_CONFIG_DIR, typically a mounted ConfigMap in-cluster.",

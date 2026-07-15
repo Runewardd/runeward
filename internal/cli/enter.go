@@ -14,9 +14,9 @@ func newEnterCmd(configDir *string) *cobra.Command {
 	var keep bool
 
 	cmd := &cobra.Command{
-		Use:   "enter <profile> [-- command...]",
-		Short: "Provision a sandbox for a profile and step into it",
-		Long: "Provision a sandbox for the named profile and attach an interactive\n" +
+		Use:   "enter <charter> [-- command...]",
+		Short: "Provision a Citadel for a Charter and step into it",
+		Long: "Provision a Citadel (sandbox) for the named Charter (profile) and attach an interactive\n" +
 			"shell, or run an explicit command after `--`.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -44,15 +44,15 @@ func newEnterCmd(configDir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "runeward: sandbox %s ready\n", sb.ID)
+			fmt.Fprintf(os.Stderr, "runeward: citadel %s ready\n", sb.ID)
 
 			if !keep {
 				defer func() {
-					fmt.Fprintf(os.Stderr, "\nruneward: tearing down sandbox %s\n", sb.ID)
+					fmt.Fprintf(os.Stderr, "\nruneward: tearing down citadel %s\n", sb.ID)
 					_ = be.Kill(context.Background(), sb.ID)
 				}()
 			} else {
-				defer fmt.Fprintf(os.Stderr, "runeward: sandbox %s kept (id: %s)\n", sb.ID, sb.ID)
+				defer fmt.Fprintf(os.Stderr, "runeward: citadel %s kept (id: %s)\n", sb.ID, sb.ID)
 			}
 
 			if len(inner) > 0 {
@@ -61,7 +61,7 @@ func newEnterCmd(configDir *string) *cobra.Command {
 			return attachShell(ctx, be, sb.ID)
 		},
 	}
-	cmd.Flags().BoolVar(&keep, "keep", false, "do not tear down the sandbox on exit")
+	cmd.Flags().BoolVar(&keep, "keep", false, "do not tear down the Citadel on exit")
 	return cmd
 }
 

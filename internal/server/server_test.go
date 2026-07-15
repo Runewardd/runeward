@@ -66,14 +66,14 @@ func TestAuthTokenRequired(t *testing.T) {
 
 	// No token: rejected.
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels", nil))
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("no token: status = %d, want 401", rr.Code)
 	}
 
 	// Wrong token: rejected.
 	rr = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/citadels", nil)
 	req.Header.Set("Authorization", "Bearer nope")
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
@@ -82,7 +82,7 @@ func TestAuthTokenRequired(t *testing.T) {
 
 	// Correct bearer token: allowed.
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/v1/sandboxes", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/citadels", nil)
 	req.Header.Set("Authorization", "Bearer s3cret")
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -91,14 +91,14 @@ func TestAuthTokenRequired(t *testing.T) {
 
 	// Query-param token is no longer accepted for normal REST requests.
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes?token=s3cret", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels?token=s3cret", nil))
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("query token on REST: status = %d, want 401", rr.Code)
 	}
 
 	// Query-param token remains accepted for terminal WebSocket compatibility.
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nope/terminal?token=s3cret", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/nope/terminal?token=s3cret", nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("query token on terminal: status = %d, want 404", rr.Code)
 	}
@@ -130,7 +130,7 @@ func TestHealth(t *testing.T) {
 func TestAuditVerifyEmpty(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/audit/verify", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/chronicle/verify", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d", rr.Code)
 	}
@@ -144,7 +144,7 @@ func TestAuditVerifyEmpty(t *testing.T) {
 func TestApprovalsEmpty(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/approvals", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/conclave", nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d", rr.Code)
 	}
@@ -156,7 +156,7 @@ func TestApprovalsEmpty(t *testing.T) {
 func TestCreateSandboxUnknownProfile(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes", strings.NewReader(`{"profile":"does-not-exist"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/citadels", strings.NewReader(`{"profile":"does-not-exist"}`))
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -166,7 +166,7 @@ func TestCreateSandboxUnknownProfile(t *testing.T) {
 func TestUnknownSandbox404(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes/nope", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/nope", nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rr.Code)
 	}
@@ -175,7 +175,7 @@ func TestUnknownSandbox404(t *testing.T) {
 func TestRBACApprovalsInboxRequiresApprovalPermission(t *testing.T) {
 	h := newTestServerWithRBAC(t)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/approvals", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/conclave", nil)
 	req.Header.Set("Authorization", "Bearer tok-alice")
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
@@ -186,7 +186,7 @@ func TestRBACApprovalsInboxRequiresApprovalPermission(t *testing.T) {
 func TestRBACAuditExportRequiresAdmin(t *testing.T) {
 	h := newTestServerWithRBAC(t)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/audit/export", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/chronicle/export", nil)
 	req.Header.Set("Authorization", "Bearer tok-reviewer")
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
@@ -197,7 +197,7 @@ func TestRBACAuditExportRequiresAdmin(t *testing.T) {
 func TestCreateFleetEnforcesCanLaunch(t *testing.T) {
 	h := newTestServerWithRBAC(t)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/fleets", strings.NewReader(`{"profile":"ops-prod"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/cohorts", strings.NewReader(`{"profile":"ops-prod"}`))
 	req.Header.Set("Authorization", "Bearer tok-alice")
 	req.Header.Set("Content-Type", "application/json")
 	h.ServeHTTP(rr, req)
@@ -207,7 +207,7 @@ func TestCreateFleetEnforcesCanLaunch(t *testing.T) {
 }
 
 func TestTaskOwnerFromRequest(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/fleets/f/tasks/t/complete", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/cohorts/f/tasks/t/complete", nil)
 	if _, err := taskOwnerFromRequest(req, ""); err == nil {
 		t.Fatalf("expected error for empty unauthenticated owner")
 	}
@@ -226,7 +226,7 @@ func TestTerminalTicketSingleUse(t *testing.T) {
 	h := newTestServerWithToken(t, "s3cret")
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/sandboxes/sb1/terminal-ticket", nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/citadels/sb1/terminal-ticket", nil)
 	req.Header.Set("Authorization", "Bearer s3cret")
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusCreated {
@@ -242,13 +242,13 @@ func TestTerminalTicketSingleUse(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes/sb1/terminal?ticket="+ticket, nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/sb1/terminal?ticket="+ticket, nil))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("first use status = %d, want 404", rr.Code)
 	}
 
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/sandboxes/sb1/terminal?ticket="+ticket, nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/sb1/terminal?ticket="+ticket, nil))
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("second use status = %d, want 401", rr.Code)
 	}
@@ -258,7 +258,7 @@ func TestGeneralDownloadTicketSingleUse(t *testing.T) {
 	h := newTestServerWithToken(t, "s3cret")
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/tickets", strings.NewReader(`{"kind":"download","path":"/v1/audit/export"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/tickets", strings.NewReader(`{"kind":"download","path":"/v1/chronicle/export"}`))
 	req.Header.Set("Authorization", "Bearer s3cret")
 	req.Header.Set("Content-Type", "application/json")
 	h.ServeHTTP(rr, req)
@@ -275,13 +275,13 @@ func TestGeneralDownloadTicketSingleUse(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/audit/export?ticket="+ticket, nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/chronicle/export?ticket="+ticket, nil))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("first use status = %d, want 200", rr.Code)
 	}
 
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/audit/export?ticket="+ticket, nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/chronicle/export?ticket="+ticket, nil))
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("second use status = %d, want 401", rr.Code)
 	}

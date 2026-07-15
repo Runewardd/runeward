@@ -102,7 +102,7 @@ RUNEWARD_LOG_FORMAT=json RUNEWARD_LOG_LEVEL=info runeward --config-dir examples 
 ```
 
 ```json
-{"time":"2026-07-04T11:28:37Z","level":"INFO","msg":"request","method":"POST","path":"/v1/sandboxes","status":200,"duration_ms":142}
+{"time":"2026-07-04T11:28:37Z","level":"INFO","msg":"request","method":"POST","path":"/v1/citadels","status":200,"duration_ms":142}
 ```
 
 `/metrics` and `/healthz` are excluded from the access log so scrapes and health

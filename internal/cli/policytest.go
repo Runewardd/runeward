@@ -18,7 +18,7 @@ import (
 func newPolicyCmd(configDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "policy",
-		Short: "Author, inspect, and test authority policies",
+		Short: "Author, inspect, and test authority policies with the Oracle",
 	}
 	cmd.AddCommand(newPolicyTestCmd(configDir))
 	cmd.AddCommand(newPolicyScaffoldCmd())
@@ -37,8 +37,8 @@ func newPolicyScaffoldCmd() *cobra.Command {
 		Long: "Print a ready-made policy snippet for a common control (deny prod\n" +
 			"mutations, gate package installs, confine egress, …). Run without a\n" +
 			"template name (or with --list) to see what's available, then paste the\n" +
-			"output into a profile:\n\n" +
-			"  runeward policy scaffold package-approval >> myprofile.toml\n",
+			"output into a Charter:\n\n" +
+			"  runeward policy scaffold package-approval >> mycharter.toml\n",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
@@ -90,9 +90,9 @@ func newPolicyTestCmd(configDir *string) *cobra.Command {
 		inline    []string
 	)
 	cmd := &cobra.Command{
-		Use:   "test <profile> --cases <file>",
-		Short: "Simulate a profile's policy against a table of sample actions",
-		Long: "Load a profile's policy and evaluate it offline against a table of\n" +
+		Use:   "test <charter> --cases <file>",
+		Short: "Use the Oracle to simulate a Charter's policy against sample actions",
+		Long: "Load a Charter's policy and evaluate it offline against a table of\n" +
 			"sample actions, asserting the verdict of each. Cases come from a TOML\n" +
 			"file (--cases) and/or inline --case flags. Exits non-zero if any case\n" +
 			"fails, so policy rules can be unit-tested in CI.\n\n" +
@@ -216,7 +216,7 @@ func parseInlineCase(spec string) (policyCase, error) {
 // summary, and returns a non-zero error when any case fails.
 func runPolicyCases(cmd *cobra.Command, profileName string, engine policy.Evaluator, cases []policyCase) error {
 	w := cmd.OutOrStdout()
-	fmt.Fprintf(w, "policy test: profile %q, %d case(s)\n", profileName, len(cases))
+	fmt.Fprintf(w, "policy test: charter %q, %d case(s)\n", profileName, len(cases))
 
 	failed := 0
 	for i, c := range cases {

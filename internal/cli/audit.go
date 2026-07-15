@@ -8,12 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newAuditCmd provides offline audit tools. Verification needs no running
+// newAuditCmd provides offline Chronicle tools. Verification needs no running
 // control plane; the exported bundle embeds the public key.
 func newAuditCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "audit",
-		Short: "Offline audit tools (verify exported transcript bundles)",
+		Use:   "chronicle",
+		Short: "Offline Chronicle tools (verify exported audit transcript bundles)",
 	}
 	cmd.AddCommand(newAuditVerifyCmd())
 	return cmd
@@ -22,7 +22,7 @@ func newAuditCmd() *cobra.Command {
 func newAuditVerifyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify <bundle.json>",
-		Short: "Verify an exported, signed audit transcript bundle",
+		Short: "Verify an exported, signed Chronicle (audit) transcript bundle",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := os.Open(args[0])

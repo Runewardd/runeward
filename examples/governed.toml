@@ -28,6 +28,6 @@ match   = "config/*"
 verdict = "require-approval"
 reason  = "writes under config/ must be reviewed by an operator"
 
-[limits]
+[rationing]
 wall_clock = "30m"
 max_execs  = 200

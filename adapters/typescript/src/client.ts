@@ -227,33 +227,33 @@ export class RunewardClient {
     return this.request("GET", "/healthz");
   }
 
-  /** `GET /v1/profiles` — reachable profiles. */
+  /** `GET /v1/charters` — reachable profiles. */
   async listProfiles(): Promise<Profile[]> {
-    const res = await this.request<{ profiles: Profile[] }>("GET", "/v1/profiles");
+    const res = await this.request<{ profiles: Profile[] }>("GET", "/v1/charters");
     return res.profiles ?? [];
   }
 
   // -- sandbox lifecycle -----------------------------------------------
 
-  /** `POST /v1/sandboxes` — provision a sandbox from `profile`. */
+  /** `POST /v1/citadels` — provision a sandbox from `profile`. */
   createSandbox(profile: string): Promise<Sandbox> {
-    return this.request<Sandbox>("POST", "/v1/sandboxes", { profile });
+    return this.request<Sandbox>("POST", "/v1/citadels", { profile });
   }
 
-  /** `GET /v1/sandboxes`. */
+  /** `GET /v1/citadels`. */
   async listSandboxes(): Promise<Sandbox[]> {
-    const res = await this.request<{ sandboxes: Sandbox[] }>("GET", "/v1/sandboxes");
+    const res = await this.request<{ sandboxes: Sandbox[] }>("GET", "/v1/citadels");
     return res.sandboxes ?? [];
   }
 
-  /** `GET /v1/sandboxes/{id}`. */
+  /** `GET /v1/citadels/{id}`. */
   getSandbox(sandbox: string): Promise<Sandbox> {
-    return this.request<Sandbox>("GET", `/v1/sandboxes/${this.segment(sandbox)}`);
+    return this.request<Sandbox>("GET", `/v1/citadels/${this.segment(sandbox)}`);
   }
 
-  /** `DELETE /v1/sandboxes/{id}` — tear the sandbox down. */
+  /** `DELETE /v1/citadels/{id}` — tear the sandbox down. */
   killSandbox(sandbox: string): Promise<unknown> {
-    return this.request("DELETE", `/v1/sandboxes/${this.segment(sandbox)}`);
+    return this.request("DELETE", `/v1/citadels/${this.segment(sandbox)}`);
   }
 
   // -- execution -------------------------------------------------------
@@ -264,77 +264,77 @@ export class RunewardClient {
    * not a policy denial.
    */
   shell(sandbox: string, command: string[], workdir = ""): Promise<ExecResult> {
-    return this.request<ExecResult>("POST", `/v1/sandboxes/${this.segment(sandbox)}/shell/exec`, { command, workdir });
+    return this.request<ExecResult>("POST", `/v1/citadels/${this.segment(sandbox)}/shell/exec`, { command, workdir });
   }
 
   /** `POST .../code/python` — run a Python snippet in the sandbox. */
   python(sandbox: string, code: string): Promise<ExecResult> {
-    return this.request<ExecResult>("POST", `/v1/sandboxes/${this.segment(sandbox)}/code/python`, { code });
+    return this.request<ExecResult>("POST", `/v1/citadels/${this.segment(sandbox)}/code/python`, { code });
   }
 
   /** `POST .../code/node` — run a Node.js snippet in the sandbox. */
   node(sandbox: string, code: string): Promise<ExecResult> {
-    return this.request<ExecResult>("POST", `/v1/sandboxes/${this.segment(sandbox)}/code/node`, { code });
+    return this.request<ExecResult>("POST", `/v1/citadels/${this.segment(sandbox)}/code/node`, { code });
   }
 
   // -- files -----------------------------------------------------------
 
   /** `POST .../file/read` — return the file's content. */
   async readFile(sandbox: string, path: string): Promise<string> {
-    const res = await this.request<{ content: string }>("POST", `/v1/sandboxes/${this.segment(sandbox)}/file/read`, { path });
+    const res = await this.request<{ content: string }>("POST", `/v1/citadels/${this.segment(sandbox)}/file/read`, { path });
     return res.content ?? "";
   }
 
   /** `POST .../file/write` — write `content`; return the number of bytes written. */
   async writeFile(sandbox: string, path: string, content: string): Promise<number> {
-    const res = await this.request<{ bytes: number }>("POST", `/v1/sandboxes/${this.segment(sandbox)}/file/write`, { path, content });
+    const res = await this.request<{ bytes: number }>("POST", `/v1/citadels/${this.segment(sandbox)}/file/write`, { path, content });
     return res.bytes ?? 0;
   }
 
   /** `POST .../file/list` — list a directory; return the raw output. */
   async listFiles(sandbox: string, path: string): Promise<string> {
-    const res = await this.request<{ output: string }>("POST", `/v1/sandboxes/${this.segment(sandbox)}/file/list`, { path });
+    const res = await this.request<{ output: string }>("POST", `/v1/citadels/${this.segment(sandbox)}/file/list`, { path });
     return res.output ?? "";
   }
 
   /** `POST .../file/search` — search for `query` under `path`. */
   async searchFiles(sandbox: string, query: string, path: string): Promise<string> {
-    const res = await this.request<{ output: string }>("POST", `/v1/sandboxes/${this.segment(sandbox)}/file/search`, { query, path });
+    const res = await this.request<{ output: string }>("POST", `/v1/citadels/${this.segment(sandbox)}/file/search`, { query, path });
     return res.output ?? "";
   }
 
   // -- audit -----------------------------------------------------------
 
-  /** `GET .../audit` — this sandbox's ledger events. */
+  /** `GET .../chronicle` — this sandbox's ledger events. */
   async audit(sandbox: string): Promise<Array<Record<string, unknown>>> {
     const res = await this.request<{ events: Array<Record<string, unknown>> }>(
       "GET",
-      `/v1/sandboxes/${this.segment(sandbox)}/audit`,
+      `/v1/citadels/${this.segment(sandbox)}/chronicle`,
     );
     return res.events ?? [];
   }
 
-  /** `GET /v1/audit/verify` — verify the ledger hash chain. */
+  /** `GET /v1/chronicle/verify` — verify the ledger hash chain. */
   async verifyAudit(): Promise<boolean> {
-    const res = await this.request<{ ok: boolean }>("GET", "/v1/audit/verify");
+    const res = await this.request<{ ok: boolean }>("GET", "/v1/chronicle/verify");
     return Boolean(res.ok);
   }
 
   // -- approvals -------------------------------------------------------
 
-  /** `GET /v1/approvals` — pending human-in-the-loop requests. */
+  /** `GET /v1/conclave` — pending human-in-the-loop requests. */
   async listApprovals(): Promise<Approval[]> {
-    const res = await this.request<{ approvals: Approval[] }>("GET", "/v1/approvals");
+    const res = await this.request<{ approvals: Approval[] }>("GET", "/v1/conclave");
     return res.approvals ?? [];
   }
 
-  /** `POST /v1/approvals/{id}/approve`. */
+  /** `POST /v1/conclave/{id}/approve`. */
   approve(approvalId: string): Promise<unknown> {
-    return this.request("POST", `/v1/approvals/${this.segment(approvalId)}/approve`);
+    return this.request("POST", `/v1/conclave/${this.segment(approvalId)}/approve`);
   }
 
-  /** `POST /v1/approvals/{id}/deny`. */
+  /** `POST /v1/conclave/{id}/deny`. */
   deny(approvalId: string): Promise<unknown> {
-    return this.request("POST", `/v1/approvals/${this.segment(approvalId)}/deny`);
+    return this.request("POST", `/v1/conclave/${this.segment(approvalId)}/deny`);
   }
 }

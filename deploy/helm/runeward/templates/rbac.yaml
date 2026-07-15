@@ -17,10 +17,10 @@ metadata:
     app.kubernetes.io/component: controller
 rules:
   - apiGroups: ["runeward.dev"]
-    resources: ["sandboxes", "fleets"]
+    resources: ["citadels", "cohorts"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["runeward.dev"]
-    resources: ["sandboxes/status", "fleets/status"]
+    resources: ["citadels/status", "cohorts/status"]
     verbs: ["get", "update", "patch"]
   - apiGroups: [""]
     resources: ["pods", "pods/exec", "persistentvolumeclaims", "configmaps"]
@@ -48,7 +48,7 @@ subjects:
     name: {{ $controllerSA }}
     namespace: {{ .Release.Namespace }}
 ---
-# ClusterSandbox/ClusterFleet always need a ClusterRole (cluster-scoped CRs).
+# ClusterCitadel/ClusterCohort always need a ClusterRole (cluster-scoped CRs).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -58,10 +58,10 @@ metadata:
     app.kubernetes.io/component: controller
 rules:
   - apiGroups: ["runeward.dev"]
-    resources: ["clustersandboxes", "clusterfleets"]
+    resources: ["clustercitadels", "clustercohorts"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["runeward.dev"]
-    resources: ["clustersandboxes/status", "clusterfleets/status"]
+    resources: ["clustercitadels/status", "clustercohorts/status"]
     verbs: ["get", "update", "patch"]
   # The k8s backend calls ensureNamespace (get + best-effort PSA-label patch,
   # and create when provisioning into a namespace that does not yet exist).

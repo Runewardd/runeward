@@ -1,17 +1,17 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: clustersandboxes.runeward.dev
+  name: cohorts.runeward.dev
 spec:
   group: runeward.dev
-  scope: Cluster
+  scope: Namespaced
   names:
-    kind: ClusterSandbox
-    listKind: ClusterSandboxList
-    plural: clustersandboxes
-    singular: clustersandbox
+    kind: Cohort
+    listKind: CohortList
+    plural: cohorts
+    singular: cohort
     shortNames:
-      - csbx
+      - coh
   versions:
     - name: v1alpha1
       served: true
@@ -20,10 +20,10 @@ spec:
         openAPIV3Schema:
           type: object
           description: |
-            ClusterSandbox is a cluster-scoped declarative request for one
-            governed runeward execution cell shared across an organization. It
-            behaves like Sandbox but is not namespaced; the runeward controller
-            provisions the backing Pod/PVC in its own (controller) namespace.
+            Cohort is a declarative request for N governed runeward citadels that
+            share a single atomic task board. The runeward controller reconciles
+            it onto the Kubernetes backend using the named profile's [fleet]
+            replicas and task_board.
           properties:
             spec:
               type: object
@@ -32,20 +32,29 @@ spec:
               properties:
                 profile:
                   type: string
-                  description: Name of the runeward profile to provision from.
+                  description: Name of the runeward profile (with a [fleet] block).
             status:
               type: object
               properties:
                 phase:
                   type: string
                   description: One of Pending, Running, Failed, Terminating.
-                sandboxId:
+                cohortId:
                   type: string
-                  description: The runeward sandbox id backing this resource.
-                backend:
-                  type: string
-                image:
-                  type: string
+                citadels:
+                  type: array
+                  items:
+                    type: string
+                tasksTotal:
+                  type: integer
+                tasksPending:
+                  type: integer
+                tasksClaimed:
+                  type: integer
+                tasksDone:
+                  type: integer
+                tasksFailed:
+                  type: integer
                 message:
                   type: string
                 observedGeneration:
@@ -60,9 +69,15 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
-        - name: Sandbox
+        - name: Cohort
           type: string
-          jsonPath: .status.sandboxId
+          jsonPath: .status.cohortId
+        - name: Done
+          type: integer
+          jsonPath: .status.tasksDone
+        - name: Total
+          type: integer
+          jsonPath: .status.tasksTotal
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp

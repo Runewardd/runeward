@@ -8,13 +8,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newProfileCmd provides detached ed25519 signing/verification for profile
-// TOML files (provenance). It reuses the keypairs produced by
-// `runeward bundle keygen` and the shared loadPrivateKey/loadPublicKey helpers.
+// newProfileCmd provides detached ed25519 signing/verification for Charter
+// (profile) TOML files (provenance). It reuses the keypairs produced by
+// `runeward archive keygen` and the shared loadPrivateKey/loadPublicKey helpers.
 func newProfileCmd(configDir *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "profile",
-		Short: "Sign and verify profile TOML files (provenance)",
+		Use:   "charter",
+		Short: "Sign and verify Charter (profile) TOML files (provenance)",
 	}
 	cmd.AddCommand(newProfileSignCmd(), newProfileVerifyCmd())
 	return cmd
@@ -27,7 +27,7 @@ func newProfileSignCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "sign <file>",
-		Short: "Sign a profile TOML file, writing a detached signature",
+		Short: "Sign a Charter TOML file, writing a detached signature",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if keyFile == "" {
@@ -35,7 +35,7 @@ func newProfileSignCmd() *cobra.Command {
 			}
 			content, err := os.ReadFile(args[0])
 			if err != nil {
-				return fmt.Errorf("read profile: %w", err)
+				return fmt.Errorf("read charter: %w", err)
 			}
 			priv, err := loadPrivateKey(keyFile)
 			if err != nil {
@@ -61,7 +61,7 @@ func newProfileSignCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&keyFile, "key", "", "path to a base64 ed25519 private key file (from `bundle keygen`)")
+	cmd.Flags().StringVar(&keyFile, "key", "", "path to a base64 ed25519 private key file (from `archive keygen`)")
 	cmd.Flags().StringVar(&out, "out", "", "write the detached signature here (default <file>.sig; use - for stdout)")
 	return cmd
 }
@@ -73,7 +73,7 @@ func newProfileVerifyCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "verify <file>",
-		Short: "Verify a profile TOML file against a detached signature",
+		Short: "Verify a Charter TOML file against a detached signature",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if verifyKey == "" {
@@ -81,7 +81,7 @@ func newProfileVerifyCmd() *cobra.Command {
 			}
 			content, err := os.ReadFile(args[0])
 			if err != nil {
-				return fmt.Errorf("read profile: %w", err)
+				return fmt.Errorf("read charter: %w", err)
 			}
 			sigPath := sigFile
 			if sigPath == "" {

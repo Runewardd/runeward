@@ -12,7 +12,7 @@ import (
 func newListCmd(configDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List profiles reachable from here",
+		Short: "List Charters reachable from here",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := *configDir
 			if dir == "" {
@@ -23,7 +23,7 @@ func newListCmd(configDir *string) *cobra.Command {
 				return err
 			}
 			if len(names) == 0 {
-				fmt.Fprintln(os.Stderr, "no profiles found")
+				fmt.Fprintln(os.Stderr, "no charters found")
 				return nil
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)

@@ -1,5 +1,5 @@
 // Package webhook implements the runeward admission webhook enforcing
-// ClusterPolicy defaults and guardrails on Sandbox and Fleet resources.
+// ClusterPolicy defaults and guardrails on Citadel and Cohort resources.
 // The decision logic ([Decide]) is a pure function over a policy snapshot;
 // [Server] wires it to the Kubernetes AdmissionReview contract.
 package webhook
@@ -141,7 +141,7 @@ func (s *Server) listPolicies(ctx context.Context) ([]Policy, error) {
 	return policies, nil
 }
 
-// handleValidate admits or rejects a Sandbox/Fleet based on the policy set.
+// handleValidate admits or rejects a Citadel/Cohort based on the policy set.
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	review, req, obj, ok := s.decode(w, r)
 	if !ok {

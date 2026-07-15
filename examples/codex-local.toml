@@ -33,7 +33,7 @@ match   = "rm -rf*"
 verdict = "deny"
 reason  = "destructive recursive delete blocked by policy"
 
-[limits]
+[rationing]
 wall_clock      = "30m"
 max_execs       = 500
 egress_requests = 2000
@@ -48,5 +48,5 @@ file = "~/.runeward-openai.key"
 name = "OPENAI_API_KEY"
 file = "~/.runeward-openai.key"
 
-[audit]
+[chronicle]
 redact = true

@@ -21,7 +21,7 @@ spec:
           type: object
           description: |
             ClusterPolicy declares org-wide defaults and guardrails for runeward
-            Sandbox and Fleet resources. The runeward admission webhook enforces
+            Citadel and Cohort resources. The runeward admission webhook enforces
             every ClusterPolicy on CREATE/UPDATE: it defaults an empty
             spec.profile, rejects denied or non-allowed profiles, restricts the
             namespaces resources may live in, and requires labels to be present.
@@ -32,7 +32,7 @@ spec:
                 allowedProfiles:
                   type: array
                   description: |
-                    Glob patterns; if non-empty, a Sandbox/Fleet spec.profile MUST
+                    Glob patterns; if non-empty, a Citadel/Cohort spec.profile MUST
                     match at least one pattern.
                   items:
                     type: string

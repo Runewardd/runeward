@@ -17,8 +17,8 @@ policy check  →  approval gate  →  cost/loop guardrails  →  sandbox exec  
 ```
 
 The result is a tool surface that is safe to hand to an autonomous agent:
-work runs in a disposable, deny-by-default sandbox; sensitive actions are blocked
-or escalated to a human; and everything is recorded in a tamper-evident ledger
+work runs in a disposable, deny-by-default Citadel; sensitive actions are blocked
+or escalated to a human; and everything is recorded in a tamper-evident Chronicle
 you can replay and verify. These adapters make that governed surface a
 first-class citizen in the frameworks agents are already built with — the agent
 calls a tool exactly as it would any other, but now with a policy engine and a
@@ -55,7 +55,9 @@ The single behavioral contract every adapter preserves:
   dependencies.
 
 All adapters target the same control plane started with `runeward serve`
-(default `http://localhost:8080`) and expose the same method surface, named to
-match the MCP tools: `create_sandbox`, `shell`, `python`, `node`,
+(default `http://localhost:8080`) and expose the same method surface, mirroring
+the governed tool set: `create_sandbox`, `shell`, `python`, `node`,
 `read_file`/`write_file`/`list_files`/`search_files`, `list_approvals`/`approve`/
-`deny`, `kill_sandbox`, plus `audit`/`verify_audit`.
+`deny`, `kill_sandbox`, plus `audit`/`verify_audit`. (The client method names
+keep their original spellings; the `runeward mcp` server's tools are now
+`runeward_create_citadel`, `runeward_kill_citadel`, and `runeward_list_conclave`.)

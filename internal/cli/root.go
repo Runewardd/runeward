@@ -9,7 +9,7 @@ import (
 var version = "dev"
 
 // reserved lists the real subcommands; any other first argument is treated as
-// a profile name to enter.
+// a charter name to enter.
 var reserved = map[string]bool{
 	"serve":      true,
 	"mcp":        true,
@@ -18,15 +18,15 @@ var reserved = map[string]bool{
 	"version":    true,
 	"enter":      true,
 	"export":     true,
-	"fleet":      true,
-	"audit":      true,
-	"bundle":     true,
+	"cohort":     true,
+	"chronicle":  true,
+	"archive":    true,
 	"controller": true,
 	"webhook":    true,
 	"up":         true,
 	"validate":   true,
 	"policy":     true,
-	"profile":    true,
+	"charter":    true,
 	"replay":     true,
 	"runtime":    true,
 	"help":       true,
@@ -35,8 +35,8 @@ var reserved = map[string]bool{
 	"--help":     true,
 }
 
-// Execute parses args and runs the CLI. A bare profile name is rewritten to
-// `enter <profile>`.
+// Execute parses args and runs the CLI. A bare charter name is rewritten to
+// `enter <charter>`.
 func Execute(args []string) error {
 	root := newRootCmd()
 	root.SetArgs(rewriteForEnter(args))
@@ -73,14 +73,14 @@ func newRootCmd() *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "runeward",
-		Short:         "Governed execution cells for AI agents",
-		Long:          "runeward resolves declarative TOML profiles and provisions isolated,\ngoverned sandboxes (Docker or Kubernetes) for AI agents.",
+		Short:         "Governed Citadels for AI agents",
+		Long:          "runeward resolves declarative TOML profiles (Charters) and provisions isolated,\ngoverned Citadels (sandboxes; Docker or Kubernetes) for AI agents.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,
 	}
 	root.PersistentFlags().StringVarP(&configDir, "config-dir", "c", "",
-		"pin profile resolution to a single directory (or $RUNEWARD_CONFIG_DIR)")
+		"pin charter resolution to a single directory (or $RUNEWARD_CONFIG_DIR)")
 
 	root.AddCommand(
 		newEnterCmd(&configDir),

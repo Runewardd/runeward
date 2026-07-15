@@ -27,7 +27,7 @@ STATE=".runeward-fleet"
 
 die() { echo "error: $*" >&2; exit 1; }
 fid() { [ -f "$STATE" ] || die "no fleet yet - run: $0 up"; cat "$STATE"; }
-sandboxes() { curl -sf "$BASE/v1/fleets/$(fid)" | jq -r '.sandboxes[]'; }
+sandboxes() { curl -sf "$BASE/v1/cohorts/$(fid)" | jq -r '.sandboxes[]'; }
 
 # Build the shell/exec request body for a prompt, per selected agent.
 cmd_for() {
@@ -40,22 +40,22 @@ cmd_for() {
 }
 
 run_on() { # sandbox-id, prompt -> runs agent, prints stdout, returns exit status
-  curl -sf "$BASE/v1/sandboxes/$1/shell/exec" -d "$(cmd_for "$2")" | jq -r '.stdout // .reason // ""'
+  curl -sf "$BASE/v1/citadels/$1/shell/exec" -d "$(cmd_for "$2")" | jq -r '.stdout // .reason // ""'
 }
 
 worker() { # sandbox-id, owner: claim+build until the board is empty
   local sb="$1" owner="$2" claim tid prompt
   while :; do
-    claim=$(curl -sf "$BASE/v1/fleets/$(fid)/claim" -d "{\"owner\":\"$owner\"}") || break
+    claim=$(curl -sf "$BASE/v1/cohorts/$(fid)/claim" -d "{\"owner\":\"$owner\"}") || break
     [ "$(echo "$claim" | jq -r '.claimed')" = "true" ] || break
     tid=$(echo "$claim" | jq -r '.task.id')
     prompt=$(echo "$claim" | jq -r '.task.payload')
     echo ">> [$owner/$sb] building: $prompt"
     if run_on "$sb" "$prompt"; then
-      curl -sf "$BASE/v1/fleets/$(fid)/tasks/$tid/complete" -d "{\"result\":\"done by $owner\"}" >/dev/null
+      curl -sf "$BASE/v1/cohorts/$(fid)/tasks/$tid/complete" -d "{\"result\":\"done by $owner\"}" >/dev/null
       echo "<< [$owner] done: $tid"
     else
-      curl -sf "$BASE/v1/fleets/$(fid)/tasks/$tid/fail" -d "{\"error\":\"agent exec failed\",\"requeue\":true}" >/dev/null
+      curl -sf "$BASE/v1/cohorts/$(fid)/tasks/$tid/fail" -d "{\"error\":\"agent exec failed\",\"requeue\":true}" >/dev/null
       echo "!! [$owner] failed (requeued): $tid"
     fi
   done
@@ -64,14 +64,14 @@ worker() { # sandbox-id, owner: claim+build until the board is empty
 case "${1:-}" in
   up)
     prof="${2:-build-fleet}"
-    id=$(curl -sf "$BASE/v1/fleets" -d "{\"profile\":\"$prof\"}" | jq -r '.id')
+    id=$(curl -sf "$BASE/v1/cohorts" -d "{\"profile\":\"$prof\"}" | jq -r '.id')
     [ -n "$id" ] && [ "$id" != "null" ] || die "fleet create failed"
     echo "$id" > "$STATE"
     echo "fleet $id up (profile=$prof); sandboxes:"; sandboxes | sed 's/^/  /'
     ;;
   add)
     [ $# -ge 2 ] || die 'usage: fleet.sh add "<prompt>"'
-    curl -sf "$BASE/v1/fleets/$(fid)/tasks" -d "$(jq -n --arg p "$2" '{payload:$p}')" \
+    curl -sf "$BASE/v1/cohorts/$(fid)/tasks" -d "$(jq -n --arg p "$2" '{payload:$p}')" \
       | jq -r '"added task " + .id'
     ;;
   run)
@@ -92,7 +92,7 @@ case "${1:-}" in
     echo ">> [$sb] $2"; run_on "$sb" "$2"
     ;;
   status)
-    curl -sf "$BASE/v1/fleets/$(fid)/tasks" \
+    curl -sf "$BASE/v1/cohorts/$(fid)/tasks" \
       | jq -r '.tasks[] | "\(.state)\t\(.id)\t\(.payload)"'
     ;;
   export)
@@ -100,7 +100,7 @@ case "${1:-}" in
     for sb in $(sandboxes); do echo "export $sb -> $dir/$sb"; runeward export "$sb" "$dir/$sb"; done
     ;;
   down)
-    curl -sf -X DELETE "$BASE/v1/fleets/$(fid)" >/dev/null && echo "fleet down"
+    curl -sf -X DELETE "$BASE/v1/cohorts/$(fid)" >/dev/null && echo "fleet down"
     rm -f "$STATE"
     ;;
   *)

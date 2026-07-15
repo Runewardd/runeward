@@ -126,55 +126,55 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /metrics", obs.MetricsHandler())
 
 	mux.HandleFunc("GET /v1/whoami", s.handleWhoami)
-	mux.HandleFunc("GET /v1/profiles", s.handleListProfiles)
+	mux.HandleFunc("GET /v1/charters", s.handleListProfiles)
 	mux.HandleFunc("POST /v1/tickets", s.handleCreateTicket)
 	mux.HandleFunc("POST /v1/policy/simulate", s.handlePolicySimulate)
 
-	mux.HandleFunc("POST /v1/sandboxes", s.handleCreateSandbox)
-	mux.HandleFunc("GET /v1/sandboxes", s.handleListSandboxes)
-	mux.HandleFunc("GET /v1/sandboxes/{id}", s.handleGetSandbox)
-	mux.HandleFunc("DELETE /v1/sandboxes/{id}", s.handleKillSandbox)
+	mux.HandleFunc("POST /v1/citadels", s.handleCreateSandbox)
+	mux.HandleFunc("GET /v1/citadels", s.handleListSandboxes)
+	mux.HandleFunc("GET /v1/citadels/{id}", s.handleGetSandbox)
+	mux.HandleFunc("DELETE /v1/citadels/{id}", s.handleKillSandbox)
 
-	mux.HandleFunc("POST /v1/sandboxes/{id}/shell/exec", s.handleShell)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/browser", s.handleBrowser)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/browser/sessions", s.handleBrowserOpen)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/browser/sessions/{sid}/act", s.handleBrowserAct)
-	mux.HandleFunc("DELETE /v1/sandboxes/{id}/browser/sessions/{sid}", s.handleBrowserClose)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/code/python", s.handlePython)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/code/node", s.handleNode)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/file/read", s.handleFileRead)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/file/write", s.handleFileWrite)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/file/list", s.handleFileList)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/file/search", s.handleFileSearch)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/usage", s.handleReportUsage)
-	mux.HandleFunc("GET /v1/sandboxes/{id}/egress", s.handleEgressLog)
+	mux.HandleFunc("POST /v1/citadels/{id}/shell/exec", s.handleShell)
+	mux.HandleFunc("POST /v1/citadels/{id}/browser", s.handleBrowser)
+	mux.HandleFunc("POST /v1/citadels/{id}/browser/sessions", s.handleBrowserOpen)
+	mux.HandleFunc("POST /v1/citadels/{id}/browser/sessions/{sid}/act", s.handleBrowserAct)
+	mux.HandleFunc("DELETE /v1/citadels/{id}/browser/sessions/{sid}", s.handleBrowserClose)
+	mux.HandleFunc("POST /v1/citadels/{id}/code/python", s.handlePython)
+	mux.HandleFunc("POST /v1/citadels/{id}/code/node", s.handleNode)
+	mux.HandleFunc("POST /v1/citadels/{id}/file/read", s.handleFileRead)
+	mux.HandleFunc("POST /v1/citadels/{id}/file/write", s.handleFileWrite)
+	mux.HandleFunc("POST /v1/citadels/{id}/file/list", s.handleFileList)
+	mux.HandleFunc("POST /v1/citadels/{id}/file/search", s.handleFileSearch)
+	mux.HandleFunc("POST /v1/citadels/{id}/usage", s.handleReportUsage)
+	mux.HandleFunc("GET /v1/citadels/{id}/perimeter", s.handleEgressLog)
 
-	mux.HandleFunc("POST /v1/fleets", s.handleCreateFleet)
-	mux.HandleFunc("GET /v1/fleets", s.handleListFleets)
-	mux.HandleFunc("GET /v1/fleets/{id}", s.handleGetFleet)
-	mux.HandleFunc("DELETE /v1/fleets/{id}", s.handleKillFleet)
-	mux.HandleFunc("GET /v1/fleets/{id}/tasks", s.handleListTasks)
-	mux.HandleFunc("POST /v1/fleets/{id}/tasks", s.handleAddTask)
-	mux.HandleFunc("POST /v1/fleets/{id}/claim", s.handleClaimTask)
-	mux.HandleFunc("POST /v1/fleets/{id}/tasks/{taskID}/complete", s.handleCompleteTask)
-	mux.HandleFunc("POST /v1/fleets/{id}/tasks/{taskID}/fail", s.handleFailTask)
-	mux.HandleFunc("POST /v1/fleets/{id}/tasks/{taskID}/heartbeat", s.handleHeartbeatTask)
+	mux.HandleFunc("POST /v1/cohorts", s.handleCreateFleet)
+	mux.HandleFunc("GET /v1/cohorts", s.handleListFleets)
+	mux.HandleFunc("GET /v1/cohorts/{id}", s.handleGetFleet)
+	mux.HandleFunc("DELETE /v1/cohorts/{id}", s.handleKillFleet)
+	mux.HandleFunc("GET /v1/cohorts/{id}/tasks", s.handleListTasks)
+	mux.HandleFunc("POST /v1/cohorts/{id}/tasks", s.handleAddTask)
+	mux.HandleFunc("POST /v1/cohorts/{id}/claim", s.handleClaimTask)
+	mux.HandleFunc("POST /v1/cohorts/{id}/tasks/{taskID}/complete", s.handleCompleteTask)
+	mux.HandleFunc("POST /v1/cohorts/{id}/tasks/{taskID}/fail", s.handleFailTask)
+	mux.HandleFunc("POST /v1/cohorts/{id}/tasks/{taskID}/heartbeat", s.handleHeartbeatTask)
 
-	mux.HandleFunc("POST /v1/sandboxes/{id}/snapshot", s.handleSnapshot)
+	mux.HandleFunc("POST /v1/citadels/{id}/snapshot", s.handleSnapshot)
 	mux.HandleFunc("GET /v1/snapshots", s.handleListSnapshots)
 	mux.HandleFunc("POST /v1/snapshots/{id}/restore", s.handleRestoreSnapshot)
 
-	mux.HandleFunc("GET /v1/sandboxes/{id}/audit", s.handleAudit)
-	mux.HandleFunc("GET /v1/audit/verify", s.handleAuditVerify)
-	mux.HandleFunc("GET /v1/audit/pubkey", s.handleAuditPubKey)
-	mux.HandleFunc("GET /v1/audit/export", s.handleAuditExport)
+	mux.HandleFunc("GET /v1/citadels/{id}/chronicle", s.handleAudit)
+	mux.HandleFunc("GET /v1/chronicle/verify", s.handleAuditVerify)
+	mux.HandleFunc("GET /v1/chronicle/pubkey", s.handleAuditPubKey)
+	mux.HandleFunc("GET /v1/chronicle/export", s.handleAuditExport)
 
-	mux.HandleFunc("GET /v1/approvals", s.handleListApprovals)
-	mux.HandleFunc("POST /v1/approvals/{id}/approve", s.handleApprove)
-	mux.HandleFunc("POST /v1/approvals/{id}/deny", s.handleDeny)
+	mux.HandleFunc("GET /v1/conclave", s.handleListApprovals)
+	mux.HandleFunc("POST /v1/conclave/{id}/approve", s.handleApprove)
+	mux.HandleFunc("POST /v1/conclave/{id}/deny", s.handleDeny)
 
-	mux.HandleFunc("GET /v1/sandboxes/{id}/terminal", s.handleTerminal)
-	mux.HandleFunc("POST /v1/sandboxes/{id}/terminal-ticket", s.handleTerminalTicket)
+	mux.HandleFunc("GET /v1/citadels/{id}/terminal", s.handleTerminal)
+	mux.HandleFunc("POST /v1/citadels/{id}/terminal-ticket", s.handleTerminalTicket)
 
 	if s.MCP != nil {
 		mux.Handle("/mcp", s.MCP)
@@ -191,7 +191,7 @@ func (s *Server) Handler() http.Handler {
 			}
 			writeJSON(w, http.StatusOK, map[string]string{
 				"service": "runeward control plane",
-				"docs":    "/v1/profiles, /v1/sandboxes, /v1/approvals, /v1/audit/verify",
+				"docs":    "/v1/charters, /v1/citadels, /v1/conclave, /v1/chronicle/verify",
 			})
 		})
 	}
@@ -285,12 +285,12 @@ func (s *Server) publicDashboardAsset(r *http.Request) bool {
 // ownershipGuard enforces per-principal sandbox access under RBAC: a non-admin
 // principal may only touch sandboxes it owns. It runs after authenticate (so
 // the principal is in context) and inspects sandbox-scoped paths
-// (/v1/sandboxes/{id}[/...]). Unknown or other-owned sandboxes return 404 so a
+// (/v1/citadels/{id}[/...]). Unknown or other-owned sandboxes return 404 so a
 // principal can't even probe for the existence of another principal's
 // sandboxes. Open/legacy mode (no principal) and admins are unrestricted.
 func (s *Server) ownershipGuard(next http.Handler) http.Handler {
-	const sandboxPrefix = "/v1/sandboxes/"
-	const fleetPrefix = "/v1/fleets/"
+	const sandboxPrefix = "/v1/citadels/"
+	const fleetPrefix = "/v1/cohorts/"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r.Context())
 		if p == nil || p.Admin {
@@ -329,13 +329,13 @@ func (s *Server) ownershipGuard(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if strings.HasPrefix(r.URL.Path, "/v1/audit/") {
-			if r.URL.Path == "/v1/audit/export" {
+		if strings.HasPrefix(r.URL.Path, "/v1/chronicle/") {
+			if r.URL.Path == "/v1/chronicle/export" {
 				writeError(w, http.StatusForbidden, "not authorized to export audit bundle")
 				return
 			}
 		}
-		if strings.HasPrefix(r.URL.Path, "/v1/approvals") && !p.MayApprove() {
+		if strings.HasPrefix(r.URL.Path, "/v1/conclave") && !p.MayApprove() {
 			writeError(w, http.StatusForbidden, "not authorized to view approvals")
 			return
 		}
@@ -493,7 +493,7 @@ func tokenMatches(r *http.Request, want []byte, allowQuery bool) bool {
 }
 
 func isTerminalPath(path string) bool {
-	const prefix = "/v1/sandboxes/"
+	const prefix = "/v1/citadels/"
 	const suffix = "/terminal"
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
 		return false
@@ -507,7 +507,7 @@ func terminalSandboxID(path string) (string, bool) {
 	if !isTerminalPath(path) {
 		return "", false
 	}
-	rest := strings.TrimPrefix(path, "/v1/sandboxes/")
+	rest := strings.TrimPrefix(path, "/v1/citadels/")
 	id := strings.TrimSuffix(rest, "/terminal")
 	return id, id != ""
 }

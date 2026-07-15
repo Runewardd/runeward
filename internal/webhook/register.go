@@ -14,7 +14,7 @@ import (
 const configName = "runeward.dev"
 
 // Register upserts the validating and mutating webhook configurations that
-// route Sandbox/Fleet admission to the given Service. caPEM is published as
+// route Citadel/Cohort admission to the given Service. caPEM is published as
 // each webhook's caBundle so the API server trusts the self-signed serving
 // certificate.
 func Register(ctx context.Context, clientset kubernetes.Interface, caPEM []byte, service, namespace string) error {
@@ -27,8 +27,8 @@ func Register(ctx context.Context, clientset kubernetes.Interface, caPEM []byte,
 	return nil
 }
 
-// webhookRules matches CREATE/UPDATE on the namespaced Sandbox/Fleet and
-// cluster-scoped ClusterSandbox/ClusterFleet resources.
+// webhookRules matches CREATE/UPDATE on the namespaced Citadel/Cohort and
+// cluster-scoped ClusterCitadel/ClusterCohort resources.
 func webhookRules() []admissionregistrationv1.RuleWithOperations {
 	namespaced := admissionregistrationv1.NamespacedScope
 	cluster := admissionregistrationv1.ClusterScope
@@ -42,7 +42,7 @@ func webhookRules() []admissionregistrationv1.RuleWithOperations {
 			Rule: admissionregistrationv1.Rule{
 				APIGroups:   []string{"runeward.dev"},
 				APIVersions: []string{"v1alpha1"},
-				Resources:   []string{"sandboxes", "fleets"},
+				Resources:   []string{"citadels", "cohorts"},
 				Scope:       &namespaced,
 			},
 		},
@@ -51,7 +51,7 @@ func webhookRules() []admissionregistrationv1.RuleWithOperations {
 			Rule: admissionregistrationv1.Rule{
 				APIGroups:   []string{"runeward.dev"},
 				APIVersions: []string{"v1alpha1"},
-				Resources:   []string{"clustersandboxes", "clusterfleets"},
+				Resources:   []string{"clustercitadels", "clustercohorts"},
 				Scope:       &cluster,
 			},
 		},
@@ -71,7 +71,7 @@ func clientConfig(caPEM []byte, service, namespace, path string) admissionregist
 }
 
 func registerValidating(ctx context.Context, clientset kubernetes.Interface, caPEM []byte, service, namespace string) error {
-	// Fail closed: if the webhook is unreachable, deny Sandbox/Fleet admission
+	// Fail closed: if the webhook is unreachable, deny Citadel/Cohort admission
 	// rather than letting an ungoverned resource through. The rules only match
 	// runeward.dev CRDs, so a webhook outage can't wedge core cluster objects.
 	fail := admissionregistrationv1.Fail

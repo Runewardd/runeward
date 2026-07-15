@@ -21,7 +21,7 @@ image   = "runeward-agent:dev"
 workdir = "/workspace"
 # copy_from = "~/Documents/my-app-scaffold"
 
-[fleet]
+[cohort]
 replicas   = 3
 task_board = []
 
@@ -88,7 +88,7 @@ match   = "/etc/*"
 verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed"
 
-[limits]
+[rationing]
 wall_clock      = "45m"
 max_execs       = 800
 egress_requests = 4000
@@ -115,5 +115,5 @@ file = "~/.runeward-anthropic.key"
 name  = "NODE_USE_ENV_PROXY"
 value = "1"
 
-[audit]
+[chronicle]
 redact = true

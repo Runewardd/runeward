@@ -52,7 +52,7 @@ func TestCreateSandboxFailsOnInvalidAuditScrubPattern(t *testing.T) {
 type = "container"
 image = "alpine:3.20"
 
-[audit]
+[chronicle]
 scrub_patterns = ["("]
 `
 	if err := os.WriteFile(filepath.Join(configDir, "invalid.toml"), []byte(profileBody), 0o600); err != nil {
@@ -69,7 +69,7 @@ scrub_patterns = ["("]
 	if err == nil {
 		t.Fatal("expected invalid scrub pattern to fail sandbox creation")
 	}
-	if !strings.Contains(err.Error(), "audit.scrub_patterns") {
-		t.Fatalf("error should point to audit.scrub_patterns, got %v", err)
+	if !strings.Contains(err.Error(), "chronicle.scrub_patterns") {
+		t.Fatalf("error should point to chronicle.scrub_patterns, got %v", err)
 	}
 }

@@ -3,6 +3,36 @@
 runeward is a small control plane in front of a pluggable execution backend.
 Everything an agent does passes through one governed path.
 
+## Product vocabulary
+
+Runeward uses a desert-governance vocabulary in its dashboard and explanatory
+copy. It is original product language, not a protocol change or a reference to
+another fictional universe:
+
+- **Citadel** — a sandbox or execution cell.
+- **Cohort** — a fleet of Citadels.
+- **Charter** — a profile: the declarative security contract for a Citadel.
+- **Oracle** — policy simulation and preflight evaluation.
+- **Conclave** — the human approval queue.
+- **Chronicle** — the tamper-evident audit ledger.
+- **Perimeter** — egress controls and their decision history.
+- **Rationing** — time, execution, network, token, and cost guardrails.
+- **Command Board** — a Cohort's shared task board.
+- **Archive** — signed policy bundles and approved Charter templates.
+
+These names are the canonical identifiers across the product: the CLI commands
+(`runeward cohort`, `runeward chronicle`, `runeward charter`, `runeward
+archive`), the REST paths (`/v1/citadels`, `/v1/cohorts`, `/v1/conclave`,
+`/v1/chronicle`, `/v1/charters`, and the per-Citadel `/perimeter`), the MCP tool
+names (`runeward_create_citadel`, `runeward_create_cohort`,
+`runeward_list_conclave`, …), the Kubernetes CRD kinds (`Citadel`, `Cohort`),
+and the Charter TOML tables (`[cohort]`, `[chronicle]`, `[rationing]`) all use
+this vocabulary. Two things deliberately keep their historical spellings for
+stability: the product/binary name `runeward` itself, and the JSON wire field
+keys inside request/response bodies (e.g. `{"profile": "…"}`, the `sandbox`
+argument to an MCP tool) along with the language SDK method names. `policy` (the
+concept and its `[[policy]]` table) and `snapshot` are unchanged.
+
 ## The governed path
 
 Every action — from REST, the dashboard, or MCP — flows through the same
@@ -15,7 +45,7 @@ request -> policy engine -> approval gate -> guardrails -> backend exec -> audit
 If any stage says no, the action is denied or paused, and the outcome is recorded
 either way.
 
-## Sandbox (cell)
+## Citadel (sandbox / cell)
 
 A **sandbox** (or *cell*) is one isolated execution environment created from a
 profile. It has its own filesystem workspace, its own egress policy, and its own
@@ -28,14 +58,14 @@ resource limits. Backends:
 
 Everything above the backend is identical, so a profile runs the same either way.
 
-## Profile
+## Charter (profile)
 
 A **profile** is the declarative security contract for a sandbox: the base image,
 workdir, network egress allowlist, environment/secret injection, per-action
 policy, and resource limits. Anything not granted is denied by default. See
 [Profiles](profiles.md).
 
-## Policy and approvals
+## Policy, Oracle, and Conclave
 
 Each action gets a verdict: `allow`, `deny`, or `require-approval`. The engine is
 selectable per profile:
@@ -44,17 +74,19 @@ selectable per profile:
 - `cel` — CEL expressions over `{tool, arg}`.
 - `rego` — an OPA/Rego module returning a decision.
 
-`require-approval` pauses the action and surfaces it in the dashboard's approvals
-inbox (and over REST) for a human to allow or deny.
+`require-approval` pauses the action and surfaces it in the dashboard's
+**Conclave** (and over REST) for a human to allow or deny. The dashboard's
+**Oracle** simulates an action before it reaches this point; it does not alter
+the policy or authorize the action.
 
-## Egress control
+## Perimeter (egress control)
 
 Network egress is **deny-by-default**. Profiles declare an allowlist; on Docker
 this is an in-process SNI-filtering proxy, and on Kubernetes it's enforced at L3
 with a sidecar. Guardrails cap the number of egress requests to stop exfiltration
 and runaway loops.
 
-## Audit ledger
+## Chronicle (audit ledger)
 
 Every governed action and its verdict is appended to a **tamper-evident ledger**:
 append-only, hash-chained, and signed with ed25519. It can be exported as a
@@ -66,18 +98,35 @@ third party can confirm nothing was altered or dropped.
     its own `RUNEWARD_STATE_DIR`; two processes sharing one ledger will break the
     hash chain and verification will report tampering.
 
-## Fleets
+## Cohorts (fleets)
 
-A **fleet** is N sandboxes coordinated by an atomic task board. Workers claim
-tasks with a lease (so a dead worker's task is reclaimed), do the work in their
-own isolated workspace, and mark completion. See [Fleets](fleets.md).
+A **fleet** is N sandboxes coordinated by an atomic **Command Board**. Workers
+claim tasks with a lease (so a dead worker's task is reclaimed), do the work in
+their own isolated workspace, and mark completion. See [Fleets](fleets.md).
 
-## Guardrails
+## Rationing (guardrails)
 
 Hard limits per sandbox: wall-clock time, exec count, egress request count, and
-token/spend budgets (`limits.max_tokens`, `limits.max_cost_usd`, fed by the usage
-API), plus retry-loop detection. When a cap is hit, further actions are denied and
-logged.
+token/spend budgets (`rationing.max_tokens`, `rationing.max_cost_usd`, fed by the
+usage API), plus retry-loop detection. When a cap is hit, further actions are
+denied and logged.
+
+## Developer gotchas
+
+- A Citadel is never a mount of your project. `copy_from` makes a one-time
+  copy; use `runeward export` to retrieve results.
+- These names are the real identifiers, not display-only aliases: scripts call
+  `/v1/citadels`, `runeward cohort`, and the `runeward_create_citadel` MCP tool.
+  Only the JSON body field keys (e.g. `profile`, `sandbox`) and SDK method names
+  keep their historical spellings; `[[policy]]` is unchanged.
+- An Oracle result is advisory. It evaluates the supplied action against a
+  Charter; the live action is still subject to current policy, approval, and
+  guardrails.
+- A Chronicle is single-writer. Give every Runeward instance its own
+  `RUNEWARD_STATE_DIR`; sharing it breaks ledger verification.
+- Cohort members have separate workspaces. Use the Command Board for
+  coordination rather than assuming that a change made by one worker appears
+  in another worker's filesystem.
 
 ## Surfaces
 

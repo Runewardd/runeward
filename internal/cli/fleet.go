@@ -16,19 +16,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// fleetStateFile remembers the active fleet id so subcommands don't need --fleet.
-const fleetStateFile = ".runeward-fleet"
+// fleetStateFile remembers the active cohort id so subcommands don't need --cohort.
+const fleetStateFile = ".runeward-cohort"
 
-// newFleetCmd drives a fleet on a running `runeward serve` over REST: push
+// newFleetCmd drives a Cohort on a running `runeward serve` over REST: push
 // prompts and run an agent (Cursor, Codex, or Claude) on each, all governed.
 func newFleetCmd() *cobra.Command {
 	var base, agent, model, fleetID string
 
 	cmd := &cobra.Command{
-		Use:   "fleet",
-		Short: "Drive a governed fleet by prompt (create, push prompts, run an agent on each)",
-		Long: "Talks to a running `runeward serve`. `up` creates a fleet and remembers its id;\n" +
-			"`exec` runs a prompt on one sandbox (workspace accumulates); `add`+`run` fan\n" +
+		Use:   "cohort",
+		Short: "Drive a governed Cohort by prompt (create, push prompts, run an agent on each)",
+		Long: "Talks to a running `runeward serve`. `up` creates a Cohort and remembers its id;\n" +
+			"`exec` runs a prompt on one Citadel (workspace accumulates); `add`+`run` fan\n" +
 			"prompts out across all workers in parallel. Pick the agent with --agent and\n" +
 			"the model with --model.",
 	}
@@ -38,14 +38,14 @@ func newFleetCmd() *cobra.Command {
 		"agent to run: cursor | codex | claude (or $AGENT)")
 	cmd.PersistentFlags().StringVar(&model, "model", os.Getenv("MODEL"),
 		"model slug passed to the agent (or $MODEL)")
-	cmd.PersistentFlags().StringVar(&fleetID, "fleet", "",
-		"fleet id (defaults to the one saved by `fleet up`)")
+	cmd.PersistentFlags().StringVar(&fleetID, "cohort", "",
+		"Cohort id; defaults to the one saved by `cohort up`")
 
 	client := func() *fleetClient { return &fleetClient{base: base, http: &http.Client{}} }
 
 	up := &cobra.Command{
-		Use:   "up [profile]",
-		Short: "Create a fleet (default profile: build-fleet) and remember its id",
+		Use:   "up [charter]",
+		Short: "Create a Cohort (default Charter: build-fleet) and remember its id",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profile := "build-fleet"
@@ -53,14 +53,14 @@ func newFleetCmd() *cobra.Command {
 				profile = args[0]
 			}
 			var fv fleetView
-			if err := client().call(cmd.Context(), http.MethodPost, "/v1/fleets",
+			if err := client().call(cmd.Context(), http.MethodPost, "/v1/cohorts",
 				map[string]string{"profile": profile}, &fv); err != nil {
 				return err
 			}
 			if err := os.WriteFile(fleetStateFile, []byte(fv.ID), 0o644); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "runeward: fleet %s up (profile=%s, %d sandboxes)\n", fv.ID, profile, len(fv.Sandboxes))
+			fmt.Fprintf(os.Stderr, "runeward: cohort %s up (charter=%s, %d citadels)\n", fv.ID, profile, len(fv.Sandboxes))
 			for _, s := range fv.Sandboxes {
 				fmt.Fprintf(os.Stderr, "  %s\n", s)
 			}
@@ -70,7 +70,7 @@ func newFleetCmd() *cobra.Command {
 
 	add := &cobra.Command{
 		Use:   "add <prompt>",
-		Short: "Add a prompt to the shared board (fanned out across workers by `run`)",
+		Short: "Add a prompt to the shared Command Board (fanned out by `run`)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := resolveFleetID(fleetID)
@@ -78,7 +78,7 @@ func newFleetCmd() *cobra.Command {
 				return err
 			}
 			var t task
-			if err := client().call(cmd.Context(), http.MethodPost, "/v1/fleets/"+id+"/tasks",
+			if err := client().call(cmd.Context(), http.MethodPost, "/v1/cohorts/"+id+"/tasks",
 				map[string]string{"payload": args[0]}, &t); err != nil {
 				return err
 			}
@@ -89,7 +89,7 @@ func newFleetCmd() *cobra.Command {
 
 	run := &cobra.Command{
 		Use:   "run",
-		Short: "Drain the board: every worker builds pending prompts in parallel",
+		Short: "Drain the Command Board: every worker builds pending prompts in parallel",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := resolveFleetID(fleetID)
@@ -116,7 +116,7 @@ func newFleetCmd() *cobra.Command {
 			}
 			c := client()
 			var t task
-			if err := c.call(cmd.Context(), http.MethodPost, "/v1/fleets/"+id+"/tasks",
+			if err := c.call(cmd.Context(), http.MethodPost, "/v1/cohorts/"+id+"/tasks",
 				map[string]string{"payload": args[0]}, &t); err != nil {
 				return err
 			}
@@ -126,7 +126,7 @@ func newFleetCmd() *cobra.Command {
 
 	exec := &cobra.Command{
 		Use:   "exec <prompt>",
-		Short: "Run a prompt on ONE sandbox (--sandbox, else the first) so changes accumulate",
+		Short: "Run a prompt on ONE Citadel (--citadel, else the first) so changes accumulate",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := resolveFleetID(fleetID)
@@ -134,14 +134,14 @@ func newFleetCmd() *cobra.Command {
 				return err
 			}
 			c := client()
-			sb, _ := cmd.Flags().GetString("sandbox")
+			sb, _ := cmd.Flags().GetString("citadel")
 			if sb == "" {
 				var fv fleetView
-				if err := c.call(cmd.Context(), http.MethodGet, "/v1/fleets/"+id, nil, &fv); err != nil {
+				if err := c.call(cmd.Context(), http.MethodGet, "/v1/cohorts/"+id, nil, &fv); err != nil {
 					return err
 				}
 				if len(fv.Sandboxes) == 0 {
-					return fmt.Errorf("fleet %s has no sandboxes", id)
+					return fmt.Errorf("cohort %s has no citadels", id)
 				}
 				sb = fv.Sandboxes[0]
 			}
@@ -158,11 +158,11 @@ func newFleetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	exec.Flags().String("sandbox", "", "target a specific sandbox id (default: first in the fleet)")
+	exec.Flags().String("citadel", "", "target a specific citadel id (default: first in the cohort)")
 
 	status := &cobra.Command{
 		Use:   "status",
-		Short: "Show the board",
+		Short: "Show the Command Board",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := resolveFleetID(fleetID)
@@ -170,7 +170,7 @@ func newFleetCmd() *cobra.Command {
 				return err
 			}
 			var tr tasksResp
-			if err := client().call(cmd.Context(), http.MethodGet, "/v1/fleets/"+id+"/tasks", nil, &tr); err != nil {
+			if err := client().call(cmd.Context(), http.MethodGet, "/v1/cohorts/"+id+"/tasks", nil, &tr); err != nil {
 				return err
 			}
 			for _, t := range tr.Tasks {
@@ -194,7 +194,7 @@ func newFleetCmd() *cobra.Command {
 				dest = args[0]
 			}
 			var fv fleetView
-			if err := client().call(cmd.Context(), http.MethodGet, "/v1/fleets/"+id, nil, &fv); err != nil {
+			if err := client().call(cmd.Context(), http.MethodGet, "/v1/cohorts/"+id, nil, &fv); err != nil {
 				return err
 			}
 			for _, sb := range fv.Sandboxes {
@@ -213,18 +213,18 @@ func newFleetCmd() *cobra.Command {
 
 	down := &cobra.Command{
 		Use:   "down",
-		Short: "Kill the fleet and forget it",
+		Short: "Tear down the Cohort and forget it",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := resolveFleetID(fleetID)
 			if err != nil {
 				return err
 			}
-			if err := client().call(cmd.Context(), http.MethodDelete, "/v1/fleets/"+id, nil, nil); err != nil {
+			if err := client().call(cmd.Context(), http.MethodDelete, "/v1/cohorts/"+id, nil, nil); err != nil {
 				return err
 			}
 			_ = os.Remove(fleetStateFile)
-			fmt.Fprintf(os.Stderr, "runeward: fleet %s down\n", id)
+			fmt.Fprintf(os.Stderr, "runeward: cohort %s down\n", id)
 			return nil
 		},
 	}
@@ -301,10 +301,10 @@ func (c *fleetClient) call(ctx context.Context, method, path string, body, out a
 	return nil
 }
 
-// shellExec runs a command vector in one sandbox and returns its stdout.
+// shellExec runs a command vector in one citadel and returns its stdout.
 func (c *fleetClient) shellExec(ctx context.Context, sandbox string, command []string) (string, error) {
 	var res toolResult
-	err := c.call(ctx, http.MethodPost, "/v1/sandboxes/"+sandbox+"/shell/exec",
+	err := c.call(ctx, http.MethodPost, "/v1/citadels/"+sandbox+"/shell/exec",
 		map[string]any{"command": command}, &res)
 	if err != nil {
 		return "", err
@@ -315,15 +315,15 @@ func (c *fleetClient) shellExec(ctx context.Context, sandbox string, command []s
 	return res.Stdout, nil
 }
 
-// drain runs one worker per sandbox; each claims and builds pending tasks until
-// the board is empty, in parallel.
+// drain runs one worker per citadel; each claims and builds pending tasks until
+// the Command Board is empty, in parallel.
 func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) error {
 	var fv fleetView
-	if err := c.call(ctx, http.MethodGet, "/v1/fleets/"+fleetID, nil, &fv); err != nil {
+	if err := c.call(ctx, http.MethodGet, "/v1/cohorts/"+fleetID, nil, &fv); err != nil {
 		return err
 	}
 	if len(fv.Sandboxes) == 0 {
-		return fmt.Errorf("fleet %s has no sandboxes", fleetID)
+		return fmt.Errorf("cohort %s has no citadels", fleetID)
 	}
 	var mu sync.Mutex
 	say := func(format string, a ...any) {
@@ -339,7 +339,7 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 			defer wg.Done()
 			for {
 				var claim claimResp
-				if err := c.call(ctx, http.MethodPost, "/v1/fleets/"+fleetID+"/claim",
+				if err := c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/claim",
 					map[string]string{"owner": owner}, &claim); err != nil {
 					say("!! [%s] claim failed: %v", owner, err)
 					return
@@ -355,7 +355,7 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 				}
 				out, err := c.shellExec(ctx, sb, cmdVec)
 				if err != nil {
-					_ = c.call(ctx, http.MethodPost, "/v1/fleets/"+fleetID+"/tasks/"+claim.Task.ID+"/fail",
+					_ = c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/tasks/"+claim.Task.ID+"/fail",
 						map[string]any{"error": err.Error(), "requeue": true}, nil)
 					say("!! [%s] failed (requeued) %s: %v", owner, claim.Task.ID, err)
 					continue
@@ -363,7 +363,7 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 				if strings.TrimSpace(out) != "" {
 					say("%s", strings.TrimSpace(out))
 				}
-				_ = c.call(ctx, http.MethodPost, "/v1/fleets/"+fleetID+"/tasks/"+claim.Task.ID+"/complete",
+				_ = c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/tasks/"+claim.Task.ID+"/complete",
 					map[string]string{"result": "done by " + owner}, nil)
 				say("<< [%s] done: %s", owner, claim.Task.ID)
 			}
@@ -399,18 +399,18 @@ func agentCommand(agent, model, prompt string) ([]string, error) {
 	}
 }
 
-// resolveFleetID returns the explicit id, else the one saved by `fleet up`.
+// resolveFleetID returns the explicit id, else the one saved by `cohort up`.
 func resolveFleetID(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
 	}
 	b, err := os.ReadFile(fleetStateFile)
 	if err != nil {
-		return "", fmt.Errorf("no active fleet; run `runeward fleet up` first or pass --fleet <id>")
+		return "", fmt.Errorf("no active cohort; run `runeward cohort up` first or pass --cohort <id>")
 	}
 	id := strings.TrimSpace(string(b))
 	if id == "" {
-		return "", fmt.Errorf("no active fleet; run `runeward fleet up` first or pass --fleet <id>")
+		return "", fmt.Errorf("no active cohort; run `runeward cohort up` first or pass --cohort <id>")
 	}
 	return id, nil
 }

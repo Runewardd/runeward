@@ -6,9 +6,9 @@
 
 **Governed execution cells for AI agents.**
 
-Declarative profiles provision isolated sandboxes (Docker or Kubernetes) with
-deny-by-default egress, a tamper-evident audit ledger, human-in-the-loop policy
-gates, and cost/loop guardrails — driven over REST, MCP, a CLI, and a web
+Declarative Charters provision isolated Citadels (Docker or Kubernetes) with a
+deny-by-default Perimeter, a tamper-evident Chronicle, human-in-the-loop policy
+gates, and cost/loop Rationing — driven over REST, MCP, a CLI, and a web
 dashboard.
 
 ## Install
@@ -29,7 +29,7 @@ in a box") is table stakes. runeward adds the governance layer *around* the box 
 enforcing the rules outside the model instead of hoping it was trained to behave
 ([why governance, not training](why-governance.md)):
 
-- **Profiles are a security contract.** Everything you don't grant is denied by
+- **Charters are a security contract.** Everything you don't grant is denied by
   default, so the blast radius is explicit.
 - **Governed, not just isolated.** Every action flows through one path — policy,
   approval gate, guardrails, backend exec, audit ledger — whether it arrives via
@@ -46,7 +46,7 @@ enforcing the rules outside the model instead of hoping it was trained to behave
   and per-principal dashboard views with an interactive login.
 - **Pluggable backends.** Docker/Podman for zero-setup laptop use, or Kubernetes
   (strict L3 egress, CRDs, admission webhook, PSA + NetworkPolicy multi-tenancy)
-  for production and fleets.
+  for production and Cohorts.
 
 ## How it compares
 
@@ -57,7 +57,7 @@ enforcing the rules outside the model instead of hoping it was trained to behave
 | Per-action policy + approvals      | rare                  | yes; builtin / CEL / OPA-Rego + HITL gates    |
 | Tamper-evident, signed audit trail | rare                  | yes; hash-chained + ed25519, verifiable       |
 | Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, loop caps      |
-| Multi-agent fleets                 | rare                  | yes; N cells + atomic task board              |
+| Multi-agent Cohorts                | rare                  | yes; N cells + atomic Command Board           |
 | Control-plane auth + multi-user    | rare                  | yes; bearer token + RBAC principals + per-user views |
 | Agent-native surface               | partial               | REST + MCP + CLI + dashboard + SKILL/adapters |
 | Signed release artifacts           | rare                  | yes; cosign keyless + SBOMs                    |
@@ -69,9 +69,9 @@ enforcing the rules outside the model instead of hoping it was trained to behave
 
 - :material-scale-balance: **[Why governance](why-governance.md)** — enforce rules outside the model, not by training it.
 - :material-download: **[Install](install.md)** — one-line installer, Homebrew, or from source.
-- :material-rocket-launch: **[Quickstart](quickstart.md)** — a governed sandbox in ~60 seconds.
-- :material-lightbulb: **[Concepts](concepts.md)** — sandboxes, fleets, policy, egress, the ledger.
-- :material-file-cog: **[Profiles](profiles.md)** — the declarative security contract.
+- :material-rocket-launch: **[Quickstart](quickstart.md)** — a governed Citadel in ~60 seconds.
+- :material-lightbulb: **[Concepts](concepts.md)** — Citadels, Cohorts, policy, the Perimeter, the Chronicle.
+- :material-file-cog: **[Charters](profiles.md)** — the declarative security contract.
 - :material-toy-brick: **[Adapters](adapters.md)** — LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, Strands, Vercel AI SDK, LangChain.js.
 - :material-shield-lock: **[Security model](security-model.md)** — what runeward does and does not protect.
 - :material-chart-line: **[Observability](observability.md)** — metrics, structured logs, and telemetry.

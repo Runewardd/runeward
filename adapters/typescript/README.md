@@ -2,9 +2,9 @@
 
 A dependency-light TypeScript client and [Vercel AI SDK](https://sdk.vercel.ai)
 tool wrappers for the [runeward](https://github.com/Runewardd/runeward)
-**governed execution cell** — provision isolated sandboxes and run shell /
-Python / Node / file tools through a policy engine, audit ledger, guardrails,
-and human-in-the-loop approval gates.
+**governed execution cell** — provision isolated Citadels and run shell /
+Python / Node / file tools through a policy engine, Chronicle (audit ledger),
+Rationing, and human-in-the-loop approval gates.
 
 The core `RunewardClient` uses the global `fetch` and has **no runtime
 dependencies** (Node 18+, Deno, Bun, browsers). The Vercel AI SDK wrappers
@@ -79,14 +79,14 @@ try {
 | Method | REST endpoint |
 | --- | --- |
 | `healthz()` | `GET /healthz` |
-| `listProfiles()` | `GET /v1/profiles` |
-| `createSandbox(profile)` | `POST /v1/sandboxes` |
-| `listSandboxes()` / `getSandbox(id)` / `killSandbox(id)` | `GET`/`GET`/`DELETE /v1/sandboxes[/{id}]` |
+| `listProfiles()` | `GET /v1/charters` |
+| `createSandbox(profile)` | `POST /v1/citadels` |
+| `listSandboxes()` / `getSandbox(id)` / `killSandbox(id)` | `GET`/`GET`/`DELETE /v1/citadels[/{id}]` |
 | `shell(sandbox, command, workdir?)` | `POST .../shell/exec` |
 | `python(sandbox, code)` / `node(sandbox, code)` | `POST .../code/{python,node}` |
 | `readFile` / `writeFile` / `listFiles` / `searchFiles` | `POST .../file/{read,write,list,search}` |
-| `audit(sandbox)` / `verifyAudit()` | `GET .../audit`, `GET /v1/audit/verify` |
-| `listApprovals()` / `approve(id)` / `deny(id)` | `GET /v1/approvals`, `POST /v1/approvals/{id}/{approve,deny}` |
+| `audit(sandbox)` / `verifyAudit()` | `GET .../chronicle`, `GET /v1/chronicle/verify` |
+| `listApprovals()` / `approve(id)` / `deny(id)` | `GET /v1/conclave`, `POST /v1/conclave/{id}/{approve,deny}` |
 
 ## Vercel AI SDK tools
 
@@ -106,7 +106,7 @@ const { text } = await generateText({
 });
 ```
 
-Tool names match the runeward MCP tools (`runeward_create_sandbox`,
+Tool names match the runeward MCP tools (`runeward_create_citadel`,
 `runeward_shell`, …). Governance verdicts are returned to the model as
 descriptive strings so it can react to a denial or an approval gate instead of
 crashing the run.

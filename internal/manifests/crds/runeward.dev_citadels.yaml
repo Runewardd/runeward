@@ -1,17 +1,17 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: sandboxes.runeward.dev
+  name: citadels.runeward.dev
 spec:
   group: runeward.dev
   scope: Namespaced
   names:
-    kind: Sandbox
-    listKind: SandboxList
-    plural: sandboxes
-    singular: sandbox
+    kind: Citadel
+    listKind: CitadelList
+    plural: citadels
+    singular: citadel
     shortNames:
-      - sbx
+      - ctd
   versions:
     - name: v1alpha1
       served: true
@@ -20,7 +20,7 @@ spec:
         openAPIV3Schema:
           type: object
           description: |
-            Sandbox is a declarative request for one governed runeward execution
+            Citadel is a declarative request for one governed runeward execution
             cell. The runeward controller reconciles it onto the Kubernetes
             backend (Pod + PVC), applying the named profile's policy, egress, and
             guardrails.
@@ -39,9 +39,9 @@ spec:
                 phase:
                   type: string
                   description: One of Pending, Running, Failed, Terminating.
-                sandboxId:
+                citadelId:
                   type: string
-                  description: The runeward sandbox id backing this resource.
+                  description: The runeward citadel id backing this resource.
                 backend:
                   type: string
                 image:
@@ -60,9 +60,9 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
-        - name: Sandbox
+        - name: Citadel
           type: string
-          jsonPath: .status.sandboxId
+          jsonPath: .status.citadelId
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp

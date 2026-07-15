@@ -33,5 +33,5 @@ match   = "*169.254.169.254*"
 verdict = "deny"
 reason  = "cloud metadata endpoint is blocked"
 
-[limits]
+[rationing]
 max_execs = 100

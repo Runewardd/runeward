@@ -34,7 +34,7 @@
     <div class="brand">
       <img class="brand-logo" src="logo.png" alt="" />
       <h1>runeward</h1>
-      <span class="brand-sub">governed execution cell</span>
+      <span class="brand-sub">governed agent operations</span>
     </div>
     <div class="topbar-status">
       <span id="identity" class="identity hidden" title="Signed-in identity">
@@ -43,11 +43,11 @@
         <span id="identity-role" class="identity-role hidden"></span>
         <button id="signout-btn" class="icon-btn hidden" title="Sign out">⎋</button>
       </span>
-      <button id="approvals-btn" class="pill-btn" title="Pending approvals">
-        Approvals <span id="approvals-count" class="count-badge hidden">0</span>
+      <button id="approvals-btn" class="pill-btn" title="Pending Conclave decisions">
+        Conclave <span id="approvals-count" class="count-badge hidden">0</span>
       </button>
-      <span id="audit-badge" class="badge badge-muted" title="Audit ledger integrity">
-        <span class="badge-dot"></span> Audit
+      <span id="audit-badge" class="badge badge-muted" title="Chronicle integrity">
+        <span class="badge-dot"></span> Chronicle
       </span>
       <span id="health-badge" class="badge badge-muted" title="Control plane health">
         <span id="health-dot" class="dot dot-muted"></span> <span id="health-text">checking…</span>
@@ -59,45 +59,45 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="view-switch" role="tablist" aria-label="Switch view">
-        <button id="view-sandboxes" class="view-tab active" role="tab" aria-selected="true">Sandboxes</button>
-        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false">Fleets</button>
+        <button id="view-sandboxes" class="view-tab active" role="tab" aria-selected="true">Citadels</button>
+        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false">Cohorts</button>
       </div>
 
       <!-- Sandboxes sidebar -->
       <div id="sb-sidebar" class="sidebar-view">
         <div class="sidebar-head">
-          <span class="sidebar-title">Sandboxes</span>
+          <span class="sidebar-title">Citadels</span>
           <button id="refresh-btn" class="icon-btn" title="Refresh">⟳</button>
         </div>
 
         <div class="new-sandbox">
-          <select id="profile-select" class="select" title="Profile">
-            <option value="">Loading profiles…</option>
+          <select id="profile-select" class="select" title="Charter">
+            <option value="">Loading charters…</option>
           </select>
-          <button id="create-btn" class="btn btn-accent" title="Create sandbox">New</button>
+          <button id="create-btn" class="btn btn-accent" title="Create Citadel">New</button>
         </div>
 
         <ul id="sandbox-list" class="sandbox-list">
-          <li class="empty-note">No sandboxes yet.</li>
+          <li class="empty-note">No Citadels yet.</li>
         </ul>
       </div>
 
       <!-- Fleets sidebar -->
       <div id="fleet-sidebar" class="sidebar-view hidden">
         <div class="sidebar-head">
-          <span class="sidebar-title">Fleets</span>
+          <span class="sidebar-title">Cohorts</span>
           <button id="fleet-refresh-btn" class="icon-btn" title="Refresh">⟳</button>
         </div>
 
         <div class="new-sandbox">
-          <select id="fleet-profile-select" class="select" title="Profile">
-            <option value="">Loading profiles…</option>
+          <select id="fleet-profile-select" class="select" title="Charter">
+            <option value="">Loading charters…</option>
           </select>
-          <button id="fleet-create-btn" class="btn btn-accent" title="Create fleet">New</button>
+          <button id="fleet-create-btn" class="btn btn-accent" title="Create Cohort">New</button>
         </div>
 
         <ul id="fleet-list" class="sandbox-list">
-          <li class="empty-note">No fleets yet.</li>
+          <li class="empty-note">No Cohorts yet.</li>
         </ul>
       </div>
     </aside>
@@ -109,7 +109,7 @@
       <div id="panel-empty" class="panel-empty">
         <div class="panel-empty-inner">
           <div class="panel-empty-glyph">▢</div>
-          <p>Select a sandbox on the left, or create a new one to begin.</p>
+          <p>Select a Citadel on the left, or create a new one to begin.</p>
         </div>
       </div>
 
@@ -123,10 +123,10 @@
             <button class="tab active" data-tab="terminal">Terminal</button>
             <button class="tab" data-tab="files">Files</button>
             <button class="tab" data-tab="shell">Shell</button>
-            <button class="tab" data-tab="audit">Audit</button>
-            <button class="tab" data-tab="policy">Policy</button>
-            <button class="tab" data-tab="egress">Egress</button>
-            <button class="tab" data-tab="budget">Budget</button>
+            <button class="tab" data-tab="audit">Chronicle</button>
+            <button class="tab" data-tab="policy">Oracle</button>
+            <button class="tab" data-tab="egress">Perimeter</button>
+            <button class="tab" data-tab="budget">Rationing</button>
           </nav>
         </div>
 
@@ -232,7 +232,7 @@
         <div class="tab-pane" data-pane="audit">
           <div class="card">
             <div class="card-head">
-              Ledger events
+              Chronicle events
               <span class="card-head-hint">live · polling</span>
             </div>
             <div class="table-wrap">
@@ -254,13 +254,13 @@
         <div class="tab-pane" data-pane="policy">
           <div class="card">
             <div class="card-head">
-              Policy simulation
+              Oracle simulation
               <span class="card-head-hint">what would happen</span>
             </div>
             <div class="row">
               <label class="inline-check">
                 <input id="sim-use-selected-profile" type="checkbox" checked />
-                Use selected sandbox profile
+                Use selected Citadel charter
               </label>
               <select id="sim-profile-select" class="select">
                 <option value="">Loading profiles…</option>
@@ -274,7 +274,7 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-head">Simulation results</div>
+            <div class="card-head">Oracle results</div>
             <div id="sim-results" class="sim-results empty-note">Run a simulation to see verdicts and trace.</div>
           </div>
         </div>
@@ -283,7 +283,7 @@
         <div class="tab-pane" data-pane="egress">
           <div class="card">
             <div class="card-head">
-              Egress allow/deny explorer
+              Perimeter allow/deny explorer
               <span class="card-head-hint">recent decisions</span>
             </div>
             <div class="row">
@@ -306,11 +306,11 @@
         <div class="tab-pane" data-pane="budget">
           <div class="card">
             <div class="card-head">
-              Budget burn-down
+              Rationing burn-down
               <span class="card-head-hint">read only</span>
             </div>
             <div id="budget-grid" class="budget-grid">
-              <div class="empty-note">Select a sandbox to load budget usage.</div>
+              <div class="empty-note">Select a Citadel to load rationing usage.</div>
             </div>
           </div>
         </div>
@@ -322,7 +322,7 @@
         <div id="fleet-empty" class="panel-empty">
           <div class="panel-empty-inner">
             <div class="panel-empty-glyph">⛃</div>
-            <p>Select a fleet on the left, or create a new one to begin.</p>
+            <p>Select a Cohort on the left, or create a new one to begin.</p>
           </div>
         </div>
 
@@ -338,7 +338,7 @@
           <div class="panel-scroll">
             <div class="card">
               <div class="card-head">
-                Sandboxes
+                Citadels
                 <span id="fleet-sb-count" class="card-head-hint"></span>
               </div>
               <div id="fleet-chips" class="chip-list"></div>
@@ -346,7 +346,7 @@
 
             <div class="card">
               <div class="card-head">
-                Task board
+                Command Board
                 <span class="card-head-hint">live · polling</span>
               </div>
               <div class="row">
@@ -377,17 +377,17 @@
     </section>
   </main>
 
-  <!-- New sandbox modal -->
-  <div id="new-modal" class="modal hidden" role="dialog" aria-label="New sandbox">
+  <!-- New Citadel modal -->
+  <div id="new-modal" class="modal hidden" role="dialog" aria-label="New Citadel">
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-panel">
       <div class="modal-head">
-        <h2>New sandbox</h2>
+        <h2>New Citadel</h2>
         <button class="icon-btn" data-close-modal title="Close">✕</button>
       </div>
       <div class="modal-body">
         <label class="field">
-          <span class="field-label">Profile</span>
+          <span class="field-label">Charter</span>
           <div id="new-modal-profile" class="field-static mono">—</div>
         </label>
         <label class="field">
@@ -403,21 +403,21 @@
       </div>
       <div class="modal-foot">
         <button class="btn" data-close-modal>Cancel</button>
-        <button id="new-modal-create" class="btn btn-accent">Create sandbox</button>
+        <button id="new-modal-create" class="btn btn-accent">Create Citadel</button>
       </div>
     </div>
   </div>
 
-  <!-- Approvals drawer -->
-  <div id="approvals-drawer" class="drawer hidden" role="dialog" aria-label="Pending approvals">
+  <!-- Conclave drawer -->
+  <div id="approvals-drawer" class="drawer hidden" role="dialog" aria-label="Pending Conclave decisions">
     <div class="drawer-backdrop" data-close-drawer></div>
     <div class="drawer-panel">
       <div class="drawer-head">
-        <h2>Pending approvals</h2>
+        <h2>Pending Conclave decisions</h2>
         <button class="icon-btn" data-close-drawer title="Close">✕</button>
       </div>
       <ul id="approvals-list" class="approvals-list">
-        <li class="empty-note">No pending approvals.</li>
+        <li class="empty-note">No pending Conclave decisions.</li>
       </ul>
     </div>
   </div>

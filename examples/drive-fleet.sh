@@ -13,7 +13,7 @@ MODEL="${2:-opus-4.8}"   # use the exact slug your `agent` CLI accepts
 # One worker per sandbox in the fleet (portable read loop; works on bash 3.2).
 SANDBOXES=()
 while IFS= read -r line; do SANDBOXES+=("$line"); done \
-  < <(curl -sf "$BASE/v1/fleets/$FID" | jq -r '.sandboxes[]')
+  < <(curl -sf "$BASE/v1/cohorts/$FID" | jq -r '.sandboxes[]')
 echo "fleet $FID has ${#SANDBOXES[@]} sandboxes; model=$MODEL"
 
 i=0
@@ -21,7 +21,7 @@ for SB in "${SANDBOXES[@]}"; do
   i=$((i+1))
   OWNER="worker-$i"
 
-  CLAIM=$(curl -sf "$BASE/v1/fleets/$FID/claim" -d "{\"owner\":\"$OWNER\"}")
+  CLAIM=$(curl -sf "$BASE/v1/cohorts/$FID/claim" -d "{\"owner\":\"$OWNER\"}")
   if [ "$(jq -r '.claimed' <<<"$CLAIM")" != "true" ]; then
     echo "[$OWNER] no task to claim; skipping $SB"; continue
   fi
@@ -33,17 +33,17 @@ for SB in "${SANDBOXES[@]}"; do
   CMD=$(jq -n --arg p "$PROMPT" --arg m "$MODEL" \
     '{command:["agent","-p",$p,"--model",$m,"--force","--trust","--output-format","text"]}')
 
-  if OUT=$(curl -sf "$BASE/v1/sandboxes/$SB/shell/exec" -d "$CMD"); then
+  if OUT=$(curl -sf "$BASE/v1/citadels/$SB/shell/exec" -d "$CMD"); then
     echo "$OUT" | jq -r '.stdout // ""'
-    curl -sf "$BASE/v1/fleets/$FID/tasks/$TID/complete" \
+    curl -sf "$BASE/v1/cohorts/$FID/tasks/$TID/complete" \
       -d "{\"result\":\"done by $OWNER\"}" >/dev/null
     echo "[$OWNER] completed $TID"
   else
-    curl -sf "$BASE/v1/fleets/$FID/tasks/$TID/fail" \
+    curl -sf "$BASE/v1/cohorts/$FID/tasks/$TID/fail" \
       -d "{\"error\":\"agent exec failed\",\"requeue\":true}" >/dev/null
     echo "[$OWNER] FAILED $TID (requeued)"
   fi
 done
 
 echo "--- final board ---"
-curl -sf "$BASE/v1/fleets/$FID/tasks" | jq -r '.tasks[] | "\(.state)\t\(.id)\t\(.payload)"'
+curl -sf "$BASE/v1/cohorts/$FID/tasks" | jq -r '.tasks[] | "\(.state)\t\(.id)\t\(.payload)"'

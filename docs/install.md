@@ -3,7 +3,7 @@
 runeward ships as a single static binary (plus helper binaries for the egress
 proxy and in-sandbox agent). The `runeward` CLI is built for macOS, Linux, and
 Windows on amd64/arm64; the egress proxy and in-sandbox agent are Linux-only
-(they run inside sandboxes). On Windows use the CLI to drive the Docker or
+(they run inside Citadels). On Windows use the CLI to drive the Docker or
 Kubernetes backend; the `enter` terminal-resize signal is a no-op there.
 
 ## One-line installer

@@ -1,15 +1,16 @@
 # Quickstart
 
-This walks from zero to a governed sandbox and the control-plane dashboard in
+This walks from zero to a governed Citadel and the control-plane dashboard in
 about a minute. It assumes Docker/OrbStack is running.
 
 !!! tip "Always give an instance its own state dir"
-    The audit ledger is single-writer. Set a dedicated `RUNEWARD_STATE_DIR` per
-    running instance so two processes never share (and corrupt) one ledger.
+    The Chronicle (audit ledger) is single-writer. Set a dedicated
+    `RUNEWARD_STATE_DIR` per running instance so two processes never share (and
+    corrupt) one ledger.
 
-## 1. Create a profile
+## 1. Create a Charter
 
-A profile is the security contract for a sandbox. runeward loads profiles from a
+A Charter is the security contract for a Citadel. runeward loads Charters from a
 config directory (`--config-dir` or `$RUNEWARD_CONFIG_DIR`). If you installed via
 Homebrew or the binary, you don't have any yet — author one in its own folder:
 
@@ -37,22 +38,22 @@ match   = "rm -rf *"
 verdict = "deny"
 reason  = "no recursive deletes"
 
-[limits]
+[rationing]
 wall_clock = "30m"
 max_execs  = 500
 EOF
 ```
 
-!!! warning "Point `--config-dir` at a folder of only profiles"
+!!! warning "Point `--config-dir` at a folder of only Charters"
     runeward tries to parse **every** `.toml`/`.yaml`/`.yml`/`.json` file in the
-    config dir as a profile. Pointing it at, say, a repo root will throw parse
+    config dir as a Charter. Pointing it at, say, a repo root will throw parse
     errors for unrelated files like `mkdocs.yml`. Use a dedicated directory.
 
-If you cloned the repo instead, skip this step and use the ready-made profiles in
+If you cloned the repo instead, skip this step and use the ready-made Charters in
 `examples/` (substitute `--config-dir examples` and a name like `dev` or `ns-auto`
 below).
 
-## 2. Inspect the profile
+## 2. Inspect the Charter
 
 Print the resolved, secret-redacted policy before you use it:
 
@@ -61,12 +62,12 @@ runeward --config-dir ~/runeward-profiles list
 runeward --config-dir ~/runeward-profiles print dev
 ```
 
-## 3. Run a command in a fresh sandbox
+## 3. Run a command in a fresh Citadel
 
-A bare profile name is shorthand for `enter <profile>`:
+A bare Charter name is shorthand for `enter <charter>`:
 
 ```bash
-# Interactive shell in a sandbox
+# Interactive shell in a Citadel
 runeward --config-dir ~/runeward-profiles enter dev
 
 # Or run a single command, then tear down
@@ -80,26 +81,26 @@ RUNEWARD_STATE_DIR=/tmp/rw runeward --config-dir ~/runeward-profiles serve
 ```
 
 This serves the REST API and web dashboard on `:8080`. Open
-[http://localhost:8080](http://localhost:8080), pick a profile, click **New**
-(optionally point it at a local folder to copy in), and drive the sandbox's
-terminal, files, audit timeline, and approvals inbox.
+[http://localhost:8080](http://localhost:8080), pick a Charter, click **New**
+(optionally point it at a local folder to copy in), and drive the Citadel's
+terminal, files, Chronicle timeline, and Conclave inbox.
 
 ## 5. Drive it over REST
 
 ```bash
-# Create a sandbox
-SB=$(curl -sX POST localhost:8080/v1/sandboxes -d '{"profile":"dev"}' | jq -r .id)
+# Create a Citadel
+SB=$(curl -sX POST localhost:8080/v1/citadels -d '{"profile":"dev"}' | jq -r .id)
 
 # Run a shell command through the governance path
-curl -sX POST "localhost:8080/v1/sandboxes/$SB/shell/exec" \
+curl -sX POST "localhost:8080/v1/citadels/$SB/shell/exec" \
   -d '{"cmd":"echo hello from a governed cell"}'
 
-# See the signed audit trail, then verify the chain
-curl -s "localhost:8080/v1/sandboxes/$SB/audit"
-curl -s "localhost:8080/v1/audit/verify"
+# See the signed Chronicle, then verify the chain
+curl -s "localhost:8080/v1/citadels/$SB/chronicle"
+curl -s "localhost:8080/v1/chronicle/verify"
 
 # Tear it down
-curl -sX DELETE "localhost:8080/v1/sandboxes/$SB"
+curl -sX DELETE "localhost:8080/v1/citadels/$SB"
 ```
 
 ## 6. Work against your own code
@@ -109,15 +110,16 @@ the agent works on an isolated `/workspace` and your real files are untouched.
 
 ```bash
 # Seed from a local folder at create time
-curl -sX POST localhost:8080/v1/sandboxes \
+curl -sX POST localhost:8080/v1/citadels \
   -d '{"profile":"dev","copy_from":"~/Documents/my-project"}'
 
 # Pull the agent's results back out to the host
-runeward export <sandbox-id> ./agent-output
+runeward export <citadel-id> ./agent-output
 ```
 
 ## Next steps
 
 - [Concepts](concepts.md) — how the pieces fit together.
 - [Profiles](profiles.md) — write your own security contract.
-- [Fleets](fleets.md) — run many governed agents in parallel.
+- [Cohorts](fleets.md) — run many governed agents in parallel.
+```

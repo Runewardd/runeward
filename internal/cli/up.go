@@ -82,7 +82,7 @@ func newUpCmd() *cobra.Command {
 					return err
 				}
 			}
-			fmt.Fprintln(out, "runeward: installed. Add profiles with a ConfigMap named 'runeward-profiles', e.g.:")
+			fmt.Fprintln(out, "runeward: installed. Add Charters with a ConfigMap named 'runeward-profiles', e.g.:")
 			fmt.Fprintln(out, "  kubectl -n runeward create configmap runeward-profiles --from-file=examples/")
 			return nil
 		},

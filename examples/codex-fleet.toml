@@ -16,7 +16,7 @@ image   = "runeward-agent:dev"
 user    = "agent"
 workdir = "/workspace"
 
-[fleet]
+[cohort]
 replicas = 3
 task_board = [
   "write fib.py that prints the first 10 Fibonacci numbers, then run it",
@@ -44,7 +44,7 @@ match   = "/etc/*"
 verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed"
 
-[limits]
+[rationing]
 wall_clock      = "30m"
 max_execs       = 500
 egress_requests = 2000
@@ -60,5 +60,5 @@ file = "~/.runeward-openai.key"
 name = "OPENAI_API_KEY"
 file = "~/.runeward-openai.key"
 
-[audit]
+[chronicle]
 redact = true

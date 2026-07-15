@@ -19,7 +19,7 @@ workdir = "/workspace"
 # Optional: seed every agent's workspace with a COPY of a starting repo/scaffold.
 # copy_from = "~/Documents/my-app-scaffold"
 
-[fleet]
+[cohort]
 # One replica per task means each agent holds exactly one task. If you add more
 # tasks than replicas, idle workers pick up the extras as they finish.
 replicas = 4
@@ -69,7 +69,7 @@ match   = "/etc/*"
 verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed"
 
-[limits]
+[rationing]
 wall_clock      = "45m"
 max_execs       = 500
 egress_requests = 4000
@@ -86,5 +86,5 @@ file = "~/.runeward-cursor.key"
 name  = "NODE_USE_ENV_PROXY"
 value = "1"
 
-[audit]
+[chronicle]
 redact = true

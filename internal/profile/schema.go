@@ -48,9 +48,9 @@ type Profile struct {
 	// PolicyBundle, when set, supersedes the inline policy fields with a signed
 	// bundle pulled from an OCI registry.
 	PolicyBundle *PolicyBundle `toml:"policy_bundle" json:"policy_bundle"`
-	Limits       Limits        `toml:"limits" json:"limits"`
-	Fleet        *Fleet        `toml:"fleet" json:"fleet"`
-	Audit        Audit         `toml:"audit" json:"audit"`
+	Limits       Limits        `toml:"rationing" json:"rationing"`
+	Fleet        *Fleet        `toml:"cohort" json:"cohort"`
+	Audit        Audit         `toml:"chronicle" json:"chronicle"`
 	// Packages are installed only with --provision, never on the run path.
 	Packages []string `toml:"packages" json:"packages"`
 }
@@ -206,8 +206,9 @@ type PolicyBundle struct {
 // policy bundle.
 func (p *Profile) UsesPolicyBundle() bool { return p.PolicyBundle != nil && p.PolicyBundle.Ref != "" }
 
-// Limits declares the cost and loop guardrails for a session. Zero/empty
-// values mean unlimited (subject to the backend's secure-by-default ceilings).
+// Limits declares the cost and loop guardrails for a session, authored under
+// the [rationing] table. Zero/empty values mean unlimited (subject to the
+// backend's secure-by-default ceilings).
 type Limits struct {
 	// WallClock is a duration string, e.g. "30m".
 	WallClock string `toml:"wall_clock" json:"wall_clock"`
@@ -232,14 +233,15 @@ type Limits struct {
 }
 
 // Fleet spawns N sandboxes from the same contract sharing a task board and
-// artifact volume.
+// artifact volume. It is authored under the [cohort] table.
 type Fleet struct {
 	Replicas int `toml:"replicas" json:"replicas"`
 	// TaskBoard optionally seeds task identifiers to distribute.
 	TaskBoard []string `toml:"task_board" json:"task_board"`
 }
 
-// Audit configures the tamper-evident ledger sink and redaction policy.
+// Audit configures the tamper-evident ledger sink and redaction policy,
+// authored under the [chronicle] table.
 type Audit struct {
 	// Sink is a path or URI for the append-only ledger.
 	Sink string `toml:"sink" json:"sink"`

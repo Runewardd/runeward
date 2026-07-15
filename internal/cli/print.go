@@ -9,9 +9,9 @@ import (
 
 func newPrintCmd(configDir *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "print <profile>",
-		Short: "Render a profile's resolved policy (redacted)",
-		Long:  "Resolve a profile and print its policy and projected env with secrets\nredacted, so you can read the box before stepping into it.",
+		Use:   "print <charter>",
+		Short: "Render a Charter's resolved policy (redacted)",
+		Long:  "Resolve a Charter and print its policy and projected env with secrets\nredacted, so you can read the box before stepping into it.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := loadProfile(args[0], *configDir)

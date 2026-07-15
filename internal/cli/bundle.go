@@ -14,11 +14,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newBundleCmd provides sign/publish/fetch tooling for OCI policy bundles.
+// newBundleCmd provides sign/publish/fetch tooling for OCI policy Archives.
 func newBundleCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "bundle",
-		Short: "Sign, publish, and fetch signed OCI policy bundles",
+		Use:   "archive",
+		Short: "Sign, publish, and fetch signed OCI policy Archives (bundles)",
 	}
 	cmd.AddCommand(newBundleKeygenCmd(), newBundlePushCmd(), newBundlePullCmd())
 	return cmd
@@ -51,7 +51,7 @@ func newBundleKeygenCmd() *cobra.Command {
 			}
 			keyPath := filepath.Join(out, "bundle.key")
 			pubPath := filepath.Join(out, "bundle.pub")
-			// Both halves are base64 so `bundle push --key` and profile
+			// Both halves are base64 so `archive push --key` and charter
 			// verify_key can consume them directly.
 			if err := os.WriteFile(keyPath, []byte(privB64+"\n"), 0o600); err != nil {
 				return err
@@ -114,7 +114,7 @@ func newBundlePushCmd() *cobra.Command {
 	cmd.Flags().StringVar(&policyFile, "policy", "", "path to the policy file (.rego module, or TOML fragment with [[cel]] rules)")
 	cmd.Flags().StringVar(&engine, "engine", "", "policy engine: rego or cel")
 	cmd.Flags().StringVar(&query, "query", "", "optional Rego decision query (rego only)")
-	cmd.Flags().StringVar(&keyFile, "key", "", "path to a base64 ed25519 private key file (from `bundle keygen`)")
+	cmd.Flags().StringVar(&keyFile, "key", "", "path to a base64 ed25519 private key file (from `archive keygen`)")
 	cmd.Flags().BoolVar(&plainHTTP, "plain-http", false, "use http instead of https (local/insecure registries)")
 	return cmd
 }

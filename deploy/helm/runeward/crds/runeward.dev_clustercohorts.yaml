@@ -1,17 +1,17 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: fleets.runeward.dev
+  name: clustercohorts.runeward.dev
 spec:
   group: runeward.dev
-  scope: Namespaced
+  scope: Cluster
   names:
-    kind: Fleet
-    listKind: FleetList
-    plural: fleets
-    singular: fleet
+    kind: ClusterCohort
+    listKind: ClusterCohortList
+    plural: clustercohorts
+    singular: clustercohort
     shortNames:
-      - flt
+      - ccoh
   versions:
     - name: v1alpha1
       served: true
@@ -20,10 +20,11 @@ spec:
         openAPIV3Schema:
           type: object
           description: |
-            Fleet is a declarative request for N governed runeward sandboxes that
-            share a single atomic task board. The runeward controller reconciles
-            it onto the Kubernetes backend using the named profile's [fleet]
-            replicas and task_board.
+            ClusterCohort is a cluster-scoped declarative request for N governed
+            runeward citadels that share a single atomic task board, shared
+            across an organization. It behaves like Cohort but is not namespaced;
+            the runeward controller provisions the backing resources in its own
+            (controller) namespace using the named profile's [fleet] block.
           properties:
             spec:
               type: object
@@ -39,9 +40,9 @@ spec:
                 phase:
                   type: string
                   description: One of Pending, Running, Failed, Terminating.
-                fleetId:
+                cohortId:
                   type: string
-                sandboxes:
+                citadels:
                   type: array
                   items:
                     type: string
@@ -69,9 +70,9 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
-        - name: Fleet
+        - name: Cohort
           type: string
-          jsonPath: .status.fleetId
+          jsonPath: .status.cohortId
         - name: Done
           type: integer
           jsonPath: .status.tasksDone

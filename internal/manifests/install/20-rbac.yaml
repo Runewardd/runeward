@@ -16,10 +16,10 @@ metadata:
 rules:
   # Reconcile the custom resources and their status.
   - apiGroups: ["runeward.dev"]
-    resources: ["sandboxes", "fleets"]
+    resources: ["citadels", "cohorts"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["runeward.dev"]
-    resources: ["sandboxes/status", "fleets/status"]
+    resources: ["citadels/status", "cohorts/status"]
     verbs: ["get", "update", "patch"]
   # Drive the Kubernetes backend (pods + workspace PVCs + egress config).
   - apiGroups: [""]

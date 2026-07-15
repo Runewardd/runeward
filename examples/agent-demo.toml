@@ -35,12 +35,12 @@ verdict = "require-approval"
 reason  = "writes outside the workspace must be reviewed by an operator"
 
 # Cost + loop guardrails: cap total actions and detect tight repeat loops.
-[limits]
+[rationing]
 wall_clock     = "30m"
 max_execs      = 200
 egress_requests = 500
 loop_window    = "30s"
 loop_threshold = 10
 
-[audit]
+[chronicle]
 redact = true

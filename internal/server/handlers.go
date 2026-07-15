@@ -104,7 +104,7 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if scope.Kind == ticketKindDownload && scope.Path == "" {
-		scope.Path = "/v1/audit/export"
+		scope.Path = "/v1/chronicle/export"
 	}
 	ttl := 30 * time.Second
 	if req.TTLSecond > 0 {

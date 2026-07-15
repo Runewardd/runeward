@@ -26,11 +26,11 @@ func TestEmbeddedManifestsLoad(t *testing.T) {
 // Guards against drift between the embedded CRDs and the deploy/ copies.
 func TestCRDCopiesInSync(t *testing.T) {
 	for _, name := range []string{
-		"runeward.dev_sandboxes.yaml",
-		"runeward.dev_fleets.yaml",
+		"runeward.dev_citadels.yaml",
+		"runeward.dev_cohorts.yaml",
 		"runeward.dev_clusterpolicies.yaml",
-		"runeward.dev_clustersandboxes.yaml",
-		"runeward.dev_clusterfleets.yaml",
+		"runeward.dev_clustercitadels.yaml",
+		"runeward.dev_clustercohorts.yaml",
 	} {
 		canonical, err := files.ReadFile("crds/" + name)
 		if err != nil {

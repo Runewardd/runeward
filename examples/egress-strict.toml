@@ -32,5 +32,5 @@ hostname = "example.com"
 verdict  = "allow"
 hostname = "*.githubusercontent.com"
 
-[limits]
+[rationing]
 max_execs = 100

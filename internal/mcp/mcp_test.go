@@ -52,14 +52,14 @@ func TestListTools(t *testing.T) {
 		got[tl.Name] = true
 	}
 	for _, want := range []string{
-		"runeward_create_sandbox", "runeward_shell", "runeward_browser",
+		"runeward_create_citadel", "runeward_shell", "runeward_browser",
 		"runeward_browser_open", "runeward_browser_act", "runeward_browser_close",
 		"runeward_python", "runeward_node",
 		"runeward_read_file", "runeward_write_file", "runeward_list_files",
-		"runeward_search_files", "runeward_list_approvals", "runeward_kill_sandbox",
-		"runeward_create_fleet", "runeward_list_fleets", "runeward_list_tasks",
+		"runeward_search_files", "runeward_list_conclave", "runeward_kill_citadel",
+		"runeward_create_cohort", "runeward_list_cohorts", "runeward_list_tasks",
 		"runeward_add_task", "runeward_claim_task", "runeward_complete_task",
-		"runeward_fail_task", "runeward_kill_fleet", "runeward_heartbeat_task",
+		"runeward_fail_task", "runeward_kill_cohort", "runeward_heartbeat_task",
 	} {
 		if !got[want] {
 			t.Errorf("missing tool %q", want)
@@ -72,7 +72,7 @@ func TestCallListApprovals(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "runeward_list_approvals"})
+	res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "runeward_list_conclave"})
 	if err != nil {
 		t.Fatalf("call tool: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestCallListApprovals(t *testing.T) {
 			text += tc.Text
 		}
 	}
-	if !strings.Contains(text, "no pending approvals") {
+	if !strings.Contains(text, "no pending conclave") {
 		t.Fatalf("unexpected content: %q", text)
 	}
 }

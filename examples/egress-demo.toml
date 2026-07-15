@@ -15,5 +15,5 @@ default = "deny"
 verdict  = "allow"
 hostname = "example.com"
 
-[limits]
+[rationing]
 max_execs = 100

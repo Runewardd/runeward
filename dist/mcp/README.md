@@ -12,10 +12,10 @@ it:
 
 The MCP tools this server exposes are documented in
 [`../skill/SKILL.md`](../skill/SKILL.md):
-`runeward_create_sandbox`, `runeward_shell`, `runeward_python`,
+`runeward_create_citadel`, `runeward_shell`, `runeward_python`,
 `runeward_node`, `runeward_read_file`, `runeward_write_file`,
-`runeward_list_files`, `runeward_search_files`, `runeward_list_approvals`,
-`runeward_kill_sandbox`.
+`runeward_list_files`, `runeward_search_files`, `runeward_list_conclave`,
+`runeward_kill_citadel`.
 
 ## Validate and publish to the registry
 

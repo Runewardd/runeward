@@ -2,8 +2,9 @@
 
 A dependency-light Python client and agent-framework adapters for the
 [runeward](https://github.com/Runewardd/runeward) **governed execution cell** —
-provision isolated sandboxes and run shell / Python / Node / file tools through a
-policy engine, audit ledger, guardrails, and human-in-the-loop approval gates.
+provision isolated Citadels and run shell / Python / Node / file tools through a
+policy engine, Chronicle (audit ledger), Rationing, and human-in-the-loop
+approval gates.
 
 The core client uses **only the Python standard library** (`urllib`). The
 LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, and Strands helpers are
@@ -78,10 +79,10 @@ for a in rw.list_approvals():
 rw.approve("apr_31c")   # or rw.deny("apr_31c")
 ```
 
-### Audit ledger
+### Chronicle (audit ledger)
 
 ```python
-events = rw.audit(sid)          # this sandbox's ledger events
+events = rw.audit(sid)          # this Citadel's Chronicle events
 assert rw.verify_audit()        # verify the tamper-evident hash chain
 ```
 
@@ -90,14 +91,14 @@ assert rw.verify_audit()        # verify the tamper-evident hash chain
 | Method | REST endpoint |
 | --- | --- |
 | `healthz()` | `GET /healthz` |
-| `list_profiles()` | `GET /v1/profiles` |
-| `create_sandbox(profile)` | `POST /v1/sandboxes` |
-| `list_sandboxes()` / `get_sandbox(id)` / `kill_sandbox(id)` | `GET`/`GET`/`DELETE /v1/sandboxes[/{id}]` |
+| `list_profiles()` | `GET /v1/charters` |
+| `create_sandbox(profile)` | `POST /v1/citadels` |
+| `list_sandboxes()` / `get_sandbox(id)` / `kill_sandbox(id)` | `GET`/`GET`/`DELETE /v1/citadels[/{id}]` |
 | `shell(sandbox, command, workdir="")` | `POST .../shell/exec` |
 | `python(sandbox, code)` / `node(sandbox, code)` | `POST .../code/{python,node}` |
 | `read_file` / `write_file` / `list_files` / `search_files` | `POST .../file/{read,write,list,search}` |
-| `audit(sandbox)` / `verify_audit()` | `GET .../audit`, `GET /v1/audit/verify` |
-| `list_approvals()` / `approve(id)` / `deny(id)` | `GET /v1/approvals`, `POST /v1/approvals/{id}/{approve,deny}` |
+| `audit(sandbox)` / `verify_audit()` | `GET .../chronicle`, `GET /v1/chronicle/verify` |
+| `list_approvals()` / `approve(id)` / `deny(id)` | `GET /v1/conclave`, `POST /v1/conclave/{id}/{approve,deny}` |
 
 ## LangChain
 
@@ -109,9 +110,12 @@ tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
 # Pass `tools` to any LangChain agent / AgentExecutor.
 ```
 
-Tool names match the runeward MCP tools (`runeward_create_sandbox`,
-`runeward_shell`, …). Governance verdicts are returned as descriptive strings so
-the agent can reason about a denial or an approval gate.
+The Python framework tools are named `runeward_create_sandbox`,
+`runeward_shell`, …. Governance verdicts are returned as descriptive strings so
+the agent can reason about a denial or an approval gate. (Note: the standalone
+`runeward mcp` server now exposes the renamed `runeward_create_citadel` /
+`runeward_kill_citadel` / `runeward_list_conclave` tools; the Python framework
+tool names have not yet been updated to match.)
 
 ## CrewAI
 

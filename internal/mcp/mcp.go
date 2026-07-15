@@ -1,6 +1,6 @@
 // Package mcp exposes runeward's governed tools over the Model Context
-// Protocol, going through the same policy/guardrails/audit path as the REST
-// API. A policy deny surfaces as a tool error; require-approval returns
+// Protocol, going through the same policy/guardrails/Chronicle (audit) path as
+// the REST API. A policy deny surfaces as a tool error; require-approval returns
 // guidance telling the agent to pause for a human rather than retry.
 package mcp
 
@@ -120,11 +120,11 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 	resolver, resolverErr := newPrincipalResolver()
 
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "runeward_create_sandbox",
-		Description: "Provision a governed, isolated sandbox from a named runeward profile and return its id. Use this before running any other tool.",
+		Name:        "runeward_create_citadel",
+		Description: "Provision a governed, isolated Citadel (sandbox) from a named runeward Charter (profile) and return its id. Use this before running any other tool.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
-		Profile  string `json:"profile" jsonschema:"the runeward profile to provision (e.g. dev)"`
-		CopyFrom string `json:"copy_from,omitempty" jsonschema:"optional local directory whose contents are copied into the fresh workspace at creation (overrides the profile's host.copy_from)"`
+		Profile  string `json:"profile" jsonschema:"the runeward Charter (profile) to provision (e.g. dev)"`
+		CopyFrom string `json:"copy_from,omitempty" jsonschema:"optional local directory whose contents are copied into the fresh workspace at creation (overrides the Charter's host.copy_from)"`
 	}) (*sdk.CallToolResult, any, error) {
 		if resolverErr != nil {
 			return errText(resolverErr), nil, nil
@@ -134,20 +134,20 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 			return errText(err), nil, nil
 		}
 		if !principal.canLaunch(in.Profile) {
-			return errText(fmt.Errorf("principal %q is not allowed to launch profile %q", principal.Owner, in.Profile)), nil, nil
+			return errText(fmt.Errorf("principal %q is not allowed to launch charter %q", principal.Owner, in.Profile)), nil, nil
 		}
 		sb, err := mgr.CreateSandbox(ctx, in.Profile, controlplane.CreateOptions{CopyFrom: in.CopyFrom, Owner: principal.Owner})
 		if err != nil {
 			return errText(err), nil, nil
 		}
-		return text(fmt.Sprintf("sandbox %s created (profile=%s backend=%s image=%s)", sb.ID, sb.Profile, sb.Backend, sb.Image)), nil, nil
+		return text(fmt.Sprintf("citadel %s created (charter=%s backend=%s image=%s)", sb.ID, sb.Profile, sb.Backend, sb.Image)), nil, nil
 	})
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_shell",
-		Description: "Run a shell command (argv form) in a sandbox. Subject to policy: may be denied or require human approval.",
+		Description: "Run a shell command (argv form) in a Citadel. Subject to policy: may be denied or require human approval.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string   `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string   `json:"sandbox" jsonschema:"the citadel id"`
 		Command []string `json:"command" jsonschema:"the command as an argv array, e.g. [\"ls\",\"-la\"]"`
 		Workdir string   `json:"workdir,omitempty" jsonschema:"optional working directory"`
 	}) (*sdk.CallToolResult, any, error) {
@@ -157,9 +157,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_browser",
-		Description: "Fetch a URL with a headless browser inside the sandbox and return the rendered page. mode 'text' returns the rendered DOM HTML; 'screenshot' returns a base64 PNG. Subject to policy (tool 'browser', arg = url) and the profile's egress allowlist.",
+		Description: "Fetch a URL with a headless browser inside the Citadel and return the rendered page. mode 'text' returns the rendered DOM HTML; 'screenshot' returns a base64 PNG. Subject to policy (tool 'browser', arg = url) and the profile's egress allowlist.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		URL     string `json:"url" jsonschema:"the URL to load"`
 		Mode    string `json:"mode,omitempty" jsonschema:"'text' (default) or 'screenshot'"`
 	}) (*sdk.CallToolResult, any, error) {
@@ -169,9 +169,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_browser_open",
-		Description: "Open a STATEFUL, CDP-driven browser session inside the sandbox and return its session id. The page (cookies, DOM, storage) persists across runeward_browser_act calls until runeward_browser_close. Subject to policy (tool 'browser') and the profile's egress allowlist.",
+		Description: "Open a STATEFUL, CDP-driven browser session inside the Citadel and return its session id. The page (cookies, DOM, storage) persists across runeward_browser_act calls until runeward_browser_close. Subject to policy (tool 'browser') and the profile's egress allowlist.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 	}) (*sdk.CallToolResult, any, error) {
 		sid, res, err := mgr.BrowserOpen(ctx, in.Sandbox)
 		if err != nil {
@@ -187,7 +187,7 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 		Name:        "runeward_browser_act",
 		Description: "Run one action against an open browser session. action is one of navigate|eval|text|html|screenshot|click|type|wait|title|url. Provide url (navigate), selector (click/type/wait), expr (eval JS), or text (type). Returns the textual value, or a base64 PNG for screenshot. Governed per action.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox   string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox   string `json:"sandbox" jsonschema:"the citadel id"`
 		Session   string `json:"session" jsonschema:"the browser session id from runeward_browser_open"`
 		Action    string `json:"action" jsonschema:"navigate|eval|text|html|screenshot|click|type|wait|title|url"`
 		URL       string `json:"url,omitempty" jsonschema:"URL for action=navigate"`
@@ -207,7 +207,7 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 		Name:        "runeward_browser_close",
 		Description: "Close an open browser session (shuts down the in-sandbox Chromium and frees its resources).",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Session string `json:"session" jsonschema:"the browser session id"`
 	}) (*sdk.CallToolResult, any, error) {
 		if err := mgr.BrowserClose(ctx, in.Sandbox, in.Session); err != nil {
@@ -218,9 +218,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_python",
-		Description: "Run a Python 3 snippet in a sandbox via python3 -c.",
+		Description: "Run a Python 3 snippet in a Citadel via python3 -c.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Code    string `json:"code" jsonschema:"Python source to execute"`
 	}) (*sdk.CallToolResult, any, error) {
 		res, err := mgr.Python(ctx, in.Sandbox, in.Code)
@@ -229,9 +229,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_node",
-		Description: "Run a JavaScript snippet in a sandbox via node -e.",
+		Description: "Run a JavaScript snippet in a Citadel via node -e.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Code    string `json:"code" jsonschema:"JavaScript source to execute"`
 	}) (*sdk.CallToolResult, any, error) {
 		res, err := mgr.Node(ctx, in.Sandbox, in.Code)
@@ -240,9 +240,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_read_file",
-		Description: "Read a file from a sandbox and return its contents.",
+		Description: "Read a file from a Citadel and return its contents.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Path    string `json:"path" jsonschema:"the file path to read"`
 	}) (*sdk.CallToolResult, any, error) {
 		res, err := mgr.FileRead(ctx, in.Sandbox, in.Path)
@@ -251,9 +251,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_write_file",
-		Description: "Write content to a file in a sandbox (creating parent directories). May require approval.",
+		Description: "Write content to a file in a Citadel (creating parent directories). May require approval.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Path    string `json:"path" jsonschema:"the file path to write"`
 		Content string `json:"content" jsonschema:"the file content"`
 	}) (*sdk.CallToolResult, any, error) {
@@ -266,9 +266,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_list_files",
-		Description: "List a directory in a sandbox (ls -la).",
+		Description: "List a directory in a Citadel (ls -la).",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Path    string `json:"path,omitempty" jsonschema:"the directory to list (default .)"`
 	}) (*sdk.CallToolResult, any, error) {
 		res, err := mgr.FileList(ctx, in.Sandbox, in.Path)
@@ -277,9 +277,9 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_search_files",
-		Description: "Recursively search for text in a sandbox (grep -rn).",
+		Description: "Recursively search for text in a Citadel (grep -rn).",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 		Query   string `json:"query" jsonschema:"the text to search for"`
 		Path    string `json:"path,omitempty" jsonschema:"the root to search under (default .)"`
 	}) (*sdk.CallToolResult, any, error) {
@@ -288,45 +288,45 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 	})
 
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "runeward_list_approvals",
-		Description: "List pending human-in-the-loop approval requests across all sandboxes.",
+		Name:        "runeward_list_conclave",
+		Description: "List pending human-in-the-loop Conclave (approval) requests across all Citadels.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, any, error) {
 		list := mgr.Approvals().List()
 		if len(list) == 0 {
-			return text("no pending approvals"), nil, nil
+			return text("no pending conclave decisions"), nil, nil
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].Created.Before(list[j].Created) })
 		var b strings.Builder
 		for _, a := range list {
-			fmt.Fprintf(&b, "%s  sandbox=%s  %s %q  reason=%s\n", a.ID, a.Sandbox, a.Tool, a.Action, a.Reason)
+			fmt.Fprintf(&b, "%s  citadel=%s  %s %q  reason=%s\n", a.ID, a.Sandbox, a.Tool, a.Action, a.Reason)
 		}
 		return text(b.String()), nil, nil
 	})
 
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "runeward_kill_sandbox",
-		Description: "Tear down a sandbox and free its resources.",
+		Name:        "runeward_kill_citadel",
+		Description: "Tear down a Citadel (sandbox) and free its resources.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Sandbox string `json:"sandbox" jsonschema:"the sandbox id"`
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
 	}) (*sdk.CallToolResult, any, error) {
 		if err := mgr.KillSandbox(ctx, in.Sandbox); err != nil {
 			return errText(err), nil, nil
 		}
-		return text("sandbox " + in.Sandbox + " terminated"), nil, nil
+		return text("citadel " + in.Sandbox + " terminated"), nil, nil
 	})
 
 	registerFleetTools(s, mgr, resolver, resolverErr)
 	return s
 }
 
-// registerFleetTools adds the fleet orchestration tools (a fleet is N sandboxes
-// sharing a task board).
+// registerFleetTools adds the Cohort orchestration tools (a Cohort is N Citadels
+// sharing a Command Board).
 func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *principalResolver, resolverErr error) {
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "runeward_create_fleet",
-		Description: "Provision a fleet: N governed sandboxes (from the profile's [fleet].replicas) sharing an atomic task board seeded from the profile's task_board. Returns the fleet id and member sandbox ids.",
+		Name:        "runeward_create_cohort",
+		Description: "Provision a Cohort (fleet): N governed Citadels (from the Charter's [cohort].replicas) sharing an atomic Command Board seeded from the Charter's task_board. Returns the cohort id and member citadel ids.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
-		Profile string `json:"profile" jsonschema:"the runeward profile to provision the fleet from"`
+		Profile string `json:"profile" jsonschema:"the runeward Charter (profile) to provision the Cohort from"`
 	}) (*sdk.CallToolResult, any, error) {
 		if resolverErr != nil {
 			return errText(resolverErr), nil, nil
@@ -336,27 +336,27 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 			return errText(err), nil, nil
 		}
 		if !principal.canLaunch(in.Profile) {
-			return errText(fmt.Errorf("principal %q is not allowed to launch profile %q", principal.Owner, in.Profile)), nil, nil
+			return errText(fmt.Errorf("principal %q is not allowed to launch charter %q", principal.Owner, in.Profile)), nil, nil
 		}
 		v, err := mgr.CreateFleet(ctx, in.Profile)
 		if err != nil {
 			return errText(err), nil, nil
 		}
-		return text(fmt.Sprintf("fleet %s created (profile=%s, %d sandboxes: %s; tasks total=%d pending=%d)",
+		return text(fmt.Sprintf("cohort %s created (charter=%s, %d citadels: %s; tasks total=%d pending=%d)",
 			v.ID, v.Profile, len(v.Sandboxes), strings.Join(v.Sandboxes, ", "), v.Stats.Total, v.Stats.Pending)), nil, nil
 	})
 
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "runeward_list_fleets",
-		Description: "List all fleets with their sandbox members and task-board stats.",
+		Name:        "runeward_list_cohorts",
+		Description: "List all Cohorts with their Citadel members and Command Board stats.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, any, error) {
 		fleets := mgr.ListFleets()
 		if len(fleets) == 0 {
-			return text("no fleets"), nil, nil
+			return text("no cohorts"), nil, nil
 		}
 		var b strings.Builder
 		for _, v := range fleets {
-			fmt.Fprintf(&b, "%s  profile=%s  sandboxes=%d  tasks[total=%d pending=%d claimed=%d done=%d failed=%d]\n",
+			fmt.Fprintf(&b, "%s  charter=%s  citadels=%d  tasks[total=%d pending=%d claimed=%d done=%d failed=%d]\n",
 				v.ID, v.Profile, len(v.Sandboxes), v.Stats.Total, v.Stats.Pending, v.Stats.Claimed, v.Stats.Done, v.Stats.Failed)
 		}
 		return text(b.String()), nil, nil
@@ -364,9 +364,9 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_list_tasks",
-		Description: "List the tasks on a fleet's board with their state, owner, and results.",
+		Description: "List the tasks on a Cohort's Command Board with their state, owner, and results.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Fleet string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet string `json:"fleet" jsonschema:"the cohort id"`
 	}) (*sdk.CallToolResult, any, error) {
 		tasks, err := mgr.ListTasks(in.Fleet)
 		if err != nil {
@@ -391,9 +391,9 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_add_task",
-		Description: "Add a task to a fleet's board.",
+		Description: "Add a task to a Cohort's Command Board.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Fleet   string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet   string `json:"fleet" jsonschema:"the cohort id"`
 		Payload string `json:"payload" jsonschema:"the task description/payload"`
 	}) (*sdk.CallToolResult, any, error) {
 		t, err := mgr.AddTask(in.Fleet, in.Payload)
@@ -405,9 +405,9 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_claim_task",
-		Description: "Atomically claim the next pending task from a fleet's board for a worker. Returns the task, or reports the board is empty.",
+		Description: "Atomically claim the next pending task from a Cohort's Command Board for a worker. Returns the task, or reports the board is empty.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
-		Fleet string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet string `json:"fleet" jsonschema:"the cohort id"`
 		Owner string `json:"owner" jsonschema:"an identifier for the claiming worker"`
 	}) (*sdk.CallToolResult, any, error) {
 		if resolverErr != nil {
@@ -432,9 +432,9 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 
 	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_heartbeat_task",
-		Description: "Extend the lease on a task a worker still holds so the fleet sweeper does not requeue it as a dead worker.",
+		Description: "Extend the lease on a task a worker still holds so the Cohort sweeper does not requeue it as a dead worker.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
-		Fleet string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet string `json:"fleet" jsonschema:"the cohort id"`
 		Task  string `json:"task" jsonschema:"the task id"`
 		Owner string `json:"owner" jsonschema:"the worker that holds the claim"`
 	}) (*sdk.CallToolResult, any, error) {
@@ -459,7 +459,7 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 		Name:        "runeward_complete_task",
 		Description: "Mark a claimed task as done with its result.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
-		Fleet  string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet  string `json:"fleet" jsonschema:"the cohort id"`
 		Task   string `json:"task" jsonschema:"the task id"`
 		Owner  string `json:"owner,omitempty" jsonschema:"the worker that holds the claim"`
 		Result string `json:"result,omitempty" jsonschema:"the successful result output"`
@@ -484,7 +484,7 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 		Name:        "runeward_fail_task",
 		Description: "Mark a claimed task as failed. Set requeue=true to return it to the pending pool for retry.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
-		Fleet   string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet   string `json:"fleet" jsonschema:"the cohort id"`
 		Task    string `json:"task" jsonschema:"the task id"`
 		Owner   string `json:"owner,omitempty" jsonschema:"the worker that holds the claim"`
 		Error   string `json:"error,omitempty" jsonschema:"the failure message"`
@@ -511,15 +511,15 @@ func registerFleetTools(s *sdk.Server, mgr *controlplane.Manager, resolver *prin
 	})
 
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "runeward_kill_fleet",
-		Description: "Tear down a fleet and all its sandboxes.",
+		Name:        "runeward_kill_cohort",
+		Description: "Tear down a Cohort (fleet) and all its Citadels.",
 	}, func(ctx context.Context, _ *sdk.CallToolRequest, in struct {
-		Fleet string `json:"fleet" jsonschema:"the fleet id"`
+		Fleet string `json:"fleet" jsonschema:"the cohort id"`
 	}) (*sdk.CallToolResult, any, error) {
 		if err := mgr.KillFleet(ctx, in.Fleet); err != nil {
 			return errText(err), nil, nil
 		}
-		return text("fleet " + in.Fleet + " terminated"), nil, nil
+		return text("cohort " + in.Fleet + " terminated"), nil, nil
 	})
 }
 
@@ -541,7 +541,7 @@ func blockedResult(res *controlplane.ToolResult, err error) *sdk.CallToolResult 
 	case profile.VerdictDeny:
 		return &sdk.CallToolResult{IsError: true, Content: content("DENIED by policy: " + res.Reason)}
 	case profile.VerdictRequireApprove:
-		return text(fmt.Sprintf("APPROVAL REQUIRED (approval id %s): %s. Pause and ask a human to approve this via the runeward approvals inbox before retrying; do not attempt to bypass it.", res.ApprovalID, res.Reason))
+		return text(fmt.Sprintf("APPROVAL REQUIRED (conclave id %s): %s. Pause and ask a human to approve this via the runeward Conclave (approvals) inbox before retrying; do not attempt to bypass it.", res.ApprovalID, res.Reason))
 	}
 	return nil
 }

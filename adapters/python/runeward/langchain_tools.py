@@ -24,8 +24,8 @@ def make_runeward_tools(client: RunewardClient) -> "List[BaseTool]":
     """Build a list of LangChain tools bound to ``client``.
 
     Returns ``StructuredTool`` instances covering the runeward tool surface:
-    create/kill sandbox, shell, python, node, file read/write/list/search, and
-    list-approvals.
+    create/kill Citadel, shell, python, node, file read/write/list/search, and
+    list-Conclave.
     """
     # Lazy import: keeps langchain optional for users of the bare client.
     try:
@@ -59,7 +59,7 @@ def make_runeward_tools(client: RunewardClient) -> "List[BaseTool]":
         return wrapped
 
     @_guard
-    def create_sandbox(profile: str) -> str:
+    def create_citadel(profile: str) -> str:
         return str(client.create_sandbox(profile))
 
     @_guard
@@ -91,63 +91,63 @@ def make_runeward_tools(client: RunewardClient) -> "List[BaseTool]":
         return client.search_files(sandbox, query, path)
 
     @_guard
-    def list_approvals() -> str:
+    def list_conclave() -> str:
         return str(client.list_approvals())
 
     @_guard
-    def kill_sandbox(sandbox: str) -> str:
+    def kill_citadel(sandbox: str) -> str:
         client.kill_sandbox(sandbox)
-        return f"sandbox {sandbox} terminated"
+        return f"Citadel {sandbox} terminated"
 
     return [
         StructuredTool.from_function(
-            func=create_sandbox,
-            name="runeward_create_sandbox",
-            description="Provision a governed sandbox from a runeward profile (e.g. 'dev'). Returns the sandbox metadata including its id.",
+            func=create_citadel,
+            name="runeward_create_citadel",
+            description="Provision a governed Citadel from a runeward Charter (e.g. 'dev'). Returns the Citadel metadata including its id.",
         ),
         StructuredTool.from_function(
             func=shell,
             name="runeward_shell",
-            description="Run a shell command (as an argv list, e.g. ['ls','-la']) in a sandbox. Returns verdict, exit_code, stdout, stderr.",
+            description="Run a shell command (as an argv list, e.g. ['ls','-la']) in a Citadel. Returns verdict, exit_code, stdout, stderr.",
         ),
         StructuredTool.from_function(
             func=python,
             name="runeward_python",
-            description="Run a Python code snippet inside the sandbox.",
+            description="Run a Python code snippet inside the Citadel.",
         ),
         StructuredTool.from_function(
             func=node,
             name="runeward_node",
-            description="Run a Node.js code snippet inside the sandbox.",
+            description="Run a Node.js code snippet inside the Citadel.",
         ),
         StructuredTool.from_function(
             func=read_file,
             name="runeward_read_file",
-            description="Read a file's contents from the sandbox.",
+            description="Read a file's contents from the Citadel.",
         ),
         StructuredTool.from_function(
             func=write_file,
             name="runeward_write_file",
-            description="Write content to a file in the sandbox.",
+            description="Write content to a file in the Citadel.",
         ),
         StructuredTool.from_function(
             func=list_files,
             name="runeward_list_files",
-            description="List a directory in the sandbox.",
+            description="List a directory in the Citadel.",
         ),
         StructuredTool.from_function(
             func=search_files,
             name="runeward_search_files",
-            description="Search for a query string under a path in the sandbox.",
+            description="Search for a query string under a path in the Citadel.",
         ),
         StructuredTool.from_function(
-            func=list_approvals,
-            name="runeward_list_approvals",
-            description="List pending human-in-the-loop approval requests.",
+            func=list_conclave,
+            name="runeward_list_conclave",
+            description="List pending human-in-the-loop Conclave requests.",
         ),
         StructuredTool.from_function(
-            func=kill_sandbox,
-            name="runeward_kill_sandbox",
-            description="Tear down a sandbox when the task is finished.",
+            func=kill_citadel,
+            name="runeward_kill_citadel",
+            description="Tear down a Citadel when the task is finished.",
         ),
     ]

@@ -201,26 +201,26 @@ class RunewardClient:
         return self._request("GET", "/healthz")
 
     def list_profiles(self) -> List[Dict[str, Any]]:
-        """``GET /v1/profiles`` — reachable profiles."""
-        return self._request("GET", "/v1/profiles").get("profiles", [])
+        """``GET /v1/charters`` — reachable profiles."""
+        return self._request("GET", "/v1/charters").get("profiles", [])
 
     # -- sandbox lifecycle -------------------------------------------------
 
     def create_sandbox(self, profile: str) -> Dict[str, Any]:
-        """``POST /v1/sandboxes`` — provision a sandbox from ``profile``."""
-        return self._request("POST", "/v1/sandboxes", {"profile": profile})
+        """``POST /v1/citadels`` — provision a sandbox from ``profile``."""
+        return self._request("POST", "/v1/citadels", {"profile": profile})
 
     def list_sandboxes(self) -> List[Dict[str, Any]]:
-        """``GET /v1/sandboxes``."""
-        return self._request("GET", "/v1/sandboxes").get("sandboxes", [])
+        """``GET /v1/citadels``."""
+        return self._request("GET", "/v1/citadels").get("sandboxes", [])
 
     def get_sandbox(self, sandbox: str) -> Dict[str, Any]:
-        """``GET /v1/sandboxes/{id}``."""
-        return self._request("GET", f"/v1/sandboxes/{self._segment(sandbox)}")
+        """``GET /v1/citadels/{id}``."""
+        return self._request("GET", f"/v1/citadels/{self._segment(sandbox)}")
 
     def kill_sandbox(self, sandbox: str) -> Any:
-        """``DELETE /v1/sandboxes/{id}`` — tear the sandbox down."""
-        return self._request("DELETE", f"/v1/sandboxes/{self._segment(sandbox)}")
+        """``DELETE /v1/citadels/{id}`` — tear the sandbox down."""
+        return self._request("DELETE", f"/v1/citadels/{self._segment(sandbox)}")
 
     # -- execution ---------------------------------------------------------
 
@@ -232,66 +232,66 @@ class RunewardClient:
         error, not a policy denial.
         """
         return self._request(
-            "POST", f"/v1/sandboxes/{self._segment(sandbox)}/shell/exec",
+            "POST", f"/v1/citadels/{self._segment(sandbox)}/shell/exec",
             {"command": list(command), "workdir": workdir},
         )
 
     def python(self, sandbox: str, code: str) -> Dict[str, Any]:
         """``POST .../code/python`` — run a Python snippet in the sandbox."""
-        return self._request("POST", f"/v1/sandboxes/{self._segment(sandbox)}/code/python", {"code": code})
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/code/python", {"code": code})
 
     def node(self, sandbox: str, code: str) -> Dict[str, Any]:
         """``POST .../code/node`` — run a Node.js snippet in the sandbox."""
-        return self._request("POST", f"/v1/sandboxes/{self._segment(sandbox)}/code/node", {"code": code})
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/code/node", {"code": code})
 
     # -- files -------------------------------------------------------------
 
     def read_file(self, sandbox: str, path: str) -> str:
         """``POST .../file/read`` — return the file's ``content``."""
         return self._request(
-            "POST", f"/v1/sandboxes/{self._segment(sandbox)}/file/read", {"path": path}
+            "POST", f"/v1/citadels/{self._segment(sandbox)}/file/read", {"path": path}
         ).get("content", "")
 
     def write_file(self, sandbox: str, path: str, content: str) -> int:
         """``POST .../file/write`` — write ``content``; return ``bytes`` written."""
         return self._request(
-            "POST", f"/v1/sandboxes/{self._segment(sandbox)}/file/write",
+            "POST", f"/v1/citadels/{self._segment(sandbox)}/file/write",
             {"path": path, "content": content},
         ).get("bytes", 0)
 
     def list_files(self, sandbox: str, path: str) -> str:
         """``POST .../file/list`` — list a directory; return the raw ``output``."""
         return self._request(
-            "POST", f"/v1/sandboxes/{self._segment(sandbox)}/file/list", {"path": path}
+            "POST", f"/v1/citadels/{self._segment(sandbox)}/file/list", {"path": path}
         ).get("output", "")
 
     def search_files(self, sandbox: str, query: str, path: str) -> str:
         """``POST .../file/search`` — search for ``query`` under ``path``."""
         return self._request(
-            "POST", f"/v1/sandboxes/{self._segment(sandbox)}/file/search",
+            "POST", f"/v1/citadels/{self._segment(sandbox)}/file/search",
             {"query": query, "path": path},
         ).get("output", "")
 
     # -- audit -------------------------------------------------------------
 
     def audit(self, sandbox: str) -> List[Dict[str, Any]]:
-        """``GET .../audit`` — this sandbox's ledger events."""
-        return self._request("GET", f"/v1/sandboxes/{self._segment(sandbox)}/audit").get("events", [])
+        """``GET .../chronicle`` — this sandbox's ledger events."""
+        return self._request("GET", f"/v1/citadels/{self._segment(sandbox)}/chronicle").get("events", [])
 
     def verify_audit(self) -> bool:
-        """``GET /v1/audit/verify`` — verify the ledger hash chain."""
-        return bool(self._request("GET", "/v1/audit/verify").get("ok", False))
+        """``GET /v1/chronicle/verify`` — verify the ledger hash chain."""
+        return bool(self._request("GET", "/v1/chronicle/verify").get("ok", False))
 
     # -- approvals ---------------------------------------------------------
 
     def list_approvals(self) -> List[Dict[str, Any]]:
-        """``GET /v1/approvals`` — pending human-in-the-loop requests."""
-        return self._request("GET", "/v1/approvals").get("approvals", [])
+        """``GET /v1/conclave`` — pending human-in-the-loop requests."""
+        return self._request("GET", "/v1/conclave").get("approvals", [])
 
     def approve(self, approval_id: str) -> Any:
-        """``POST /v1/approvals/{id}/approve``."""
-        return self._request("POST", f"/v1/approvals/{self._segment(approval_id)}/approve")
+        """``POST /v1/conclave/{id}/approve``."""
+        return self._request("POST", f"/v1/conclave/{self._segment(approval_id)}/approve")
 
     def deny(self, approval_id: str) -> Any:
-        """``POST /v1/approvals/{id}/deny``."""
-        return self._request("POST", f"/v1/approvals/{self._segment(approval_id)}/deny")
+        """``POST /v1/conclave/{id}/deny``."""
+        return self._request("POST", f"/v1/conclave/{self._segment(approval_id)}/deny")

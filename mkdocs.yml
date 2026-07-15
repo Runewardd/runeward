@@ -62,9 +62,9 @@ nav:
   - Install: install.md
   - Quickstart: quickstart.md
   - Concepts: concepts.md
-  - Profiles: profiles.md
+  - Charters: profiles.md
   - Bring your own model: byo-model.md
-  - Fleets: fleets.md
+  - Cohorts: fleets.md
   - CLI reference: cli.md
   - REST API: rest-api.md
   - Adapters: adapters.md

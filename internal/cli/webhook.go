@@ -17,8 +17,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// newWebhookCmd runs the admission webhook enforcing ClusterPolicy on Sandbox
-// and Fleet CRs. It self-registers its webhook configurations at startup with
+// newWebhookCmd runs the admission webhook enforcing ClusterPolicy on Citadel
+// and Cohort CRs. It self-registers its webhook configurations at startup with
 // a self-signed cert whose CA goes into the caBundle.
 func newWebhookCmd(configDir *string) *cobra.Command {
 	_ = configDir // profiles are not resolved by the webhook; kept for symmetry.
@@ -27,10 +27,10 @@ func newWebhookCmd(configDir *string) *cobra.Command {
 	var certSecret string
 	cmd := &cobra.Command{
 		Use:   "webhook",
-		Short: "Enforce runeward ClusterPolicy on Sandbox/Fleet (admission webhook)",
+		Short: "Enforce runeward ClusterPolicy on Citadel/Cohort (admission webhook)",
 		Long: "Serve a validating+mutating admission webhook that applies\n" +
-			"runeward.dev/v1alpha1 ClusterPolicy defaults and guardrails to Sandbox\n" +
-			"and Fleet resources. Apply the ClusterPolicy CRD first (or use\n" +
+			"runeward.dev/v1alpha1 ClusterPolicy defaults and guardrails to Citadel\n" +
+			"and Cohort resources. Apply the ClusterPolicy CRD first (or use\n" +
 			"`runeward up`). The webhook self-registers its configurations and serves\n" +
 			"HTTPS with a self-signed certificate it mints on startup.",
 		RunE: func(cmd *cobra.Command, args []string) error {

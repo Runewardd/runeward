@@ -62,7 +62,7 @@ async function guarded<T>(fn: () => Promise<T>): Promise<string> {
  *
  * const tools = await makeRunewardTools(new RunewardClient());
  * const agent = new Agent({ tools });
- * await agent.invoke("Create a dev sandbox, run `node --version`, then tear it down.");
+ * await agent.invoke("Create a dev Citadel, run `node --version`, then tear it down.");
  * ```
  */
 export async function makeRunewardTools(client: RunewardClient) {
@@ -74,11 +74,11 @@ export async function makeRunewardTools(client: RunewardClient) {
 
   return [
     tool({
-      name: "runeward_create_sandbox",
+      name: "runeward_create_citadel",
       description:
-        "Provision a governed sandbox from a runeward profile (e.g. 'dev'). Returns sandbox metadata including its id.",
+        "Provision a governed Citadel from a runeward Charter (e.g. 'dev'). Returns Citadel metadata including its id.",
       inputSchema: z.object({
-        profile: z.string().describe("Profile name, e.g. 'dev' or 'governed'."),
+        profile: z.string().describe("Charter name, e.g. 'dev' or 'governed'."),
       }),
       callback: (input: { profile: string }) =>
         guarded(() => client.createSandbox(input.profile)),
@@ -87,9 +87,9 @@ export async function makeRunewardTools(client: RunewardClient) {
     tool({
       name: "runeward_shell",
       description:
-        "Run a shell command (as an argv array, e.g. ['ls','-la']) in a sandbox. Returns verdict, exit_code, stdout, stderr.",
+        "Run a shell command (as an argv array, e.g. ['ls','-la']) in a Citadel. Returns verdict, exit_code, stdout, stderr.",
       inputSchema: z.object({
-        sandbox: z.string().describe("Sandbox id from create_sandbox."),
+        sandbox: z.string().describe("Citadel id from create_citadel."),
         command: z.array(z.string()).describe("argv array, e.g. ['ls','-la']."),
         workdir: z.string().optional().describe("Optional working directory."),
       }),
@@ -99,7 +99,7 @@ export async function makeRunewardTools(client: RunewardClient) {
 
     tool({
       name: "runeward_python",
-      description: "Run a Python code snippet inside the sandbox.",
+      description: "Run a Python code snippet inside the Citadel.",
       inputSchema: z.object({
         sandbox: z.string(),
         code: z.string().describe("Python source to execute."),
@@ -110,7 +110,7 @@ export async function makeRunewardTools(client: RunewardClient) {
 
     tool({
       name: "runeward_node",
-      description: "Run a Node.js code snippet inside the sandbox.",
+      description: "Run a Node.js code snippet inside the Citadel.",
       inputSchema: z.object({
         sandbox: z.string(),
         code: z.string().describe("JavaScript source to execute."),
@@ -121,7 +121,7 @@ export async function makeRunewardTools(client: RunewardClient) {
 
     tool({
       name: "runeward_read_file",
-      description: "Read a file's contents from the sandbox.",
+      description: "Read a file's contents from the Citadel.",
       inputSchema: z.object({
         sandbox: z.string(),
         path: z.string().describe("File path to read."),
@@ -132,7 +132,7 @@ export async function makeRunewardTools(client: RunewardClient) {
 
     tool({
       name: "runeward_write_file",
-      description: "Write content to a file in the sandbox.",
+      description: "Write content to a file in the Citadel.",
       inputSchema: z.object({
         sandbox: z.string(),
         path: z.string().describe("File path to write."),
@@ -144,7 +144,7 @@ export async function makeRunewardTools(client: RunewardClient) {
 
     tool({
       name: "runeward_list_files",
-      description: "List a directory in the sandbox.",
+      description: "List a directory in the Citadel.",
       inputSchema: z.object({
         sandbox: z.string(),
         path: z.string().describe("Directory path to list."),
@@ -155,7 +155,7 @@ export async function makeRunewardTools(client: RunewardClient) {
 
     tool({
       name: "runeward_search_files",
-      description: "Search for a query string under a path in the sandbox.",
+      description: "Search for a query string under a path in the Citadel.",
       inputSchema: z.object({
         sandbox: z.string(),
         query: z.string().describe("Search query."),
@@ -166,22 +166,22 @@ export async function makeRunewardTools(client: RunewardClient) {
     }),
 
     tool({
-      name: "runeward_list_approvals",
-      description: "List pending human-in-the-loop approval requests.",
+      name: "runeward_list_conclave",
+      description: "List pending human-in-the-loop Conclave requests.",
       inputSchema: z.object({}),
       callback: () => guarded(() => client.listApprovals()),
     }),
 
     tool({
-      name: "runeward_kill_sandbox",
-      description: "Tear down a sandbox when the task is finished.",
+      name: "runeward_kill_citadel",
+      description: "Tear down a Citadel when the task is finished.",
       inputSchema: z.object({
         sandbox: z.string(),
       }),
       callback: (input: { sandbox: string }) =>
         guarded(async () => {
           await client.killSandbox(input.sandbox);
-          return `sandbox ${input.sandbox} terminated`;
+          return `Citadel ${input.sandbox} terminated`;
         }),
     }),
   ];

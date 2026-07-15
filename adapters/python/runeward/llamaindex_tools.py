@@ -39,8 +39,8 @@ def _format_approval(exc: RunewardApprovalRequired) -> str:
 def make_runeward_tools(client: RunewardClient) -> "List[FunctionTool]":
     """Build a list of LlamaIndex ``FunctionTool`` instances bound to ``client``.
 
-    Covers the runeward tool surface: create/kill sandbox, shell, python, node,
-    file read/write/list/search, and list-approvals. Requires ``llama-index``
+    Covers the runeward tool surface: create/kill Citadel, shell, python, node,
+    file read/write/list/search, and list-Conclave. Requires ``llama-index``
     (``pip install runeward[llamaindex]``).
     """
     # Lazy import: keeps llama-index optional for users of the bare client.
@@ -67,16 +67,16 @@ def make_runeward_tools(client: RunewardClient) -> "List[FunctionTool]":
         return wrapped
 
     @_guard
-    def runeward_create_sandbox(profile: str) -> str:
-        """Provision a governed sandbox from a runeward profile (e.g. 'dev').
+    def runeward_create_citadel(profile: str) -> str:
+        """Provision a governed Citadel from a runeward Charter (e.g. 'dev').
 
-        Returns the sandbox metadata including its id.
+        Returns the Citadel metadata including its id.
         """
         return str(client.create_sandbox(profile))
 
     @_guard
     def runeward_shell(sandbox: str, command: List[str], workdir: str = "") -> str:
-        """Run a shell command (argv list, e.g. ['ls','-la']) in a sandbox.
+        """Run a shell command (argv list, e.g. ['ls','-la']) in a Citadel.
 
         Returns verdict, exit_code, stdout, stderr.
         """
@@ -84,47 +84,47 @@ def make_runeward_tools(client: RunewardClient) -> "List[FunctionTool]":
 
     @_guard
     def runeward_python(sandbox: str, code: str) -> str:
-        """Run a Python code snippet inside the sandbox."""
+        """Run a Python code snippet inside the Citadel."""
         return str(client.python(sandbox, code))
 
     @_guard
     def runeward_node(sandbox: str, code: str) -> str:
-        """Run a Node.js code snippet inside the sandbox."""
+        """Run a Node.js code snippet inside the Citadel."""
         return str(client.node(sandbox, code))
 
     @_guard
     def runeward_read_file(sandbox: str, path: str) -> str:
-        """Read a file's contents from the sandbox."""
+        """Read a file's contents from the Citadel."""
         return client.read_file(sandbox, path)
 
     @_guard
     def runeward_write_file(sandbox: str, path: str, content: str) -> str:
-        """Write content to a file in the sandbox."""
+        """Write content to a file in the Citadel."""
         return f"wrote {client.write_file(sandbox, path, content)} bytes to {path}"
 
     @_guard
     def runeward_list_files(sandbox: str, path: str) -> str:
-        """List a directory in the sandbox."""
+        """List a directory in the Citadel."""
         return client.list_files(sandbox, path)
 
     @_guard
     def runeward_search_files(sandbox: str, query: str, path: str) -> str:
-        """Search for a query string under a path in the sandbox."""
+        """Search for a query string under a path in the Citadel."""
         return client.search_files(sandbox, query, path)
 
     @_guard
-    def runeward_list_approvals() -> str:
-        """List pending human-in-the-loop approval requests."""
+    def runeward_list_conclave() -> str:
+        """List pending human-in-the-loop Conclave requests."""
         return str(client.list_approvals())
 
     @_guard
-    def runeward_kill_sandbox(sandbox: str) -> str:
-        """Tear down a sandbox when the task is finished."""
+    def runeward_kill_citadel(sandbox: str) -> str:
+        """Tear down a Citadel when the task is finished."""
         client.kill_sandbox(sandbox)
-        return f"sandbox {sandbox} terminated"
+        return f"Citadel {sandbox} terminated"
 
     return [
-        FunctionTool.from_defaults(fn=runeward_create_sandbox),
+        FunctionTool.from_defaults(fn=runeward_create_citadel),
         FunctionTool.from_defaults(fn=runeward_shell),
         FunctionTool.from_defaults(fn=runeward_python),
         FunctionTool.from_defaults(fn=runeward_node),
@@ -132,6 +132,6 @@ def make_runeward_tools(client: RunewardClient) -> "List[FunctionTool]":
         FunctionTool.from_defaults(fn=runeward_write_file),
         FunctionTool.from_defaults(fn=runeward_list_files),
         FunctionTool.from_defaults(fn=runeward_search_files),
-        FunctionTool.from_defaults(fn=runeward_list_approvals),
-        FunctionTool.from_defaults(fn=runeward_kill_sandbox),
+        FunctionTool.from_defaults(fn=runeward_list_conclave),
+        FunctionTool.from_defaults(fn=runeward_kill_citadel),
     ]
