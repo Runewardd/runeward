@@ -15,10 +15,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v6.5.0
         with:
-          go-version: "1.26.0"
-          cache: true
-
-      - name: gofmt
+          go-version: "1.26.2"
         run: |
           out=$(gofmt -l internal cmd)
           if [ -n "$out" ]; then
