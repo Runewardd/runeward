@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-go@v6.5.0
         with:
           go-version: "1.26.2"
+          cache: true
+
+      - name: gofmt
         run: |
           out=$(gofmt -l internal cmd)
           if [ -n "$out" ]; then
@@ -31,7 +34,7 @@ jobs:
       - name: build (linux, egress + strict tags)
         run: GOOS=linux GOARCH=amd64 go build ./...
 
-      - name: test
+      - name: test 
         run: go test ./... -count=1
 
   helm-lint:
