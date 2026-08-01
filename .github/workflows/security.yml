@@ -126,6 +126,9 @@ jobs:
           # also fail the workflow so a high/critical regression cannot ship.
           exit-code: "1"
           format: sarif
+          # trivy-action otherwise expands SARIF back to every severity, which
+          # also makes exit-code fail on findings outside the configured gate.
+          limit-severities-for-sarif: true
           output: trivy-${{ matrix.image }}.sarif
       - name: Upload Trivy image SARIF (${{ matrix.image }})
         if: always()
