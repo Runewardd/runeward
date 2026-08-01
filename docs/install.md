@@ -60,7 +60,7 @@ docker pull ghcr.io/runewardd/runeward-sandbox:latest
 ```
 
 Images and release checksums are signed by the release workflow. Verification examples are in
-[SECURITY.md](../SECURITY.md).
+[SECURITY.md](https://github.com/Runewardd/runeward/blob/main/SECURITY.md).
 
 ## Runtime prerequisites
 
