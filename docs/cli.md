@@ -27,11 +27,15 @@ for `enter <charter>`.
 | `RUNEWARD_K8S_PSA_ENFORCE` | Pod Security Admission enforce level for the managed namespace (`privileged`\|`baseline`\|`restricted`; default `privileged`). |
 | `RUNEWARD_K8S_NETWORK_POLICY` | Truthy creates a default-deny (DNS-only egress) NetworkPolicy in the managed namespace. |
 | `RUNEWARD_DNS_RESOLVERS` | Comma-separated resolver IPs to confine DNS to under strict egress. |
+| `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER` | Set to `1` to enable the experimental browser surface in a trusted deployment; disabled by default. |
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
+| `runeward init [project-dir]` | Create `.runeward/quickstart.toml` without overwriting an existing policy. |
+| `runeward quickstart [project-dir]` | Prove allow, pre-execution denial, and signed audit. |
+| `runeward doctor [charter] [--json]` | Check policy, runtime, image, and state readiness. |
 | `runeward enter <charter> [-- cmd...]` | Create a Citadel and open a shell, or run a one-shot command. |
 | `runeward serve [--token ... --tls-cert ... --tls-key ...]` | Start the control plane: REST API + web dashboard (default `127.0.0.1:8080`). |
 | `runeward mcp` | Run the MCP server exposing governed tools to an IDE/agent. |
@@ -40,6 +44,9 @@ for `enter <charter>`.
 | `runeward validate <charter> [--strict]` | Statically lint a Charter (missing images, unresolved secrets, unreachable rules, duplicate env). |
 | `runeward policy test <charter> --cases <file>` | Simulate a Charter's policy against sample actions, exiting non-zero on mismatch. |
 | `runeward policy scaffold [template] [--list]` | Print a ready-made policy template for a common control. |
+| `runeward policy learn <evidence-or-chronicle.json>` | Print exact, reviewable proposals from a verified audit trail. |
+| `runeward evidence export <charter> [-o file]` | Package the resolved policy and signed Chronicle events. |
+| `runeward evidence verify <file>` | Verify the policy digest, event chain, and every signature. |
 | `runeward charter sign\|verify <file>` | Produce/verify a detached ed25519 signature over a Charter. |
 | `runeward runtime check\|guide\|install <gvisor\|kata>` | Inspect, explain, or install hardened runtimes (gVisor/Kata). |
 | `runeward replay <cast>` | Replay a recorded terminal session (asciinema v2 cast). |
@@ -55,6 +62,9 @@ for `enter <charter>`.
 ## Examples
 
 ```bash
+# First-run proof
+runeward quickstart
+
 # Interactive Citadel
 runeward --config-dir examples enter ns-auto
 
@@ -83,6 +93,11 @@ runeward --config-dir examples policy test ns-auto \
 
 # Scaffold a common policy and append it to a Charter
 runeward policy scaffold package-approval >> mycharter.toml
+
+# Export portable evidence, verify it, and draft reviewed policy additions
+runeward --config-dir examples evidence export ns-auto -o evidence.json
+runeward evidence verify evidence.json
+runeward policy learn evidence.json > proposed-policy.toml
 
 # Install and verify a hardened runtime (dry-run by default; --apply to execute)
 runeward runtime install gvisor            # prints the plan

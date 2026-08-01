@@ -1,36 +1,11 @@
 # Install
 
-runeward ships as a single static binary (plus helper binaries for the egress
-proxy and in-sandbox agent). The `runeward` CLI is built for macOS, Linux, and
-Windows on amd64/arm64; the egress proxy and in-sandbox agent are Linux-only
-(they run inside Citadels). On Windows use the CLI to drive the Docker or
-Kubernetes backend; the `enter` terminal-resize signal is a no-op there.
-
-## One-line installer
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
-```
-
-The installer detects your OS/arch, downloads the latest release, verifies its
-checksum, and installs to `/usr/local/bin` (falling back to `~/.local/bin`).
-
-Pin a version or install location with environment variables:
-
-```bash
-RUNEWARD_VERSION=v0.1.0 RUNEWARD_BIN_DIR="$HOME/.local/bin" \
-  sh -c "$(curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh)"
-```
-
-## Homebrew
-
-```bash
-brew install Runewardd/tap/runeward
-```
-
 ## From source
 
-Requires **Go 1.25+**:
+The documentation follows `main`. Build from source to use the newest `quickstart`, `doctor`,
+portable evidence, policy-learning, and dashboard recovery features.
+
+Requires **Go 1.26.5**:
 
 ```bash
 git clone https://github.com/Runewardd/runeward
@@ -39,56 +14,58 @@ go build -o bin/runeward ./cmd/runeward
 ./bin/runeward version
 ```
 
+## Signed release installer (macOS/Linux)
+
+The installer requires `curl` or `wget`, `tar`, a SHA-256 utility, and
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/). It fails closed: the
+signed checksum manifest is verified before the archive checksum and install.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
+```
+
+Pin a release or location:
+
+```bash
+RUNEWARD_VERSION=v0.2.0 RUNEWARD_BIN_DIR="$HOME/.local/bin" \
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh)"
+```
+
+The shell installer supports macOS and Linux. Windows CLI archives are available from
+[GitHub Releases](https://github.com/Runewardd/runeward/releases); the in-sandbox helpers are Linux
+binaries because they run inside Docker or Kubernetes.
+
+!!! note "Registry status"
+    The Python and npm SDKs are published independently from the Go CLI. The Homebrew tap is still
+    pending; use the verified installer or a release archive for the CLI.
+
+## SDK adapters
+
+```bash
+python -m pip install runeward
+npm install @runeward/sdk
+```
+
+See [Adapters](adapters.md) for optional framework dependencies and repository-development installs.
+
 ## Container images
 
-Multi-arch (amd64/arm64) images are published to GitHub Container Registry and
-cosign-signed by digest:
+Published multi-architecture images:
 
 ```bash
-docker pull ghcr.io/runewardd/runeward:latest          # control plane / CLI
-docker pull ghcr.io/runewardd/runeward-egress:latest   # strict-egress sidecar
-docker pull ghcr.io/runewardd/runeward-agent:latest    # in-sandbox agent
-docker pull ghcr.io/runewardd/runeward-sandbox:latest  # default sandbox base
+docker pull ghcr.io/runewardd/runeward:latest
+docker pull ghcr.io/runewardd/runeward-egress:latest
+docker pull ghcr.io/runewardd/runeward-agent:latest
+docker pull ghcr.io/runewardd/runeward-sandbox:latest
 ```
 
-## Verifying release artifacts
+Images and release checksums are signed by the release workflow. Verification examples are in
+[SECURITY.md](../SECURITY.md).
 
-Every release is signed with [cosign](https://docs.sigstore.dev/) using keyless
-(Fulcio/Rekor) signing — no long-lived keys, and the signing identity is the
-GitHub Actions workflow itself.
+## Runtime prerequisites
 
-Verify the checksums file (which covers every archive and SBOM):
+- Docker, OrbStack, or Podman for local sandboxes.
+- Optionally Kubernetes and Helm for cluster deployments.
+- Run `runeward doctor <policy>` before launch to check the selected runtime and image.
 
-```bash
-cosign verify-blob \
-  --certificate checksums.txt.pem \
-  --signature checksums.txt.sig \
-  --certificate-identity-regexp 'https://github.com/Runewardd/runeward' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  checksums.txt
-```
-
-Verify a container image by tag:
-
-```bash
-cosign verify ghcr.io/runewardd/runeward:latest \
-  --certificate-identity-regexp 'https://github.com/Runewardd/runeward' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
-```
-
-## Prerequisites
-
-- **Docker / OrbStack / Podman** (any docker-compatible CLI) for the container
-  backend. runeward runs a fast preflight check and gives a clear error if the
-  engine isn't reachable.
-- Optional: a **Kubernetes** cluster and `helm` for the Kubernetes backend and
-  the [Helm chart](https://github.com/Runewardd/runeward/tree/main/deploy/helm/runeward).
-
-## Verify
-
-```bash
-runeward version
-runeward --help
-```
-
-Next: the [Quickstart](quickstart.md).
+Next: [Quickstart](quickstart.md).

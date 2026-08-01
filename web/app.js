@@ -31,6 +31,8 @@ const state = {
   egress: [],
   // budget view
   budget: null,
+	readiness: null,
+	snapshots: [],
 };
 
 /* ---------------- DOM helpers ---------------- */
@@ -152,12 +154,72 @@ async function refreshHealth() {
     const ok = data && data.status === "ok";
     badge.className = "badge " + (ok ? "ok" : "bad");
     dot.className = "dot " + (ok ? "dot-ok" : "dot-bad");
-    txt.textContent = ok ? "healthy" : "unhealthy";
+    txt.textContent = ok ? "online" : "unhealthy";
+		if (ok) await refreshReadiness();
   } catch {
     badge.className = "badge bad";
     dot.className = "dot dot-bad";
     txt.textContent = "offline";
   }
+}
+
+function preferredProfileName() {
+	const names = state.profiles.map((p) => p.name);
+	for (const preferred of ["quickstart", "dev", "ns-auto"]) {
+		if (names.includes(preferred)) return preferred;
+	}
+	const container = state.profiles.find((p) => p.host !== "k8s" && !(p.image || "").endsWith(":dev"));
+	return (container || state.profiles[0] || {}).name || "";
+}
+
+function applyCreateAvailability() {
+	const btn = $("#create-btn");
+	if (!btn) return;
+	const ready = !!(state.readiness && state.readiness.ready);
+	btn.disabled = !canLaunch() || !ready;
+	btn.title = !canLaunch()
+		? "Your role is not permitted to launch policies"
+		: ready ? "Create sandbox" : "Selected policy is not ready; see setup status";
+}
+
+async function refreshReadiness() {
+	const select = $("#profile-select");
+	const name = select && select.value;
+	const note = $("#setup-note");
+	if (!name) {
+		state.readiness = null;
+		if (note) {
+			note.className = "setup-note blocked";
+			note.textContent = "No policy selected. Run `runeward quickstart` on the server host.";
+		}
+		applyCreateAvailability();
+		return;
+	}
+	try {
+		const { data } = await api("GET", "/v1/readiness?profile=" + encodeURIComponent(name));
+		state.readiness = data;
+		const failed = (data.checks || []).filter((c) => c.status === "fail");
+		if (note) {
+			note.className = "setup-note " + (data.ready ? "ready" : "blocked");
+			note.textContent = data.ready
+				? `${name} is ready: policy valid and sandbox runtime reachable.`
+				: (failed[0] && failed[0].message) || `Run runeward doctor ${name} on the server host.`;
+		}
+		const badge = $("#health-badge");
+		const dot = $("#health-dot");
+		const txt = $("#health-text");
+		badge.className = "badge " + (data.ready ? "ok" : "badge-muted");
+		dot.className = "dot " + (data.ready ? "dot-ok" : "dot-muted");
+		txt.textContent = data.ready ? "ready" : "setup needed";
+		badge.title = (data.checks || []).map((c) => `${c.name}: ${c.message}`).join("\n");
+	} catch (e) {
+		state.readiness = null;
+		if (note) {
+			note.className = "setup-note blocked";
+			note.textContent = "Readiness check unavailable. Run `runeward doctor` on the server host.";
+		}
+	}
+	applyCreateAvailability();
 }
 
 async function refreshAuditVerify() {
@@ -166,18 +228,18 @@ async function refreshAuditVerify() {
     const { data } = await api("GET", "/v1/chronicle/verify");
     if (data && data.ok) {
       badge.className = "badge ok";
-      badge.title = "Chronicle verified";
+      badge.title = "Signed audit trail verified";
       badge.querySelector(".badge-dot") || badge.prepend(el("span", { class: "badge-dot" }));
-      badge.lastChild.textContent = " Chronicle verified";
+      badge.lastChild.textContent = " Audit verified";
     } else {
       badge.className = "badge bad";
-      badge.title = (data && data.error) || "Chronicle verification failed";
-      badge.lastChild.textContent = " Chronicle tampered";
+      badge.title = (data && data.error) || "Signed audit verification failed";
+      badge.lastChild.textContent = " Audit tampered";
     }
   } catch (e) {
     badge.className = "badge bad";
     badge.title = e.message;
-    badge.lastChild.textContent = " Chronicle ?";
+    badge.lastChild.textContent = " Audit ?";
   }
 }
 
@@ -190,28 +252,38 @@ function fillProfileSelect(sel, text) {
     return;
   }
   if (state.profiles.length === 0) {
-    sel.appendChild(el("option", { value: "", text: "No charters" }));
+    sel.appendChild(el("option", { value: "", text: "No policies" }));
     return;
   }
   for (const p of state.profiles) {
     sel.appendChild(
-      el("option", { value: p.name, text: `${p.name} · ${p.host || "?"}/${p.egress || "?"}` })
+      el("option", {
+				value: p.name,
+				text: `${p.name} · ${p.host || "?"}`,
+				title: `network: ${p.egress || "unknown"}`,
+			})
     );
   }
 }
 
 async function loadProfiles() {
+	const previous = $("#profile-select") && $("#profile-select").value;
   try {
     const { data } = await api("GET", "/v1/charters");
     state.profiles = (data && data.profiles) || [];
     fillProfileSelect($("#profile-select"));
     fillProfileSelect($("#fleet-profile-select"));
     fillProfileSelect($("#sim-profile-select"));
+		const preferred = state.profiles.some((p) => p.name === previous) ? previous : preferredProfileName();
+		if (preferred && $("#profile-select")) $("#profile-select").value = preferred;
+		if (preferred && $("#fleet-profile-select")) $("#fleet-profile-select").value = preferred;
+		if (preferred && $("#sim-profile-select")) $("#sim-profile-select").value = preferred;
+		await refreshReadiness();
   } catch (e) {
-    fillProfileSelect($("#profile-select"), "charters unavailable");
-    fillProfileSelect($("#fleet-profile-select"), "charters unavailable");
-    fillProfileSelect($("#sim-profile-select"), "charters unavailable");
-    toast("Could not load charters: " + e.message, "error");
+    fillProfileSelect($("#profile-select"), "policies unavailable");
+    fillProfileSelect($("#fleet-profile-select"), "policies unavailable");
+    fillProfileSelect($("#sim-profile-select"), "policies unavailable");
+    toast("Could not load policies: " + e.message, "error");
   }
 }
 
@@ -234,7 +306,7 @@ function renderSandboxList() {
   const list = $("#sandbox-list");
   list.innerHTML = "";
   if (state.sandboxes.length === 0) {
-    list.appendChild(el("li", { class: "empty-note", text: "No Citadels yet." }));
+    list.appendChild(el("li", { class: "empty-note", text: "No sandboxes yet." }));
     return;
   }
   for (const s of state.sandboxes) {
@@ -261,7 +333,7 @@ function renderSandboxList() {
         ]),
         el("button", {
           class: "kill-btn",
-          title: "Remove Citadel",
+          title: "Remove sandbox",
           text: "✕",
           onClick: (ev) => {
             ev.stopPropagation();
@@ -277,7 +349,7 @@ function renderSandboxList() {
 function openNewSandboxModal() {
   const profile = $("#profile-select").value;
   if (!profile) {
-    toast("Pick a charter first.", "warn");
+    toast("Pick a policy first.", "warn");
     return;
   }
   $("#new-modal-profile").textContent = profile;
@@ -293,7 +365,7 @@ function closeNewSandboxModal() {
 async function createSandbox() {
   const profile = $("#new-modal-profile").textContent.trim();
   if (!profile) {
-    toast("Pick a charter first.", "warn");
+    toast("Pick a policy first.", "warn");
     return;
   }
   const copyFrom = $("#new-modal-copyfrom").value.trim();
@@ -303,12 +375,12 @@ async function createSandbox() {
     const body = { profile };
     if (copyFrom) body.copy_from = copyFrom;
     const { data } = await api("POST", "/v1/citadels", body);
-    toast(`Citadel ${data.id} created`, "success");
+    toast(`Sandbox ${data.id} created`, "success");
     closeNewSandboxModal();
     await loadSandboxes();
     if (data.id) selectSandbox(data.id);
   } catch (e) {
-    toast("Create failed: " + e.message, "error");
+    toast(`Could not create the sandbox. Check setup status or run "runeward doctor ${profile}" on the server host.`, "error");
   } finally {
     btn.disabled = false;
   }
@@ -317,7 +389,7 @@ async function createSandbox() {
 async function killSandbox(id) {
   try {
     await api("DELETE", "/v1/citadels/" + encodeURIComponent(id));
-    toast(`Citadel ${id} removed`, "info");
+    toast(`Sandbox ${id} removed`, "info");
     if (state.selected === id) selectSandbox(null);
     await loadSandboxes();
   } catch (e) {
@@ -338,8 +410,10 @@ function selectSandbox(id) {
     stopAuditPoll();
     state.egress = [];
     state.budget = null;
+		state.snapshots = [];
     renderEgress();
     renderBudget();
+		renderSnapshots();
     return;
   }
   empty.classList.add("hidden");
@@ -403,7 +477,7 @@ function renderFleetList() {
   const list = $("#fleet-list");
   list.innerHTML = "";
   if (state.fleets.length === 0) {
-    list.appendChild(el("li", { class: "empty-note", text: "No Cohorts yet." }));
+    list.appendChild(el("li", { class: "empty-note", text: "No agent groups yet." }));
     return;
   }
   for (const f of state.fleets) {
@@ -429,7 +503,7 @@ function renderFleetList() {
         ]),
         el("button", {
           class: "kill-btn",
-          title: "Delete Cohort",
+          title: "Delete agent group",
           text: "✕",
           onClick: (ev) => {
             ev.stopPropagation();
@@ -445,18 +519,18 @@ function renderFleetList() {
 async function createFleet() {
   const profile = $("#fleet-profile-select").value;
   if (!profile) {
-    toast("Pick a charter first.", "warn");
+    toast("Pick a policy first.", "warn");
     return;
   }
   const btn = $("#fleet-create-btn");
   btn.disabled = true;
   try {
     const { data } = await api("POST", "/v1/cohorts", { profile });
-    toast(`Cohort ${data.id} created`, "success");
+    toast(`Agent group ${data.id} created`, "success");
     await loadFleets();
     if (data.id) selectFleet(data.id);
   } catch (e) {
-    toast("Create Cohort failed: " + e.message, "error");
+    toast("Create agent group failed: " + e.message, "error");
   } finally {
     btn.disabled = false;
   }
@@ -465,7 +539,7 @@ async function createFleet() {
 async function deleteFleet(id) {
   try {
     await api("DELETE", "/v1/cohorts/" + encodeURIComponent(id));
-    toast(`Cohort ${id} deleted`, "info");
+    toast(`Agent group ${id} deleted`, "info");
     if (state.fleetSelected === id) selectFleet(null);
     await loadFleets();
   } catch (e) {
@@ -502,7 +576,7 @@ async function refreshFleetDetail() {
     renderFleetDetail(fleetRes.data || {});
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
-      toast("Cohort no longer exists", "warn");
+      toast("Agent group no longer exists", "warn");
       selectFleet(null);
       loadFleets();
     }
@@ -515,7 +589,7 @@ function renderFleetDetail(fleet) {
   const sbCount = sbs.length;
   $("#fleet-sel-id").textContent = fleet.id || state.fleetSelected;
   $("#fleet-sel-meta").textContent =
-    `${fleet.profile || "—"} · ${sbCount} Citadel${sbCount === 1 ? "" : "s"}`;
+    `${fleet.profile || "—"} · ${sbCount} sandbox${sbCount === 1 ? "" : "es"}`;
   $("#fleet-sb-count").textContent = `${sbCount} member${sbCount === 1 ? "" : "s"}`;
 
   renderFleetStats(fleet.stats || {});
@@ -540,7 +614,7 @@ function renderFleetChips(ids) {
   const wrap = $("#fleet-chips");
   wrap.innerHTML = "";
   if (!ids.length) {
-    wrap.appendChild(el("span", { class: "empty-note", text: "No member Citadels." }));
+    wrap.appendChild(el("span", { class: "empty-note", text: "No member sandboxes." }));
     return;
   }
   for (const id of ids) {
@@ -704,6 +778,9 @@ function activateTab(name, force = false) {
   if (name === "budget") {
     refreshBudget();
   }
+	if (name === "recovery") {
+		refreshRecovery();
+	}
 }
 
 /* ---------------- Terminal (xterm.js + WebSocket) ---------------- */
@@ -1075,7 +1152,7 @@ function renderApprovals() {
   const list = $("#approvals-list");
   list.innerHTML = "";
   if (n === 0) {
-    list.appendChild(el("li", { class: "empty-note", text: "No pending Conclave decisions." }));
+    list.appendChild(el("li", { class: "empty-note", text: "No pending approvals." }));
     return;
   }
   for (const a of state.approvals) {
@@ -1101,7 +1178,7 @@ function renderApprovals() {
                 onClick: () => decideApproval(a.id, "deny"),
               }),
             ])
-          : el("div", { class: "approval-meta", text: "You do not have permission to resolve Conclave decisions." }),
+          : el("div", { class: "approval-meta", text: "You do not have permission to resolve approvals." }),
       ])
     );
   }
@@ -1147,7 +1224,7 @@ async function runPolicySimulation() {
   note.textContent = "";
   if (!state.selected) {
     note.className = "note warn";
-    note.textContent = "Select a Citadel first.";
+    note.textContent = "Select a sandbox first.";
     return;
   }
   const raw = $("#sim-actions").value;
@@ -1169,7 +1246,7 @@ async function runPolicySimulation() {
   const profileName = useSelected ? (selectedSB.profile || "") : ($("#sim-profile-select").value || "");
   if (!profileName) {
     note.className = "note warn";
-    note.textContent = "Pick a charter to simulate.";
+    note.textContent = "Pick a policy to simulate.";
     return;
   }
   const btn = $("#sim-run");
@@ -1243,7 +1320,7 @@ function renderEgress() {
   if (!body) return;
   body.innerHTML = "";
   if (!state.selected) {
-    body.appendChild(el("tr", {}, el("td", { colspan: "5", class: "empty-note", text: "Select a Citadel first." })));
+    body.appendChild(el("tr", {}, el("td", { colspan: "5", class: "empty-note", text: "Select a sandbox first." })));
     return;
   }
   if (!state.egress.length) {
@@ -1333,7 +1410,7 @@ function renderBudget() {
   if (!grid) return;
   grid.innerHTML = "";
   if (!state.selected) {
-    grid.appendChild(el("div", { class: "empty-note", text: "Select a Citadel first." }));
+    grid.appendChild(el("div", { class: "empty-note", text: "Select a sandbox first." }));
     return;
   }
   if (!state.budget) {
@@ -1365,12 +1442,129 @@ function renderBudget() {
   }
 }
 
+/* ---------------- Recovery and portable evidence ---------------- */
+async function refreshRecovery() {
+	if (!state.selected) return;
+	try {
+		const { data } = await api("GET", "/v1/snapshots");
+		state.snapshots = (data && data.snapshots) || [];
+	} catch (e) {
+		state.snapshots = [];
+		toast("Could not load recovery snapshots: " + e.message, "error");
+	}
+	renderSnapshots();
+}
+
+function renderSnapshots() {
+	const body = $("#snapshot-body");
+	if (!body) return;
+	body.innerHTML = "";
+	const selected = state.sandboxes.find((s) => s.id === state.selected) || {};
+	const snapshots = state.snapshots.filter((s) => !selected.profile || s.profile === selected.profile);
+	if (!state.selected || snapshots.length === 0) {
+		body.appendChild(el("tr", {}, el("td", { colspan: "5", class: "empty-note", text: "No recovery snapshots for this policy yet." })));
+		return;
+	}
+	for (const snapshot of snapshots) {
+		body.appendChild(el("tr", {}, [
+			el("td", { text: snapshot.name || snapshot.id, title: snapshot.id }),
+			el("td", { text: snapshot.profile || "—" }),
+			el("td", { text: fmtDateTime(snapshot.created) }),
+			el("td", { class: "mono", text: snapshot.sha256 ? snapshot.sha256.slice(0, 12) + "…" : "—", title: snapshot.sha256 || "" }),
+			el("td", {}, el("button", { class: "btn btn-sm", text: "Restore", onClick: () => restoreSnapshot(snapshot.id) })),
+		]));
+	}
+}
+
+async function createSnapshot() {
+	if (!state.selected) return;
+	const name = $("#snapshot-name").value.trim() || `snapshot-${Date.now()}`;
+	const button = $("#snapshot-create");
+	button.disabled = true;
+	try {
+		await api("POST", sbPath("/snapshot"), { name });
+		$("#snapshot-name").value = "";
+		toast("Recovery snapshot created", "success");
+		await refreshRecovery();
+	} catch (e) {
+		toast("Snapshot failed: " + e.message, "error");
+	} finally {
+		button.disabled = false;
+	}
+}
+
+async function restoreSnapshot(id) {
+	try {
+		const { data } = await api("POST", `/v1/snapshots/${encodeURIComponent(id)}/restore`, {});
+		toast(`Restored as sandbox ${data.id}`, "success");
+		await loadSandboxes();
+		if (data.id) selectSandbox(data.id);
+	} catch (e) {
+		toast("Restore failed: " + e.message, "error");
+	}
+}
+
+async function downloadAuthenticated(path, fallbackName) {
+	const headers = {};
+	if (auth.token) headers.Authorization = "Bearer " + auth.token;
+	let response;
+	try {
+		response = await fetch(path, { headers });
+	} catch (e) {
+		throw new Error("network error: " + e.message);
+	}
+	if (!response.ok) {
+		let message = `HTTP ${response.status}`;
+		try {
+			const body = await response.json();
+			message = body.error || message;
+		} catch {}
+		throw new Error(message);
+	}
+	const blob = await response.blob();
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = fallbackName;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	URL.revokeObjectURL(url);
+}
+
+async function downloadWorkspace() {
+	if (!state.selected) return;
+	try {
+		await downloadAuthenticated(sbPath("/workspace"), `runeward-workspace-${state.selected}.tar`);
+		toast("Workspace download started", "success");
+	} catch (e) {
+		toast("Workspace export failed: " + e.message, "error");
+	}
+}
+
+async function downloadEvidence() {
+	if (!state.selected) return;
+	try {
+		await downloadAuthenticated(sbPath("/evidence"), `runeward-evidence-${state.selected}.json`);
+		toast("Signed evidence download started", "success");
+	} catch (e) {
+		toast("Evidence export failed: " + e.message, "error");
+	}
+}
+
 /* ---------------- Utilities ---------------- */
 function fmtTime(t) {
   if (!t) return "";
   const d = new Date(t);
   if (isNaN(d.getTime())) return String(t);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function fmtDateTime(t) {
+	if (!t) return "";
+	const d = new Date(t);
+	if (isNaN(d.getTime())) return String(t);
+	return d.toLocaleString();
 }
 
 function debounce(fn, ms) {
@@ -1393,6 +1587,7 @@ function startGlobalPoll() {
       state.activeView === "fleets" ? refreshFleets() : Promise.resolve(),
       state.activeTab === "egress" ? refreshEgress() : Promise.resolve(),
       state.activeTab === "budget" ? refreshBudget() : Promise.resolve(),
+			state.activeTab === "recovery" ? refreshRecovery() : Promise.resolve(),
     ]);
   };
   tick();
@@ -1413,6 +1608,7 @@ function wireEvents() {
   $$("[data-close-modal]").forEach((n) => n.addEventListener("click", closeNewSandboxModal));
   $("#new-modal-copyfrom").addEventListener("keydown", (e) => { if (e.key === "Enter") createSandbox(); });
   $("#refresh-btn").addEventListener("click", () => { loadSandboxes(); loadProfiles(); });
+	$("#profile-select").addEventListener("change", refreshReadiness);
 
   // View switch + fleets
   $("#view-sandboxes").addEventListener("click", () => switchView("sandboxes"));
@@ -1441,6 +1637,11 @@ function wireEvents() {
   $("#sim-run").addEventListener("click", runPolicySimulation);
   $("#sim-actions").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") runPolicySimulation(); });
   $("#egress-refresh").addEventListener("click", refreshEgress);
+	$("#snapshot-create").addEventListener("click", createSnapshot);
+	$("#snapshot-name").addEventListener("keydown", (e) => { if (e.key === "Enter") createSnapshot(); });
+	$("#snapshot-refresh").addEventListener("click", refreshRecovery);
+	$("#workspace-download").addEventListener("click", downloadWorkspace);
+	$("#evidence-download").addEventListener("click", downloadEvidence);
 
   $("#approvals-btn").addEventListener("click", openDrawer);
   $$("[data-close-drawer]").forEach((n) => n.addEventListener("click", closeDrawer));
@@ -1485,13 +1686,12 @@ function applyPrincipal() {
   $("#approvals-btn").classList.toggle("hidden", !canApprove());
   // Disable sandbox/fleet creation when the identity can launch nothing.
   const allowed = canLaunch();
-  ["#create-btn", "#fleet-create-btn"].forEach((sel) => {
-    const b = $(sel);
-    if (b) {
-      b.disabled = !allowed;
-      if (!allowed) b.title = "Your role is not permitted to launch profiles";
-    }
-  });
+	const fleetButton = $("#fleet-create-btn");
+	if (fleetButton) {
+		fleetButton.disabled = !allowed;
+		if (!allowed) fleetButton.title = "Your role is not permitted to launch policies";
+	}
+	applyCreateAvailability();
 }
 
 // Start the live app exactly once, regardless of how many times boot runs
@@ -1499,8 +1699,7 @@ function applyPrincipal() {
 function startApp() {
   if (state.started) return;
   state.started = true;
-  loadProfiles();
-  startGlobalPoll();
+	loadProfiles().finally(startGlobalPoll);
 }
 
 async function loadWhoami() {

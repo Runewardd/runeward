@@ -1,15 +1,16 @@
-# Run the Cursor CLI agent (`agent`) as a governed agent inside a sandbox.
+# Run the Cursor CLI agent (`agent`) inside an isolated Runeward sandbox.
 #
-#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
 #   runeward --config-dir examples serve
 #   POST /v1/sandboxes {"profile":"cursor-agent"}
 #   POST /v1/sandboxes/{id}/shell/exec
 #        {"command":["sh","-lc","agent -p 'write fib.py that prints the first 10 Fibonacci numbers, then run it' --force --trust --output-format text"]}
+# The outer launch is policy-gated. Commands the Cursor process starts inside
+# the sandbox are constrained by isolation/network/resources, not individually approved.
 
 [host]
 type    = "container"
-image   = "runeward-agent:dev"
+image   = "ghcr.io/runewardd/runeward-agent:latest"
 user    = "agent"
 workdir = "/workspace"
 

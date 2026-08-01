@@ -6,18 +6,17 @@
 # the sandbox. This profile therefore uses the runeward-sandbox image, which
 # ships both Chromium and the driver (see deploy/Dockerfile.sandbox).
 #
-# Build the local image first (tagged runeward-sandbox:dev):
-#   docker build -f deploy/Dockerfile.sandbox -t runeward-sandbox:dev .
-#
 #   runeward --config-dir examples serve
 #   POST /v1/sandboxes {"profile":"browser-stateful"}
 #
 # The walkthrough uses data: URLs so no egress is required; browser traffic that
 # does leave the sandbox is still governed by the deny-by-default allowlist.
+# Browser automation is experimental and disabled by default; set
+# RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1 only in a trusted test deployment.
 
 [host]
 type    = "container"
-image   = "runeward-sandbox:dev"
+image   = "ghcr.io/runewardd/runeward-sandbox:latest"
 workdir = "/workspace"
 
 # Deny-by-default egress. data: URLs need no network; add allow rules for any

@@ -3,7 +3,6 @@
 # workers build them. Works with any of the three shipped agents - Cursor,
 # Codex (OpenAI), or Claude - selected by the driver (AGENT=cursor|codex|claude).
 #
-#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #   # drop whichever key(s) you use (missing ones are simply skipped):
 #   printf '%s' "$CURSOR_API_KEY"    > ~/.runeward-cursor.key
 #   printf '%s' "$OPENAI_API_KEY"    > ~/.runeward-openai.key
@@ -13,7 +12,7 @@
 
 [host]
 type    = "container"
-image   = "runeward-agent:dev"
+image   = "ghcr.io/runewardd/runeward-agent:latest"
 user    = "agent"
 workdir = "/workspace"
 # Optional: start every worker from a copy of an existing scaffold/repo.

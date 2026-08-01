@@ -1,11 +1,10 @@
 # A Kubernetes-backed FLEET of governed Cursor CLI agents. Each replica is its
 # own Pod (+ workspace PVC) sharing one atomic task board. A worker claims a
 # task (the payload is the prompt), runs the Cursor agent in its Pod with a
-# chosen model, then marks it done. Every action is policy-gated, egress-limited,
-# and written to the signed audit ledger.
+# chosen model, then marks it done. Launch/task operations are policy-audited;
+# inner agent commands remain sandbox/network/resource constrained.
 #
 # Prereqs (see the runbook):
-#   docker build -f deploy/Dockerfile.agent   -t runeward-agent:dev .
 #   docker build -f deploy/Dockerfile.egress  -t runeward-egress:latest .
 #   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
 #   export RUNEWARD_KUBE_CONTEXT=orbstack RUNEWARD_K8S_NAMESPACE=runeward
@@ -14,7 +13,7 @@
 
 [host]
 type    = "k8s"
-image   = "runeward-agent:dev"
+image   = "ghcr.io/runewardd/runeward-agent:latest"
 workdir = "/workspace"
 # Optional: seed every agent's workspace with a COPY of a starting repo/scaffold.
 # copy_from = "~/Documents/my-app-scaffold"

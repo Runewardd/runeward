@@ -3,9 +3,8 @@
 # `copy_from` copies your folder's contents into the fresh /workspace at
 # creation. It is a one-time copy: the host folder is never mounted or
 # modified, and the agent works only on the copy inside the sandbox. The
-# image must ship `tar` (runeward-agent:dev does).
+# image must ship `tar` (the published runeward-agent image does).
 #
-#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
 #   # edit copy_from below to point at YOUR project, then:
 #   runeward --config-dir examples serve
@@ -15,7 +14,7 @@
 
 [host]
 type      = "container"
-image     = "runeward-agent:dev"
+image     = "ghcr.io/runewardd/runeward-agent:latest"
 user      = "agent"
 workdir   = "/workspace"
 copy_from = "~/Documents/your-project"   # <-- change to your local folder

@@ -19,7 +19,7 @@ import (
 )
 
 // Version is the reported MCP server implementation version.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 const (
 	// EnvMCPDefaultPrincipal names the stdio principal to use when no HTTP

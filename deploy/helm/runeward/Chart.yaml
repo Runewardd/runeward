@@ -1,9 +1,9 @@
 apiVersion: v2
 name: runeward
-description: Governed execution cells for AI agents — CRDs, controller, and optional control plane.
+description: Agent governance harness — CRDs, controller, Citadels, and optional control plane.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 home: https://github.com/Runewardd/runeward
 sources:
   - https://github.com/Runewardd/runeward

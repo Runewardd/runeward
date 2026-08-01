@@ -1,7 +1,8 @@
-# Charters
+# Policies (Charters)
 
-A Charter is the declarative security contract for a Citadel. runeward resolves
-Charters from a config directory (`--config-dir` or `$RUNEWARD_CONFIG_DIR`) and
+A policy file—called a Charter in existing Runeward APIs—is the declarative
+security contract for a sandbox (Citadel). Runeward resolves policies from a
+config directory (`--config-dir` or `$RUNEWARD_CONFIG_DIR`) and
 supports **TOML, YAML, and JSON** — pick per file by extension (`.toml`,
 `.yaml`/`.yml`, `.json`). TOML is the default in the examples.
 
@@ -16,7 +17,7 @@ runeward --config-dir examples print <charter>
 ```toml
 [host]
 type      = "container"          # or "k8s"
-image     = "runeward-agent:dev"
+image     = "ghcr.io/runewardd/runeward-agent:latest"
 workdir   = "/workspace"
 copy_from = "~/Documents/my-project"   # optional: seed /workspace at create
 # runtime_class = "gvisor"       # hardened runtime (Docker --runtime / k8s runtimeClassName)
@@ -29,7 +30,11 @@ default = "deny"                 # deny-by-default egress
 
 [[network.rule]]                 # one rule per allow/deny entry
 verdict  = "allow"
-hostname = "api.openai.com, *.githubusercontent.com"   # comma-separated; supports *.wildcards
+hostname = "api.openai.com"      # supports *.wildcards
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.githubusercontent.com"
 
 [[env]]
 name  = "OPENAI_API_KEY"

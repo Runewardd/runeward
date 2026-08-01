@@ -60,13 +60,15 @@ helpers are optional extras, imported lazily, so the base client works with
 nothing else installed.
 
 ```bash
-pip install runeward                    # core client only (no third-party deps)
-pip install "runeward[langchain]"       # + LangChain tools
-pip install "runeward[crewai]"          # + CrewAI tools
-pip install "runeward[llamaindex]"      # + LlamaIndex tools
-pip install "runeward[openai-agents]"   # + OpenAI Agents SDK tools
-pip install "runeward[strands]"         # + Strands Agents SDK tools
+python -m pip install runeward
+python -m pip install 'runeward[langchain]'
+python -m pip install 'runeward[crewai]'
+python -m pip install 'runeward[llamaindex]'
+python -m pip install 'runeward[openai-agents]'
+python -m pip install 'runeward[strands]'
 ```
+
+For repository development, use `python -m pip install -e ./adapters/python`.
 
 ### Raw client
 
@@ -121,11 +123,13 @@ dependencies** (Node 18+, Deno, Bun, browsers). Tool wrappers require optional
 peer dependencies, imported lazily.
 
 ```bash
-npm install @runeward/sdk                           # core client only
-npm install @runeward/sdk ai zod                    # + Vercel AI SDK tools
-npm install @runeward/sdk @langchain/core zod       # + LangChain.js tools
-npm install @runeward/sdk @strands-agents/sdk zod   # + Strands Agents SDK tools
+npm install @runeward/sdk                            # core client
+npm install @runeward/sdk ai zod                     # + Vercel AI SDK tools
+npm install @runeward/sdk @langchain/core zod
+npm install @runeward/sdk @strands-agents/sdk zod
 ```
+
+For repository development, use `npm install ./adapters/typescript`.
 
 ### Raw client
 

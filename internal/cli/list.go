@@ -12,7 +12,7 @@ import (
 func newListCmd(configDir *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List Charters reachable from here",
+		Short: "List policy files (Charters) reachable from here",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := *configDir
 			if dir == "" {

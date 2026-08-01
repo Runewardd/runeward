@@ -11,8 +11,9 @@ authentication is configured. Set a bearer token with `--token` /
 principals (each with its own token, an allowed-profile glob list, and
 approval/admin flags) for multi-principal RBAC. When set, the token is required
 on every request except `/healthz` and the static dashboard shell — pass it as
-`Authorization: Bearer <token>`, an `X-Runeward-Token` header, or a `?token=`
-query param (the last is required for the terminal WebSocket). Optional TLS via
+`Authorization: Bearer <token>` or an `X-Runeward-Token` header. The browser
+obtains a short-lived, single-use scoped ticket for the terminal WebSocket, so
+long-lived credentials never appear in URLs. Optional TLS via
 `--tls-cert`/`--tls-key`; request bodies are capped at 16 MiB. See the
 [Security model](security-model.md).
 
@@ -25,6 +26,7 @@ created; admins see all.
 | --- | --- | --- |
 | `GET` | `/healthz` | Liveness probe (unauthenticated). |
 | `GET` | `/v1/whoami` | The authenticated caller's identity and capabilities (name, admin, can_approve, allowed_profiles). |
+| `GET` | `/v1/readiness?profile=NAME` | Check policy, runtime, and image readiness without exposing host paths. |
 | `GET` | `/metrics` | Prometheus metrics. |
 
 ## Charters
@@ -41,6 +43,8 @@ created; admins see all.
 | `GET` | `/v1/citadels` | List Citadels (scoped to the caller under RBAC). |
 | `GET` | `/v1/citadels/{id}` | Get one Citadel (includes `owner` and cumulative `usage`). |
 | `DELETE` | `/v1/citadels/{id}` | Kill and remove a Citadel. |
+| `GET` | `/v1/citadels/{id}/workspace` | Download the isolated workspace as a tar archive. |
+| `GET` | `/v1/citadels/{id}/evidence` | Download resolved policy + signed audit as portable evidence JSON. |
 
 ### Actions (governed)
 
@@ -58,6 +62,10 @@ created; admins see all.
 | `GET` | `/v1/citadels/{id}/terminal` | WebSocket terminal (same-origin only). |
 
 ### Browser
+
+Browser automation is experimental and disabled by default. Set
+`RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` only in a trusted deployment after
+reviewing the [security model](security-model.md).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -86,7 +94,7 @@ created; admins see all.
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/v1/citadels/{id}/snapshot` | Snapshot a workspace. |
-| `GET` | `/v1/snapshots` | List snapshots. |
+| `GET` | `/v1/snapshots` | List snapshots (owner-scoped under RBAC). |
 | `POST` | `/v1/snapshots/{id}/restore` | Restore a snapshot. |
 
 ## Chronicle

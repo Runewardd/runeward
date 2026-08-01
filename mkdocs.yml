@@ -1,5 +1,5 @@
 site_name: runeward
-site_description: Governed execution cells for AI agents
+site_description: The open-source governance harness for AI agents
 site_url: https://runewardd.github.io/runeward/
 repo_url: https://github.com/Runewardd/runeward
 repo_name: Runewardd/runeward
@@ -61,6 +61,8 @@ nav:
   - Why governance: why-governance.md
   - Install: install.md
   - Quickstart: quickstart.md
+  - Naming: naming.md
+  - Agent harnessing: agent-harness.md
   - Concepts: concepts.md
   - Charters: profiles.md
   - Bring your own model: byo-model.md

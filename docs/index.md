@@ -1,81 +1,64 @@
 # runeward
 
 <p align="center">
-  <img src="assets/runeward-banner.png" alt="runeward" width="640" />
+  <img src="assets/runeward-banner-v2.png" alt="runeward — the agent governance harness" width="680" />
 </p>
 
-**Governed execution cells for AI agents.**
+**The open-source governance harness for AI agents.**
 
-Declarative Charters provision isolated Citadels (Docker or Kubernetes) with a
-deny-by-default Perimeter, a tamper-evident Chronicle, human-in-the-loop policy
-gates, and cost/loop Rationing — driven over REST, MCP, a CLI, and a web
-dashboard.
+Put enforceable policy, human approvals, isolated execution, budgets, and signed evidence around
+any AI agent or subagent without replacing its model or orchestration framework.
 
-## Install
+## Prove it
+
+With Docker/Podman running:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
+runeward quickstart
 ```
 
-Homebrew, container images, and building from source are covered in
-[Install](install.md). Then jump to the [Quickstart](quickstart.md).
+This creates a starter policy, validates the local runtime, proves one allow and one pre-execution
+denial, and verifies the signed audit trail. Continue with the [Quickstart](quickstart.md), or open
+the dashboard:
 
-## Why runeward
+```bash
+runeward --config-dir .runeward serve
+```
 
-Letting an AI agent run shell commands, edit files, install packages, and hit the
-network is useful right up until it `rm -rf`s the wrong directory, exfiltrates a
-secret, or burns your API budget in a retry loop. Raw isolation ("jail the agent
-in a box") is table stakes. runeward adds the governance layer *around* the box —
-enforcing the rules outside the model instead of hoping it was trained to behave
-([why governance, not training](why-governance.md)):
+## The control loop
 
-- **Charters are a security contract.** Everything you don't grant is denied by
-  default, so the blast radius is explicit.
-- **Governed, not just isolated.** Every action flows through one path — policy,
-  approval gate, guardrails, backend exec, audit ledger — whether it arrives via
-  REST, the dashboard, or MCP.
-- **Tamper-evident by construction.** An append-only, hash-chained, ed25519-signed
-  ledger records every call and its verdict, and exports as an independently
-  verifiable transcript.
-- **Human-in-the-loop where it matters.** Per-action `allow` / `deny` /
-  `require-approval` verdicts pause risky operations for an operator.
-- **Cost and loop guardrails.** Hard caps on wall-clock, exec count, egress
-  requests, and token/spend budgets, plus retry-loop detection.
-- **Authenticated, multi-user control plane.** Bearer-token auth by default off
-  loopback, optional multi-principal RBAC (per-token profile/approval scopes),
-  and per-principal dashboard views with an interactive login.
-- **Pluggable backends.** Docker/Podman for zero-setup laptop use, or Kubernetes
-  (strict L3 egress, CRDs, admission webhook, PSA + NetworkPolicy multi-tenancy)
-  for production and Cohorts.
+```text
+agent request → policy → human approval when required → budgets → sandbox → signed audit event
+```
 
-## How it compares
+- **Policy before execution.** Built-in, CEL, OPA/Rego, and signed OCI policy bundles render
+  `allow`, `deny`, or `require-approval` for each action.
+- **Governed and isolated.** The same control path wraps Docker/Podman and Kubernetes sandboxes.
+- **Portable proof.** Export the resolved policy plus signed audit history and verify it offline.
+- **Practical recovery.** Download the workspace or snapshot and restore it from the dashboard.
+- **Agent-native.** Use the CLI, REST, MCP, web dashboard, Kubernetes CRDs, or included adapters.
 
-|                                    | typical agent sandbox | runeward                                      |
-| ---------------------------------- | --------------------- | --------------------------------------------- |
-| Isolation (container/VM)           | yes                   | yes (Docker or Kubernetes)                    |
-| Deny-by-default network egress     | sometimes             | yes; SNI allowlist, strict L3 on k8s          |
-| Per-action policy + approvals      | rare                  | yes; builtin / CEL / OPA-Rego + HITL gates    |
-| Tamper-evident, signed audit trail | rare                  | yes; hash-chained + ed25519, verifiable       |
-| Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, loop caps      |
-| Multi-agent Cohorts                | rare                  | yes; N cells + atomic Command Board           |
-| Control-plane auth + multi-user    | rare                  | yes; bearer token + RBAC principals + per-user views |
-| Agent-native surface               | partial               | REST + MCP + CLI + dashboard + SKILL/adapters |
-| Signed release artifacts           | rare                  | yes; cosign keyless + SBOMs                    |
-| Operable as a service              | rare                  | yes; `/metrics` + structured logs             |
+## Naming convention
+
+The docs use familiar terms first: **sandbox**, **policy**, **approvals**, **signed audit trail**,
+**network controls**, **budgets**, and **agent group**. The original Runeward names—Citadel,
+Charter, Conclave, Chronicle, Perimeter, Rationing, and Cohort—remain in existing API paths and
+configuration fields for compatibility. See [Naming](naming.md).
 
 ## Where to next
 
 <div class="grid cards" markdown>
 
-- :material-scale-balance: **[Why governance](why-governance.md)** — enforce rules outside the model, not by training it.
-- :material-download: **[Install](install.md)** — one-line installer, Homebrew, or from source.
-- :material-rocket-launch: **[Quickstart](quickstart.md)** — a governed Citadel in ~60 seconds.
-- :material-lightbulb: **[Concepts](concepts.md)** — Citadels, Cohorts, policy, the Perimeter, the Chronicle.
-- :material-file-cog: **[Charters](profiles.md)** — the declarative security contract.
-- :material-toy-brick: **[Adapters](adapters.md)** — LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, Strands, Vercel AI SDK, LangChain.js.
-- :material-shield-lock: **[Security model](security-model.md)** — what runeward does and does not protect.
-- :material-chart-line: **[Observability](observability.md)** — metrics, structured logs, and telemetry.
+- :material-rocket-launch: **[Quickstart](quickstart.md)** — prove allow, deny, and signed audit.
+- :material-download: **[Install](install.md)** — verified releases or a source build.
+- :material-file-cog: **[Policies](profiles.md)** — write and test a security contract.
+- :material-shield-lock: **[Security model](security-model.md)** — guarantees and known limits.
+- :material-api: **[REST API](rest-api.md)** — integrate an existing agent or service.
+- :material-toy-brick: **[Adapters](adapters.md)** — local Python and TypeScript SDKs.
+- :material-shield-account: **[Agent harnessing](agent-harness.md)** — govern agents and delegated subagents.
+- :material-account-group: **[Agent groups](fleets.md)** — coordinate governed workers.
+- :material-chart-line: **[Observability](observability.md)** — metrics, logs, and telemetry.
 
 </div>
 
-runeward is open source under the [Apache License 2.0](https://github.com/Runewardd/runeward/blob/main/LICENSE).
+Runeward is open source under the [Apache License 2.0](https://github.com/Runewardd/runeward/blob/main/LICENSE).

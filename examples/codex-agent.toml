@@ -1,6 +1,5 @@
-# Run the OpenAI Codex CLI (`codex`) as a governed agent inside a sandbox.
+# Run the OpenAI Codex CLI (`codex`) inside an isolated Runeward sandbox.
 #
-#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key   # no trailing newline needed
 #   runeward --config-dir examples serve
 #   POST /v1/sandboxes {"profile":"codex-agent"}
@@ -8,10 +7,12 @@
 #        {"command":["sh","-lc","codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox 'write fib.py that prints the first 10 Fibonacci numbers, then run it'"]}
 #   (--dangerously-bypass-approvals-and-sandbox is correct here: runeward is the
 #    external sandbox. --skip-git-repo-check is needed because /workspace is empty.)
+# The outer launch is policy-gated. Commands the Codex process starts inside the
+# sandbox are constrained by isolation/network/resources, not individually approved.
 
 [host]
 type    = "container"
-image   = "runeward-agent:dev"
+image   = "ghcr.io/runewardd/runeward-agent:latest"
 user    = "agent"
 workdir = "/workspace"
 

@@ -1,10 +1,9 @@
 # A FLEET of governed Codex agents: N identical sandboxes sharing one atomic
 # task board. Each task payload is a prompt; workers claim a task, run
 # `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`
-# in their assigned sandbox, then mark it done. Every action is
-# policy-gated, egress-limited, and written to the signed audit ledger.
+# in their assigned sandbox, then mark it done. Launch/task operations are
+# policy-audited; inner agent commands remain sandbox/network/resource constrained.
 #
-#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
 #   runeward --config-dir examples serve
 #   POST /v1/fleets {"profile":"codex-fleet"}   # provisions 3 sandboxes + seeds the board
@@ -12,7 +11,7 @@
 
 [host]
 type    = "container"
-image   = "runeward-agent:dev"
+image   = "ghcr.io/runewardd/runeward-agent:latest"
 user    = "agent"
 workdir = "/workspace"
 

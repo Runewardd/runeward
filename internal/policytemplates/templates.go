@@ -76,7 +76,15 @@ default = "deny"
 
 [[network.rule]]
 verdict  = "deny"
-hostname = "*.prod.internal, *.prod.svc, prod.*"
+hostname = "*.prod.internal"
+
+[[network.rule]]
+verdict  = "deny"
+hostname = "*.prod.svc"
+
+[[network.rule]]
+verdict  = "deny"
+hostname = "prod.*"
 `,
 	},
 	"pii-egress": {
@@ -94,7 +102,11 @@ default = "deny"
 # Only these destinations are reachable; everything else is dropped.
 [[network.rule]]
 verdict  = "allow"
-hostname = "api.openai.com, api.anthropic.com"
+hostname = "api.openai.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.anthropic.com"
 
 [[network.rule]]
 verdict  = "allow"
@@ -228,7 +240,7 @@ reason     = "chown escalation is blocked on a read-only filesystem"
 		Description: "Deny-by-default egress with a couple of example allow rules and comments showing how to extend the allowlist.",
 		TOML: `# least-privilege-egress — start from deny-by-default egress and open only what
 # the task needs. Add one [[network.rule]] per destination. Hostnames support
-# *.wildcards and comma-separated lists; use cidr for IP ranges.
+# *.wildcards; use one rule per hostname and cidr for IP ranges.
 
 [network]
 default = "deny"

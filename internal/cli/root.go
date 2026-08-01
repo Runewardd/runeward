@@ -29,6 +29,10 @@ var reserved = map[string]bool{
 	"charter":    true,
 	"replay":     true,
 	"runtime":    true,
+	"init":       true,
+	"quickstart": true,
+	"doctor":     true,
+	"evidence":   true,
 	"help":       true,
 	"completion": true,
 	"-h":         true,
@@ -73,16 +77,20 @@ func newRootCmd() *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "runeward",
-		Short:         "Governed Citadels for AI agents",
-		Long:          "runeward resolves declarative TOML profiles (Charters) and provisions isolated,\ngoverned Citadels (sandboxes; Docker or Kubernetes) for AI agents.",
+		Short:         "Policy, approvals, and signed audit for AI agents",
+		Long:          "runeward applies policy, human approvals, resource limits, and signed audit\nto AI-agent sandboxes running on Docker, Podman, or Kubernetes. Runeward calls\nits policy files Charters and its sandboxes Citadels, but common terms come first.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,
 	}
 	root.PersistentFlags().StringVarP(&configDir, "config-dir", "c", "",
-		"pin charter resolution to a single directory (or $RUNEWARD_CONFIG_DIR)")
+		"pin policy-file (Charter) resolution to a directory (or $RUNEWARD_CONFIG_DIR)")
 
 	root.AddCommand(
+		newInitCmd(),
+		newQuickstartCmd(),
+		newDoctorCmd(&configDir),
+		newEvidenceCmd(&configDir),
 		newEnterCmd(&configDir),
 		newExportCmd(),
 		newFleetCmd(),

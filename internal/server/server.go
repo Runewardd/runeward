@@ -54,6 +54,9 @@ type Server struct {
 
 	// MCP, when set, is mounted at /mcp alongside the REST API.
 	MCP http.Handler
+
+	// Version is embedded in portable evidence exports.
+	Version string
 }
 
 // principalCtxKey keys the authenticated principal in a request context.
@@ -127,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /v1/whoami", s.handleWhoami)
 	mux.HandleFunc("GET /v1/charters", s.handleListProfiles)
+	mux.HandleFunc("GET /v1/readiness", s.handleReadiness)
 	mux.HandleFunc("POST /v1/tickets", s.handleCreateTicket)
 	mux.HandleFunc("POST /v1/policy/simulate", s.handlePolicySimulate)
 
@@ -161,6 +165,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/cohorts/{id}/tasks/{taskID}/heartbeat", s.handleHeartbeatTask)
 
 	mux.HandleFunc("POST /v1/citadels/{id}/snapshot", s.handleSnapshot)
+	mux.HandleFunc("GET /v1/citadels/{id}/workspace", s.handleWorkspaceExport)
+	mux.HandleFunc("GET /v1/citadels/{id}/evidence", s.handleEvidenceExport)
 	mux.HandleFunc("GET /v1/snapshots", s.handleListSnapshots)
 	mux.HandleFunc("POST /v1/snapshots/{id}/restore", s.handleRestoreSnapshot)
 
@@ -232,7 +238,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalCtxKey{}, tp)))
 				return
 			}
-			p, ok := s.Authz.Identify(presentedToken(r, isTerminalPath(r.URL.Path)))
+			p, ok := s.Authz.Identify(presentedToken(r, false))
 			if !ok {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 				writeError(w, http.StatusUnauthorized, "unauthorized: unknown or missing API token")
@@ -250,7 +256,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !tokenMatches(r, want, isTerminalPath(r.URL.Path)) {
+		if !tokenMatches(r, want, false) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeError(w, http.StatusUnauthorized, "unauthorized: missing or invalid API token")
 			return
@@ -445,8 +451,9 @@ func (s *Server) ListenAndServe(addr string) error {
 // TokenAuth wraps next with bearer-token authentication. When token is empty,
 // authentication is disabled and next is returned unchanged. /healthz is always
 // exempt so liveness probes work without credentials. The token may be
-// presented as "Authorization: Bearer <token>", an "X-Runeward-Token" header,
-// or a "token" query parameter only for terminal WebSocket compatibility.
+// presented as "Authorization: Bearer <token>" or an "X-Runeward-Token"
+// header. Browser WebSockets use short-lived, single-use tickets so long-lived
+// credentials never appear in URLs.
 func TokenAuth(token string, next http.Handler) http.Handler {
 	if token == "" {
 		return next
@@ -457,7 +464,7 @@ func TokenAuth(token string, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !tokenMatches(r, want, isTerminalPath(r.URL.Path)) {
+		if !tokenMatches(r, want, false) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeError(w, http.StatusUnauthorized, "unauthorized: missing or invalid API token")
 			return
@@ -557,6 +564,14 @@ func (s *Server) consumeTicket(r *http.Request, want ticketScope) (*authz.Princi
 	return t.Principal, true, true
 }
 
+func pruneExpiredTickets(tickets map[string]apiTicket, now time.Time) {
+	for id, ticket := range tickets {
+		if !now.Before(ticket.ExpiresAt) {
+			delete(tickets, id)
+		}
+	}
+}
+
 func (s *Server) issueTicket(scope ticketScope, p *authz.Principal, ttl time.Duration) (string, time.Time, error) {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
@@ -581,6 +596,7 @@ func (s *Server) issueTicket(scope ticketScope, p *authz.Principal, ttl time.Dur
 	if s.tickets.byID == nil {
 		s.tickets.byID = make(map[string]apiTicket)
 	}
+	pruneExpiredTickets(s.tickets.byID, time.Now())
 	s.tickets.byID[id] = apiTicket{
 		Scope:     scope,
 		Principal: p,
@@ -614,13 +630,8 @@ func (s *Server) fleetOwnedBy(id, owner string) bool {
 }
 
 func (s *Server) snapshotVisibleTo(p *authz.Principal, id string) bool {
-	for _, ref := range s.mgr.ListSnapshots() {
-		if ref.ID != id {
-			continue
-		}
-		return p.CanLaunch(ref.Profile)
-	}
-	return false
+	owner, ok := s.mgr.SnapshotOwner(id)
+	return ok && owner != "" && owner == p.Name
 }
 
 // limitBody caps every request body at maxRequestBodyBytes to bound memory use.

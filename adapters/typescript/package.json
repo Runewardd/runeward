@@ -1,12 +1,17 @@
 {
   "name": "@runeward/sdk",
-  "version": "0.1.0",
-  "description": "TypeScript client and Vercel AI SDK tools for the runeward governed execution cell.",
+  "version": "0.2.0",
+  "description": "TypeScript SDK for governing AI agent execution with policy, approvals, isolation, budgets, and signed evidence.",
   "type": "module",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Runewardd/runeward"
+    "url": "git+https://github.com/Runewardd/runeward.git",
+    "directory": "adapters/typescript"
+  },
+  "homepage": "https://runewardd.github.io/runeward/",
+  "bugs": {
+    "url": "https://github.com/Runewardd/runeward/issues"
   },
   "keywords": [
     "ai",
@@ -46,12 +51,20 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepublishOnly": "npm test",
+    "prepack": "npm run build"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
   "engines": {
     "node": ">=18"
   },

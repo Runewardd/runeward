@@ -13,7 +13,7 @@ const redacted = "«redacted»"
 // Print renders a human-readable view of the resolved Charter. Secret env
 // values are never shown, only their source kind.
 func Print(w io.Writer, p *Profile) {
-	fmt.Fprintf(w, "charter: %s\n", p.Name)
+	fmt.Fprintf(w, "policy (Charter): %s\n", p.Name)
 	fmt.Fprintf(w, "source:  %s\n", p.Source)
 	fmt.Fprintln(w)
 
@@ -108,7 +108,7 @@ func Print(w io.Writer, p *Profile) {
 	}
 
 	if l := p.Limits; l != (Limits{}) {
-		fmt.Fprintln(w, "\n[rationing]")
+		fmt.Fprintln(w, "\n[budgets and limits / rationing]")
 		if l.WallClock != "" {
 			fmt.Fprintf(w, "  wall_clock: %s\n", l.WallClock)
 		}
@@ -131,7 +131,7 @@ func Print(w io.Writer, p *Profile) {
 		}
 	}
 
-	fmt.Fprintln(w, "\n[chronicle]")
+	fmt.Fprintln(w, "\n[signed audit / chronicle]")
 	fmt.Fprintf(w, "  redact: %t\n", p.Audit.RedactEnabled())
 	if p.Audit.Sink != "" {
 		fmt.Fprintf(w, "  sink: %s\n", p.Audit.Sink)

@@ -1,5 +1,5 @@
-"""runeward — Python client and agent-framework adapters for the runeward
-governed execution cell.
+"""runeward — Python client and agent-framework adapters for the Runeward
+agent governance harness.
 
 The core :class:`RunewardClient` depends only on the standard library. The
 framework helpers live in :mod:`runeward.langchain_tools`,
@@ -25,4 +25,4 @@ __all__ = [
     "RunewardApprovalRequired",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

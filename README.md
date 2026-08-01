@@ -1,184 +1,189 @@
 <p align="center">
-  <img src="docs/assets/runeward-banner.png" alt="runeward" width="720" />
+  <img src="docs/assets/runeward-banner-v2.png" alt="runeward — the agent governance harness" width="760" />
 </p>
 
 <p align="center">
-  <b>Governed execution cells for AI agents.</b>
+  <b>The open-source governance harness for AI agents.</b>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <a href="https://github.com/Runewardd/runeward/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Runewardd/runeward/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="go.mod"><img alt="Go" src="https://img.shields.io/badge/go-1.25%2B-00ADD8.svg"></a>
+  <a href="go.mod"><img alt="Go 1.26.5" src="https://img.shields.io/badge/go-1.26.5-00ADD8.svg"></a>
   <a href="https://github.com/Runewardd/runeward/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Runewardd/runeward?sort=semver"></a>
 </p>
 
+Put enforceable policy, human approvals, isolated execution, budgets, and signed evidence around
+any AI agent. Runeward works with an existing agent or multi-agent framework rather than requiring
+a new model or orchestration stack.
+
 <p align="center">
-  Declarative Charters provision isolated Citadels (Docker or Kubernetes) with a deny-by-default
-  Perimeter, a tamper-evident Chronicle, human-in-the-loop policy gates, and cost/loop Rationing,
-  driven over REST, MCP, a CLI, and a web dashboard.
+  <img src="docs/assets/runeward-proof.svg" alt="An agent action flows through policy and optional human approval into an isolated sandbox and signed audit trail" width="820" />
 </p>
 
-## Why runeward
+## Prove it in one command
 
-Letting an AI agent run shell commands, edit files, and hit the network is useful right up until it
-`rm -rf`s the wrong directory, exfiltrates a secret, or burns your budget in a retry loop. Isolation
-alone is table stakes; runeward adds the **governance layer around the box** — a deny-by-default
-contract the agent can't talk its way past, enforced outside the model. See
-[Why governance, not training](https://runewardd.github.io/runeward/why-governance/).
-
-- **Charters are a security contract.** `[host]`, `[network]`, `[[env]]`, `[[policy]]`, `[rationing]`
-  declare exactly the access a task needs; everything else is denied by default.
-- **Governed, not just isolated.** Every action flows through one path — policy → Conclave gate →
-  Rationing → backend exec → Chronicle — whether it arrives via REST, the dashboard, or MCP.
-- **Tamper-evident.** An append-only, hash-chained, ed25519-signed Chronicle records every call and
-  verdict and exports as an independently verifiable transcript.
-- **Human-in-the-loop.** Per-action `allow` / `deny` / `require-approval` verdicts pause risky work.
-- **Cost & loop Rationing.** Hard caps on wall-clock, exec count, egress, and token/spend budgets.
-- **Authenticated & multi-user.** Loopback by default; bearer token + optional per-principal RBAC.
-- **Pluggable backends.** Docker/Podman for laptops, Kubernetes (strict L3 egress, CRDs, admission
-  webhook, PSA + NetworkPolicy) for production and Cohorts. Everything above the backend is identical.
-
-|                                    | typical agent sandbox | runeward                                     |
-| ---------------------------------- | --------------------- | -------------------------------------------- |
-| Isolation (container/VM)           | yes                   | yes (Docker or Kubernetes)                   |
-| Deny-by-default network egress     | sometimes             | yes; SNI allowlist, strict L3 on k8s         |
-| Per-action policy + approvals      | rare                  | yes; builtin / CEL / OPA-Rego + HITL gates   |
-| Tamper-evident, signed audit trail | rare                  | yes; hash-chained + ed25519, verifiable      |
-| Cost / loop guardrails             | rare                  | yes; wall-clock, exec, egress, token/spend   |
-| Multi-agent Cohorts                | rare                  | yes; N cells + atomic Command Board          |
-| Control-plane auth + multi-user    | rare                  | yes; bearer token + RBAC + per-user views    |
-| Agent-native surface               | partial               | REST + MCP + CLI + dashboard + SKILL/adapters|
-
-## Vocabulary
-
-runeward uses a desert-governance vocabulary consistently across the CLI, REST, MCP, CRDs, and
-Charter files: a **Citadel** (sandbox), a **Cohort** (fleet), a **Charter** (profile), the
-**Conclave** (approvals), the **Chronicle** (audit ledger), the **Perimeter** (egress), and
-**Rationing** (guardrails). The `runeward` binary name, SDK method names, and JSON body fields (e.g.
-`profile`) keep their original spellings. Full glossary: [Concepts](docs/concepts.md#product-vocabulary).
-
-## Quick start
+Prerequisites: a running Docker/Podman engine and the `runeward` binary.
 
 ```bash
-# Install (macOS/Linux/Windows CLI, amd64/arm64)
+runeward quickstart
+```
+
+The command creates `.runeward/quickstart.toml`, checks the policy, runtime, image, and state path,
+runs an allowed command, proves a destructive command is denied before execution, and verifies the
+signed audit trail. It never overwrites an existing policy unless `--force` is passed.
+
+```bash
+runeward doctor quickstart                     # explain setup problems safely
+runeward --config-dir .runeward serve          # dashboard + governed REST API
+runeward evidence export quickstart -o run.json
+runeward evidence verify run.json              # independent policy/audit verification
+```
+
+These docs describe `main`. Until the next tagged release includes the commands above, use the
+[from-source install](#install) for this quickstart.
+
+## What Runeward adds
+
+| Concern | Container alone | Runeward |
+| --- | --- | --- |
+| Tool calls | Executes what the process requests | Checks every shell, code, file, network, and browser action first |
+| Risky actions | Application-specific | `allow`, `deny`, or `require-approval` with an attributed decision |
+| Network | Usually open unless separately configured | Deny-by-default hostname policy; strict L3 enforcement on Kubernetes |
+| Limits | CPU/memory | Wall-clock, exec, egress, token, cost, and retry-loop budgets |
+| Audit | Runtime logs | Append-only, hash-chained, Ed25519-signed events |
+| Handoff | Ad-hoc logs and folders | Workspace tar, recovery snapshots, and portable signed evidence JSON |
+| Interfaces | Runtime-specific | CLI, REST, MCP, web dashboard, Kubernetes CRDs, and local SDK adapters |
+
+Every governed action follows one path:
+
+```text
+agent request → policy → human approval when required → limits → sandbox → signed audit event
+```
+
+## Naming
+
+Documentation and UI use familiar terms first. Existing API paths and file fields retain the
+original themed names for compatibility.
+
+| Plain-language term | Runeward name | Existing surface |
+| --- | --- | --- |
+| Sandbox | Citadel | `/v1/citadels`, Kubernetes `Citadel` |
+| Policy file/profile | Charter | `/v1/charters`, `*.toml` profile |
+| Approvals | Conclave | `/v1/conclave` |
+| Signed audit trail | Chronicle | `/v1/chronicle`, `[chronicle]` |
+| Network controls | Perimeter | `/perimeter`, `[network]` |
+| Budgets and limits | Rationing | `[rationing]` |
+| Agent group/fleet | Cohort | `/v1/cohorts`, `[cohort]` |
+
+See the full [naming and writing convention](docs/naming.md).
+
+## Install
+
+### From source (recommended for `main`)
+
+Requires Go **1.26.5** and a running Docker/Podman engine for local sandboxes.
+
+```bash
+git clone https://github.com/Runewardd/runeward
+cd runeward
+go build -o bin/runeward ./cmd/runeward
+./bin/runeward quickstart
+```
+
+### Signed release installer
+
+The macOS/Linux installer requires [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/)
+so it can fail closed while verifying the signed checksum manifest. Windows release binaries are
+downloaded manually from [Releases](https://github.com/Runewardd/runeward/releases).
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
-# or: brew install Runewardd/tap/runeward   # once the tap is published
-# or build from source: go build -o bin/runeward ./cmd/runeward
 ```
+
+Install either dependency-light SDK from its language registry:
 
 ```bash
-runeward --config-dir examples list                 # list reachable Charters
-runeward --config-dir examples print ns-auto        # inspect a resolved, secret-redacted Charter
-runeward --config-dir examples dev -- uname -a       # run one command in a fresh Citadel (needs Docker)
-runeward --config-dir examples serve                # governed REST API + dashboard on :8080
+python -m pip install runeward
+npm install @runeward/sdk
 ```
 
-Open [localhost:8080](http://localhost:8080): pick a Charter, click **New**, and drive the Citadel's
-terminal, files, Chronicle timeline, and Conclave inbox. Full walkthrough:
-[Quickstart](https://runewardd.github.io/runeward/quickstart/).
+The Homebrew tap is not published yet. SDK source and framework adapters remain in
+[`adapters/python`](adapters/python) and [`adapters/typescript`](adapters/typescript).
 
-## Integrating an agent
+## Use it with an agent
 
-Two ways to put an agent behind runeward:
+Expose governed tools to an MCP-capable IDE or agent:
 
-- **As an MCP server for your IDE** (Cursor, Claude Desktop, VS Code) — point the tool at
-  `runeward mcp`; its agent runs shell/code/file/browser tools inside a governed Citadel:
-
-  ```jsonc
-  { "mcpServers": { "runeward": { "command": "runeward", "args": ["mcp", "--config-dir", "examples"] } } }
-  ```
-
-- **By running an agent CLI inside a Citadel** (Codex, Cursor CLI, Claude Code) — a Charter ships the
-  agent binary and injects its key; launch one with a governed exec call, or a whole **Cohort**:
-
-  ```bash
-  runeward cohort --agent claude --model sonnet build "Build a FastAPI todo API with tests"
-  ```
-
-A Cohort is N identical governed cells sharing an atomic Command Board (`[cohort] replicas = N`). Use
-`exec` to iterate on one workspace, or `add` + `run` to fan independent tasks out in parallel.
-runeward governs whatever command you exec, so cloud CLIs and local LLMs both work. Details:
-[Cohorts & agents](https://runewardd.github.io/runeward/fleets/).
-
-## Working against your own code
-
-runeward never mounts your host folder — it takes a one-time copy at create, so the agent works on an
-isolated `/workspace` and your real files are untouched. Seed it via `host.copy_from` in a Charter,
-`copy_from` per-create over REST/dashboard, or snapshots; pull results back with
-`runeward export <citadel-id> ./out`.
-
-## CLI
-
-```
-runeward <charter> [-- cmd...]       Provision a Citadel for a Charter and enter it (alias for enter)
-runeward enter <charter>             Same, explicit; --keep leaves the Citadel running
-runeward cohort <up|add|run|build|exec|status|export|down>   Drive a prompt-driven Cohort (--agent/--model)
-runeward export <id> <dir>           Copy a Citadel's /workspace back out to a host directory
-runeward print <charter>             Show the resolved, secret-redacted Charter + policy
-runeward list                        List reachable Charters
-runeward validate <charter>          Statically lint a Charter (missing images, unresolved secrets, dead rules)
-runeward policy {test,scaffold}      Simulate a Charter's policy, or print a ready-made policy template
-runeward charter {sign,verify}       Produce/verify a detached ed25519 signature over a Charter
-runeward runtime {check,guide,install}  Inspect, explain, or install hardened runtimes (gVisor/Kata)
-runeward replay <cast>               Replay a recorded terminal session (asciinema v2)
-runeward serve [--token ...]         Governed control plane: REST API + web dashboard (127.0.0.1:8080)
-runeward mcp [--http]                Model Context Protocol server (stdio, or streamable HTTP)
-runeward up [--crds-only]            Install CRDs + namespace + RBAC + controller into k8s
-runeward controller                  Reconcile Citadel/Cohort CRDs onto the k8s backend
-runeward webhook                     Self-registering admission webhook for ClusterPolicy
-runeward chronicle verify            Verify the hash chain + signatures of the Chronicle
-runeward archive {keygen,push,pull}  Build/publish/verify signed OCI policy Archives
+```json
+{
+  "mcpServers": {
+    "runeward": {
+      "command": "runeward",
+      "args": ["mcp", "--config-dir", ".runeward"]
+    }
+  }
+}
 ```
 
-## Interfaces
-
-- **REST** — `runeward serve` routes every call through the governed path over `/v1/citadels`,
-  `/v1/cohorts`, `/v1/conclave`, `/v1/chronicle`, and more. Loopback by default; set `--token` /
-  `$RUNEWARD_API_TOKEN` (or RBAC via `$RUNEWARD_AUTHZ_FILE`) before exposing it. A deny returns `403`;
-  require-approval blocks until resolved. Reference: [REST API](https://runewardd.github.io/runeward/rest-api/).
-- **MCP** — the same tools over the Model Context Protocol (`runeward_create_citadel`,
-  `runeward_shell`, `runeward_create_cohort`, …), stdio or streamable HTTP.
-- **Adapters** — first-class tools for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands, and the
-  Vercel AI SDK via `pip install runeward` / `npm install @runeward/sdk`. See
-  [Adapters](https://runewardd.github.io/runeward/adapters/) and [`adapters/`](adapters/).
-- **Observability** — Prometheus metrics at `/metrics`, structured `log/slog` logs, opt-in telemetry.
-  See [Observability](https://runewardd.github.io/runeward/observability/).
-
-## Kubernetes
+Or place an agent CLI inside a sandbox and run one or many governed workers:
 
 ```bash
-./bin/runeward up                                        # CRDs + namespace + RBAC + controller
-kubectl -n runeward create configmap runeward-profiles --from-file=examples/
-# or: helm install runeward deploy/helm/runeward -n runeward --create-namespace --set server.enabled=true
+runeward cohort --agent claude --model sonnet build "Build a tested API"
 ```
 
-Then drive it declaratively with `Citadel` / `Cohort` (or cluster-scoped `ClusterCitadel` /
-`ClusterCohort`) resources; the controller provisions Pods/PVCs and tears them down via finalizers.
-Org-wide guardrails come from a `ClusterPolicy` enforced by `runeward webhook`, and strict L3 egress,
-PSA, NetworkPolicy, and hardened runtimes (gVisor/Kata) harden multi-tenant clusters. Details:
-[Security model](https://runewardd.github.io/runeward/security-model/).
+Adapters are included for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands, Vercel AI SDK,
+and LangChain.js. See [Adapters](docs/adapters.md) and [agent groups](docs/fleets.md).
 
-## Policy engines
+## Harness agents and subagents
 
-Authority is `allow` / `deny` / `require-approval` per action, chosen with `policy_engine`: `builtin`
-(glob rules), `cel` (CEL over `{tool, arg}`), or `rego` (OPA/Rego). A Charter can also pull a signed,
-versioned OCI policy Archive so a security team ships one artifact many Charters consume:
+Runeward is the enforcement boundary around an agent, not the component that decides how the agent
+reasons. Route the tool calls of a parent agent and each delegated subagent through Runeward to give
+them explicit policy, approval, isolation, budget, and evidence boundaries.
+
+Existing concepts keep their meaning: a **Cohort** is a group of peer workers sharing a task board;
+it is not being renamed to “subagents.” Parent/child delegation remains the orchestrator's concern
+today, while every participating agent can receive the same or a stricter Charter and its own
+Citadel and Chronicle. See [Agent harnessing](docs/agent-harness.md).
+
+## Policy workflow
+
+Policies support built-in glob rules, CEL, OPA/Rego, and signed OCI bundles. Test them in CI, start
+from a reviewed scaffold, or derive exact proposals from verified production evidence:
 
 ```bash
-runeward archive push oci://ghcr.io/acme/runeward-policies:v3 --policy prod.rego --engine rego --key ./keys/bundle.key
+runeward policy scaffold package-approval
+runeward policy test quickstart --case 'tool=shell,action=rm -rf /,expect=deny'
+runeward policy learn run.json > proposed-policy.toml
 ```
 
-See [Charters & policy](https://runewardd.github.io/runeward/profiles/) and [examples/](examples/).
+`policy learn` never edits a policy automatically. It verifies the evidence first, skips redacted
+actions, produces exact matches, and requires a human to review and broaden them.
 
-## Docs & testing
+## Security posture
 
-Full documentation: **[runewardd.github.io/runeward](https://runewardd.github.io/runeward/)**. For an
-end-to-end local walkthrough (both backends, strict egress, snapshots, Cohorts, MCP wiring), see
-[docs/E2E-TESTING.md](docs/E2E-TESTING.md).
+- The server binds to loopback by default and requires authentication before a non-loopback bind.
+- Multi-principal RBAC scopes sandboxes, agent groups, recovery snapshots, and dashboard views to
+  their owner. Embedded HTTP MCP is disabled when RBAC is enabled because its authorization context
+  is not yet unified; run a separately scoped MCP service if needed.
+- Browser automation is experimental and disabled by default. Enable it only in a trusted deployment
+  with `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` after reviewing the [security model](docs/security-model.md).
+- Per-action policy applies to tool calls routed through the control plane (REST, MCP, dashboard
+  file/shell/code actions, and SDKs). An interactive terminal or a process already running inside a
+  sandbox is a direct sandbox session: it receives isolation/network/resource controls and terminal
+  recording, but its individual commands are not intercepted for approval. Use governed tool calls
+  when command-level policy and signed verdicts are required.
+- Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Known pre-1.0 limitations and
+  remediation work remain visible in [ROADMAP.md](ROADMAP.md).
 
-## Contributing & license
+## Documentation
 
-Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Found a security issue? Follow [SECURITY.md](SECURITY.md) and
-report it privately. Licensed under [Apache 2.0](LICENSE); see [NOTICE](NOTICE) for attribution.
+- [Quickstart](docs/quickstart.md)
+- [Policies / Charters](docs/profiles.md)
+- [REST API](docs/rest-api.md)
+- [Security model](docs/security-model.md)
+- [End-to-end testing](docs/E2E-TESTING.md)
+- Published site: [runewardd.github.io/runeward](https://runewardd.github.io/runeward/)
+
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under
+[Apache 2.0](LICENSE).

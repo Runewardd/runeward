@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 260" role="img" aria-labelledby="title desc">
+  <title id="title">Runeward governance flow</title>
+  <desc id="desc">Agent actions pass through policy and optional approval before reaching a sandbox, while every verdict is written to a signed audit trail.</desc>
+  <defs>
+    <style>
+      .bg{fill:#070b14}.box{fill:#101827;stroke:#2c405f;stroke-width:2}.accent{stroke:#49a3ff}.good{stroke:#46d69a}.text{fill:#eef5ff;font:600 21px system-ui,-apple-system,sans-serif}.sub{fill:#9db0c9;font:15px system-ui,-apple-system,sans-serif}.arrow{fill:none;stroke:#5e789e;stroke-width:3;marker-end:url(#a)}
+    </style>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#5e789e"/></marker>
+  </defs>
+  <rect class="bg" width="1040" height="260" rx="18"/>
+  <path class="arrow" d="M205 86H265"/><path class="arrow" d="M465 86H525"/><path class="arrow" d="M725 86H785"/>
+  <path class="arrow" d="M365 130V188H815"/>
+  <path class="arrow" d="M625 130V188"/>
+  <path class="arrow" d="M885 130V188"/>
+  <g><rect class="box accent" x="25" y="42" width="180" height="88" rx="12"/><text class="text" x="115" y="78" text-anchor="middle">Agent action</text><text class="sub" x="115" y="105" text-anchor="middle">shell · file · network</text></g>
+  <g><rect class="box accent" x="265" y="42" width="200" height="88" rx="12"/><text class="text" x="365" y="78" text-anchor="middle">Policy</text><text class="sub" x="365" y="105" text-anchor="middle">allow · deny · review</text></g>
+  <g><rect class="box" x="525" y="42" width="200" height="88" rx="12"/><text class="text" x="625" y="78" text-anchor="middle">Human approval</text><text class="sub" x="625" y="105" text-anchor="middle">only when required</text></g>
+  <g><rect class="box good" x="785" y="42" width="230" height="88" rx="12"/><text class="text" x="900" y="78" text-anchor="middle">Isolated sandbox</text><text class="sub" x="900" y="105" text-anchor="middle">Docker · Podman · K8s</text></g>
+  <g><rect class="box good" x="525" y="178" width="360" height="58" rx="12"/><text class="text" x="705" y="213" text-anchor="middle">Signed, verifiable audit trail</text></g>
+</svg>

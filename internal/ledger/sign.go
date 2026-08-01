@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // On-disk names for the signing key (private, 0600) and its public half
@@ -157,9 +158,12 @@ func verifyRecords(recs []Event, pub ed25519.PublicKey, requireAll bool) error {
 // check their signatures, verifiable with VerifyBundle. Trust in the key
 // itself is established out of band.
 type Bundle struct {
-	KeyID     string  `json:"key_id"`
-	PublicKey string  `json:"public_key"`
-	Events    []Event `json:"events"`
+	KeyID     string `json:"key_id"`
+	PublicKey string `json:"public_key"`
+	// Scope is "all" or "session:<id>". Session exports may contain sequence
+	// gaps where other sessions' events were intentionally omitted.
+	Scope  string  `json:"scope,omitempty"`
+	Events []Event `json:"events"`
 }
 
 // ExportBundle writes a Bundle of the session's events (all events when
@@ -180,7 +184,11 @@ func (l *Ledger) ExportBundle(w io.Writer, sessionID string, pub ed25519.PublicK
 			}
 		}
 	}
-	b := Bundle{KeyID: keyID(pub), PublicKey: encodePub(pub), Events: events}
+	scope := "all"
+	if sessionID != "" {
+		scope = "session:" + sessionID
+	}
+	b := Bundle{KeyID: keyID(pub), PublicKey: encodePub(pub), Scope: scope, Events: events}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(b); err != nil {
@@ -209,8 +217,21 @@ func VerifyBundle(r io.Reader) (int, error) {
 		if want := hashEvent(ev); ev.Hash != want {
 			return 0, fmt.Errorf("ledger: bundle event %d (seq %d): hash mismatch", i, ev.Seq)
 		}
-		if i > 0 && ev.PrevHash != b.Events[i-1].Hash {
-			return 0, fmt.Errorf("ledger: bundle event %d (seq %d): broken chain", i, ev.Seq)
+		if i > 0 {
+			prevEvent := b.Events[i-1]
+			if ev.Seq <= prevEvent.Seq {
+				return 0, fmt.Errorf("ledger: bundle event %d (seq %d): events are not in sequence order", i, ev.Seq)
+			}
+			// Full/legacy bundles must be contiguous. A session-scoped bundle can
+			// legitimately skip global records belonging to other sessions, but
+			// whenever two retained records are adjacent their hash link must hold.
+			mustLink := b.Scope == "" || b.Scope == "all" || ev.Seq == prevEvent.Seq+1
+			if mustLink && ev.PrevHash != prevEvent.Hash {
+				return 0, fmt.Errorf("ledger: bundle event %d (seq %d): broken chain", i, ev.Seq)
+			}
+		}
+		if strings.HasPrefix(b.Scope, "session:") && ev.SessionID != strings.TrimPrefix(b.Scope, "session:") {
+			return 0, fmt.Errorf("ledger: bundle event %d (seq %d): event is outside declared session scope", i, ev.Seq)
 		}
 		if ev.Sig == "" {
 			return 0, fmt.Errorf("ledger: bundle event %d (seq %d): missing signature", i, ev.Seq)

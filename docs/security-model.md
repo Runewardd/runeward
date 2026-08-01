@@ -1,5 +1,14 @@
 # Security model
 
+!!! warning "Interactive sessions are not per-command policy gates"
+    Per-action policy and approval decisions apply to calls routed through the
+    control plane's governed tool APIs (REST, MCP, dashboard shell/file/code
+    controls, and SDK adapters). The interactive terminal and commands started
+    directly inside a sandbox receive sandbox, network, and resource controls
+    plus terminal recording, but Runeward does not intercept each shell command
+    for a policy verdict. Use governed tool calls when individual command
+    approval and signed verdict evidence are required.
+
 runeward's job is to reduce the blast radius of an autonomous agent. Knowing what
 it does — and does not — protect against is essential to using it safely.
 
@@ -36,7 +45,10 @@ Please disclose privately; do not open a public issue.
   interactive token login (backed by `/v1/whoami`) that gates create/approve
   controls to what the caller is permitted; the static dashboard shell loads
   without a token so the login screen can render, but the API always requires
-  one.
+  one. Recovery snapshots are owner-scoped as well. Embedded HTTP MCP is
+  disabled when RBAC is configured because the MCP tool context is not yet
+  unified with per-principal authorization; deploy MCP as a separately scoped
+  single-identity service when needed.
 - **Cost / token budgets.** Agents or Cohort workers report model usage to
   `POST /v1/citadels/{id}/usage`; usage accrues per Citadel and per Charter
   (surfaced in Prometheus and the Citadel view). A Charter's `rationing.max_tokens`

@@ -34,7 +34,7 @@
     <div class="brand">
       <img class="brand-logo" src="logo.png" alt="" />
       <h1>runeward</h1>
-      <span class="brand-sub">governed agent operations</span>
+      <span class="brand-sub">policy, approvals &amp; signed audit for AI agents</span>
     </div>
     <div class="topbar-status">
       <span id="identity" class="identity hidden" title="Signed-in identity">
@@ -43,11 +43,11 @@
         <span id="identity-role" class="identity-role hidden"></span>
         <button id="signout-btn" class="icon-btn hidden" title="Sign out">⎋</button>
       </span>
-      <button id="approvals-btn" class="pill-btn" title="Pending Conclave decisions">
-        Conclave <span id="approvals-count" class="count-badge hidden">0</span>
+      <button id="approvals-btn" class="pill-btn" title="Pending approval decisions">
+        Approvals <span id="approvals-count" class="count-badge hidden">0</span>
       </button>
-      <span id="audit-badge" class="badge badge-muted" title="Chronicle integrity">
-        <span class="badge-dot"></span> Chronicle
+      <span id="audit-badge" class="badge badge-muted" title="Signed audit-trail integrity">
+        <span class="badge-dot"></span> Signed audit
       </span>
       <span id="health-badge" class="badge badge-muted" title="Control plane health">
         <span id="health-dot" class="dot dot-muted"></span> <span id="health-text">checking…</span>
@@ -59,45 +59,45 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="view-switch" role="tablist" aria-label="Switch view">
-        <button id="view-sandboxes" class="view-tab active" role="tab" aria-selected="true">Citadels</button>
-        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false">Cohorts</button>
+        <button id="view-sandboxes" class="view-tab active" role="tab" aria-selected="true">Sandboxes</button>
+        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false">Agent groups</button>
       </div>
 
       <!-- Sandboxes sidebar -->
       <div id="sb-sidebar" class="sidebar-view">
         <div class="sidebar-head">
-          <span class="sidebar-title">Citadels</span>
+          <span class="sidebar-title">Sandboxes</span>
           <button id="refresh-btn" class="icon-btn" title="Refresh">⟳</button>
         </div>
 
         <div class="new-sandbox">
-          <select id="profile-select" class="select" title="Charter">
-            <option value="">Loading charters…</option>
+          <select id="profile-select" class="select" title="Policy (Charter)">
+            <option value="">Loading policies…</option>
           </select>
-          <button id="create-btn" class="btn btn-accent" title="Create Citadel">New</button>
+          <button id="create-btn" class="btn btn-accent" title="Create sandbox">New</button>
         </div>
 
         <ul id="sandbox-list" class="sandbox-list">
-          <li class="empty-note">No Citadels yet.</li>
+          <li class="empty-note">No sandboxes yet.</li>
         </ul>
       </div>
 
       <!-- Fleets sidebar -->
       <div id="fleet-sidebar" class="sidebar-view hidden">
         <div class="sidebar-head">
-          <span class="sidebar-title">Cohorts</span>
+          <span class="sidebar-title">Agent groups</span>
           <button id="fleet-refresh-btn" class="icon-btn" title="Refresh">⟳</button>
         </div>
 
         <div class="new-sandbox">
-          <select id="fleet-profile-select" class="select" title="Charter">
-            <option value="">Loading charters…</option>
+          <select id="fleet-profile-select" class="select" title="Policy (Charter)">
+            <option value="">Loading policies…</option>
           </select>
-          <button id="fleet-create-btn" class="btn btn-accent" title="Create Cohort">New</button>
+          <button id="fleet-create-btn" class="btn btn-accent" title="Create agent group">New</button>
         </div>
 
         <ul id="fleet-list" class="sandbox-list">
-          <li class="empty-note">No Cohorts yet.</li>
+          <li class="empty-note">No agent groups yet.</li>
         </ul>
       </div>
     </aside>
@@ -109,7 +109,10 @@
       <div id="panel-empty" class="panel-empty">
         <div class="panel-empty-inner">
           <div class="panel-empty-glyph">▢</div>
-          <p>Select a Citadel on the left, or create a new one to begin.</p>
+          <h2>Prove the safety loop</h2>
+          <p>Choose a policy, confirm setup is ready, then create a sandbox. Runeward checks each tool call before execution and records the result in a signed audit trail.</p>
+          <div id="setup-note" class="setup-note">Checking the selected policy and sandbox runtime…</div>
+          <div class="setup-steps mono">runeward quickstart<br />runeward doctor quickstart</div>
         </div>
       </div>
 
@@ -123,10 +126,11 @@
             <button class="tab active" data-tab="terminal">Terminal</button>
             <button class="tab" data-tab="files">Files</button>
             <button class="tab" data-tab="shell">Shell</button>
-            <button class="tab" data-tab="audit">Chronicle</button>
-            <button class="tab" data-tab="policy">Oracle</button>
-            <button class="tab" data-tab="egress">Perimeter</button>
-            <button class="tab" data-tab="budget">Rationing</button>
+            <button class="tab" data-tab="audit">Audit trail</button>
+            <button class="tab" data-tab="policy">Policy</button>
+            <button class="tab" data-tab="egress">Network</button>
+            <button class="tab" data-tab="budget">Budgets</button>
+            <button class="tab" data-tab="recovery">Recovery</button>
           </nav>
         </div>
 
@@ -134,6 +138,7 @@
         <div class="tab-pane active" data-pane="terminal">
           <div class="term-toolbar">
             <span id="term-status" class="conn-status conn-off">disconnected</span>
+            <span class="note">Direct sandbox session: commands are not individually policy-gated. Use Shell for governed calls.</span>
             <button id="term-reconnect" class="btn btn-sm">Reconnect</button>
           </div>
           <div id="terminal" class="terminal-host"></div>
@@ -232,8 +237,7 @@
         <div class="tab-pane" data-pane="audit">
           <div class="card">
             <div class="card-head">
-              Chronicle events
-              <span class="card-head-hint">live · polling</span>
+              Signed audit events <span class="card-head-hint">Chronicle · live</span>
             </div>
             <div class="table-wrap">
               <table class="table">
@@ -254,13 +258,12 @@
         <div class="tab-pane" data-pane="policy">
           <div class="card">
             <div class="card-head">
-              Oracle simulation
-              <span class="card-head-hint">what would happen</span>
+              Policy simulation <span class="card-head-hint">Oracle · what would happen</span>
             </div>
             <div class="row">
               <label class="inline-check">
                 <input id="sim-use-selected-profile" type="checkbox" checked />
-                Use selected Citadel charter
+                Use selected sandbox policy
               </label>
               <select id="sim-profile-select" class="select">
                 <option value="">Loading profiles…</option>
@@ -274,7 +277,7 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-head">Oracle results</div>
+            <div class="card-head">Policy results</div>
             <div id="sim-results" class="sim-results empty-note">Run a simulation to see verdicts and trace.</div>
           </div>
         </div>
@@ -283,8 +286,8 @@
         <div class="tab-pane" data-pane="egress">
           <div class="card">
             <div class="card-head">
-              Perimeter allow/deny explorer
-              <span class="card-head-hint">recent decisions</span>
+              Network allow/deny explorer
+              <span class="card-head-hint">Perimeter · recent decisions</span>
             </div>
             <div class="row">
               <button id="egress-refresh" class="btn">Refresh</button>
@@ -306,11 +309,37 @@
         <div class="tab-pane" data-pane="budget">
           <div class="card">
             <div class="card-head">
-              Rationing burn-down
-              <span class="card-head-hint">read only</span>
+              Budget and limit usage
+              <span class="card-head-hint">Rationing · read only</span>
             </div>
             <div id="budget-grid" class="budget-grid">
-              <div class="empty-note">Select a Citadel to load rationing usage.</div>
+              <div class="empty-note">Select a sandbox to load budget usage.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recovery and evidence tab -->
+        <div class="tab-pane" data-pane="recovery">
+          <div class="card">
+            <div class="card-head">Portable exports</div>
+            <p class="note">Download the isolated workspace or a JSON evidence package containing the resolved policy and independently verifiable signed audit trail.</p>
+            <div class="row">
+              <button id="workspace-download" class="btn">Download workspace (.tar)</button>
+              <button id="evidence-download" class="btn btn-accent">Download signed evidence (.json)</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head">Recovery snapshots</div>
+            <div class="row">
+              <input id="snapshot-name" class="input mono" type="text" placeholder="before-refactor" />
+              <button id="snapshot-create" class="btn btn-accent">Create snapshot</button>
+              <button id="snapshot-refresh" class="btn">Refresh</button>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Name</th><th>Policy</th><th>Created</th><th>Digest</th><th></th></tr></thead>
+                <tbody id="snapshot-body"><tr><td colspan="5" class="empty-note">No recovery snapshots yet.</td></tr></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -322,7 +351,7 @@
         <div id="fleet-empty" class="panel-empty">
           <div class="panel-empty-inner">
             <div class="panel-empty-glyph">⛃</div>
-            <p>Select a Cohort on the left, or create a new one to begin.</p>
+            <p>Select an agent group on the left, or create a new one to begin.</p>
           </div>
         </div>
 
@@ -338,7 +367,7 @@
           <div class="panel-scroll">
             <div class="card">
               <div class="card-head">
-                Citadels
+                Sandboxes
                 <span id="fleet-sb-count" class="card-head-hint"></span>
               </div>
               <div id="fleet-chips" class="chip-list"></div>
@@ -377,17 +406,17 @@
     </section>
   </main>
 
-  <!-- New Citadel modal -->
-  <div id="new-modal" class="modal hidden" role="dialog" aria-label="New Citadel">
+  <!-- New sandbox modal -->
+  <div id="new-modal" class="modal hidden" role="dialog" aria-label="New sandbox">
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-panel">
       <div class="modal-head">
-        <h2>New Citadel</h2>
+        <h2>New sandbox</h2>
         <button class="icon-btn" data-close-modal title="Close">✕</button>
       </div>
       <div class="modal-body">
         <label class="field">
-          <span class="field-label">Charter</span>
+          <span class="field-label">Policy <span class="field-opt">(Charter)</span></span>
           <div id="new-modal-profile" class="field-static mono">—</div>
         </label>
         <label class="field">
@@ -403,21 +432,21 @@
       </div>
       <div class="modal-foot">
         <button class="btn" data-close-modal>Cancel</button>
-        <button id="new-modal-create" class="btn btn-accent">Create Citadel</button>
+        <button id="new-modal-create" class="btn btn-accent">Create sandbox</button>
       </div>
     </div>
   </div>
 
-  <!-- Conclave drawer -->
-  <div id="approvals-drawer" class="drawer hidden" role="dialog" aria-label="Pending Conclave decisions">
+  <!-- Approvals drawer -->
+  <div id="approvals-drawer" class="drawer hidden" role="dialog" aria-label="Pending approval decisions">
     <div class="drawer-backdrop" data-close-drawer></div>
     <div class="drawer-panel">
       <div class="drawer-head">
-        <h2>Pending Conclave decisions</h2>
+        <h2>Pending approvals <span class="field-opt">(Conclave)</span></h2>
         <button class="icon-btn" data-close-drawer title="Close">✕</button>
       </div>
       <ul id="approvals-list" class="approvals-list">
-        <li class="empty-note">No pending Conclave decisions.</li>
+        <li class="empty-note">No pending approvals.</li>
       </ul>
     </div>
   </div>

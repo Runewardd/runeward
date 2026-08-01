@@ -1,10 +1,10 @@
 # @runeward/sdk (TypeScript)
 
 A dependency-light TypeScript client and [Vercel AI SDK](https://sdk.vercel.ai)
-tool wrappers for the [runeward](https://github.com/Runewardd/runeward)
-**governed execution cell** — provision isolated Citadels and run shell /
-Python / Node / file tools through a policy engine, Chronicle (audit ledger),
-Rationing, and human-in-the-loop approval gates.
+tool wrappers for the [Runeward](https://github.com/Runewardd/runeward)
+**agent governance harness**. Put policy, human approvals, isolated Citadels,
+Rationing, and signed Chronicles around an existing agent without replacing
+its model or framework.
 
 The core `RunewardClient` uses the global `fetch` and has **no runtime
 dependencies** (Node 18+, Deno, Bun, browsers). The Vercel AI SDK wrappers

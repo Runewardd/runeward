@@ -140,6 +140,9 @@ func (m *Manager) FileSearch(ctx context.Context, id, query, path string) (*Tool
 // passed via --proxy-server so egress rules cover browser traffic too. mode is
 // "text" (rendered DOM HTML) or "screenshot" (base64 PNG in Stdout).
 func (m *Manager) Browser(ctx context.Context, id, url, mode string) (*ToolResult, error) {
+	if !experimentalBrowserEnabled() {
+		return nil, fmt.Errorf("browser automation is experimental and disabled by default; set RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1 only in a trusted deployment")
+	}
 	sess, err := m.session(id)
 	if err != nil {
 		return nil, err

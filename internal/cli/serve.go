@@ -29,9 +29,9 @@ func newServeCmd(configDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the control plane: governed REST API + web dashboard",
-		Long: "Start the runeward control plane. Every Citadel tool call is routed\n" +
-			"through the policy engine, Rationing (cost/loop) guardrails, and the\n" +
-			"tamper-evident Chronicle. Serves the REST API, a Conclave (approval)\n" +
+		Long: "Start the runeward control plane. Every governed sandbox tool call is routed\n" +
+			"through policy, budget/loop limits (Rationing), and the signed audit trail\n" +
+			"(Chronicle). Serves the REST API, an approval inbox (Conclave),\n" +
 			"inbox, an interactive terminal WebSocket, and (unless --no-ui) the web\n" +
 			"dashboard.\n\n" +
 			"Binds to 127.0.0.1 by default. Exposing it on another interface\n" +
@@ -67,11 +67,19 @@ func newServeCmd(configDir *string) *cobra.Command {
 				dashboard = web.Handler()
 			}
 			srv := server.New(mgr, dashboard, logger)
+			srv.Version = version
 			srv.AuthToken = token
 			srv.Authz = authzStore
 			// MCP streamable-HTTP lives at /mcp alongside REST.
-			mcpSrv := mcp.NewServer(mgr)
-			srv.MCP = mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpSrv }, nil)
+			// The current MCP transport has one shared tool session and therefore
+			// cannot safely preserve per-principal ownership. Keep it unavailable
+			// on an RBAC server until its authorization context is unified.
+			if authzStore == nil {
+				mcpSrv := mcp.NewServer(mgr)
+				srv.MCP = mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpSrv }, nil)
+			} else {
+				logger.Warn("MCP HTTP disabled because multi-user RBAC is enabled; run `runeward mcp --http` as a separately scoped service if needed")
+			}
 
 			addr := net.JoinHostPort(bind, strconv.Itoa(port))
 			httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
@@ -153,7 +161,7 @@ func newMCPCmd(configDir *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Run the MCP server wrapping runeward's governed tools (stdio or --http)",
-		Long: "Expose runeward's governed Citadel tools over the Model Context Protocol.\n" +
+		Long: "Expose runeward's governed sandbox (Citadel) tools over the Model Context Protocol.\n" +
 			"By default it speaks stdio (for Claude Desktop / Cursor); with --http it\n" +
 			"serves the streamable-HTTP transport at /mcp on 127.0.0.1 (a non-loopback\n" +
 			"--bind requires --token or RUNEWARD_API_TOKEN).",

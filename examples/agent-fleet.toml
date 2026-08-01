@@ -7,7 +7,7 @@
 
 [host]
 type    = "container"
-image   = "runeward-sandbox:dev"
+image   = "ghcr.io/runewardd/runeward-sandbox:latest"
 workdir = "/workspace"
 
 [cohort]

@@ -57,11 +57,11 @@ egress_requests = 2000
 loop_window     = "60s"
 loop_threshold  = 8
 
-# Secrets resolved fresh per invocation, injected into the session env, never
-# written under the target's $HOME. (1Password resolution is a later milestone.)
+# Secrets resolve fresh from the server environment, are injected into the
+# session, and are never written under the target's $HOME.
 [[env]]
 name = "AZURE_DEVOPS_EXT_PAT"
-op   = "op://vault/ns-auto/credential"
+op   = "env://AZURE_DEVOPS_EXT_PAT"
 
 [chronicle]
 redact = true

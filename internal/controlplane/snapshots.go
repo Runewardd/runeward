@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/Runewardd/runeward/internal/backend"
 	"github.com/Runewardd/runeward/internal/profile"
@@ -23,10 +24,28 @@ func (m *Manager) Snapshot(ctx context.Context, id, name string) (*backend.Snaps
 
 	m.snapMu.Lock()
 	m.snapshots[ref.ID] = *ref
+	m.snapshotOwners[ref.ID] = sess.Owner
 	m.snapMu.Unlock()
 
 	m.record(sess, "snapshot", name, nil, string(profile.VerdictAllow), 0, 0, "snapshot "+ref.ID)
 	return ref, nil
+}
+
+// SnapshotOwner returns the principal that created a recovery snapshot.
+func (m *Manager) SnapshotOwner(id string) (string, bool) {
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	owner, ok := m.snapshotOwners[id]
+	return owner, ok
+}
+
+// ExportWorkspace streams a point-in-time tar archive from a governed sandbox.
+func (m *Manager) ExportWorkspace(ctx context.Context, id string, w io.Writer) error {
+	sess, err := m.session(id)
+	if err != nil {
+		return err
+	}
+	return sess.Backend.ExportWorkspace(ctx, id, w)
 }
 
 // ListSnapshots returns all captured snapshot references.

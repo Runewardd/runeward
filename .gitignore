@@ -55,6 +55,7 @@ ROADMAP.md
 # Node (TypeScript adapter) — installed deps + build output
 /adapters/typescript/node_modules/
 /adapters/typescript/dist/
+/adapters/python/dist/
 
 # Signed-profile artifacts produced by `profile sign` during testing
 *.toml.sig

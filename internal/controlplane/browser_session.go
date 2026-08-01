@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -22,6 +23,10 @@ const browserDriverBin = "runeward-browser"
 // to answer a ping.
 const browserReadyTimeout = 20 * time.Second
 
+func experimentalBrowserEnabled() bool {
+	return strings.TrimSpace(os.Getenv("RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER")) == "1"
+}
+
 // browserSession tracks one live in-sandbox browser driver.
 type browserSession struct {
 	id     string
@@ -34,6 +39,9 @@ type browserSession struct {
 // via --proxy. Gated by policy as tool "browser" (action "open"), so a deny or
 // pending verdict comes back in the ToolResult without starting a session.
 func (m *Manager) BrowserOpen(ctx context.Context, id string) (sessionID string, res *ToolResult, err error) {
+	if !experimentalBrowserEnabled() {
+		return "", nil, fmt.Errorf("browser automation is experimental and disabled by default; set RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1 only in a trusted deployment")
+	}
 	sess, err := m.session(id)
 	if err != nil {
 		return "", nil, err

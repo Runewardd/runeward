@@ -19,8 +19,8 @@ func newValidateCmd(configDir *string) *cobra.Command {
 	var strict bool
 	cmd := &cobra.Command{
 		Use:   "validate [charter...]",
-		Short: "Statically validate and lint Charters",
-		Long: "Resolve Charters and lint them for likely misconfigurations —\n" +
+		Short: "Statically validate and lint policy files (Charters)",
+		Long: "Resolve policy files (Charters) and lint them for likely misconfigurations —\n" +
 			"missing images, unresolved secret references, dead egress and\n" +
 			"policy rules — without launching anything. Exits non-zero on any\n" +
 			"error-severity finding; --strict also fails on warnings.",

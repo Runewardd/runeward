@@ -58,6 +58,8 @@ type Manager struct {
 
 	snapMu    sync.Mutex
 	snapshots map[string]backend.SnapshotRef
+	// snapshotOwners keeps recovery artifacts tenant-scoped under RBAC.
+	snapshotOwners map[string]string
 
 	fleetMu sync.Mutex
 	fleets  map[string]*Fleet
@@ -135,18 +137,19 @@ func New(configDir string) (*Manager, error) {
 	sink := auditsink.NewMulti(envSink, anomaly.New(nil))
 
 	m := &Manager{
-		configDir:    configDir,
-		ledger:       l,
-		signer:       signer,
-		sink:         sink,
-		accounting:   accounting.New(),
-		approvals:    NewApprovalStore(),
-		approvalWait: 5 * time.Minute,
-		sessions:     make(map[string]*Session),
-		snapshots:    make(map[string]backend.SnapshotRef),
-		fleets:       make(map[string]*Fleet),
-		stateDir:     filepath.Dir(path),
-		fleetLease:   fleetLeaseFromEnv(),
+		configDir:      configDir,
+		ledger:         l,
+		signer:         signer,
+		sink:           sink,
+		accounting:     accounting.New(),
+		approvals:      NewApprovalStore(),
+		approvalWait:   5 * time.Minute,
+		sessions:       make(map[string]*Session),
+		snapshots:      make(map[string]backend.SnapshotRef),
+		snapshotOwners: make(map[string]string),
+		fleets:         make(map[string]*Fleet),
+		stateDir:       filepath.Dir(path),
+		fleetLease:     fleetLeaseFromEnv(),
 	}
 	if err := m.loadFleets(); err != nil {
 		return nil, err
@@ -303,6 +306,7 @@ type ProfileInfo struct {
 	Name   string `json:"name"`
 	Host   string `json:"host"`
 	Egress string `json:"egress"`
+	Image  string `json:"image,omitempty"`
 }
 
 // ListProfiles returns the resolvable profiles for the configured search path.
@@ -315,6 +319,7 @@ func (m *Manager) ListProfiles() ([]ProfileInfo, error) {
 	for _, n := range names {
 		info := ProfileInfo{Name: n, Host: string(profile.HostContainer), Egress: "open"}
 		if p, err := profile.Load(n, profile.Options{ConfigDir: m.configDir}); err == nil {
+			info.Image = p.Host.Image
 			if p.Host.Type != "" {
 				info.Host = string(p.Host.Type)
 			}
@@ -325,6 +330,67 @@ func (m *Manager) ListProfiles() ([]ProfileInfo, error) {
 		out = append(out, info)
 	}
 	return out, nil
+}
+
+// LoadProfile resolves a policy from the Manager's configured directory.
+// HTTP adapters use this instead of re-reading process environment state.
+func (m *Manager) LoadProfile(name string) (*profile.Profile, error) {
+	return profile.Load(name, profile.Options{ConfigDir: m.configDir})
+}
+
+// ReadinessCheck is one safe, user-actionable setup diagnostic.
+type ReadinessCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// ReadinessReport distinguishes control-plane liveness from the ability to
+// launch the selected policy's sandbox runtime.
+type ReadinessReport struct {
+	Ready   bool             `json:"ready"`
+	Profile string           `json:"profile"`
+	Checks  []ReadinessCheck `json:"checks"`
+}
+
+// CheckReadiness validates a policy and probes its configured runtime. Host
+// paths and raw engine stderr are intentionally omitted from the result.
+func (m *Manager) CheckReadiness(name string) ReadinessReport {
+	report := ReadinessReport{Profile: name}
+	p, err := m.LoadProfile(name)
+	if err != nil {
+		report.Checks = append(report.Checks, ReadinessCheck{Name: "policy", Status: "fail", Message: "policy could not be loaded; run `runeward doctor " + name + "` on the server host"})
+		return report
+	}
+	errorsFound, warningsFound := 0, 0
+	for _, finding := range profile.Lint(p) {
+		if finding.Severity == profile.SeverityError {
+			errorsFound++
+		} else {
+			warningsFound++
+		}
+	}
+	status := "ok"
+	if errorsFound > 0 {
+		status = "fail"
+	} else if warningsFound > 0 {
+		status = "warn"
+	}
+	report.Checks = append(report.Checks, ReadinessCheck{Name: "policy", Status: status, Message: fmt.Sprintf("%d errors, %d warnings", errorsFound, warningsFound)})
+	be, err := backend.For(p)
+	if err != nil {
+		report.Checks = append(report.Checks, ReadinessCheck{Name: "runtime", Status: "fail", Message: "sandbox runtime is unavailable; start Docker/Podman or check Kubernetes access, then run `runeward doctor`"})
+		return report
+	}
+	report.Checks = append(report.Checks, ReadinessCheck{Name: "runtime", Status: "ok", Message: be.Name() + " reachable"})
+	imageStatus, imageMessage := "ok", p.Host.Image
+	if strings.HasSuffix(p.Host.Image, ":dev") || !strings.Contains(p.Host.Image, "/") {
+		imageStatus = "warn"
+		imageMessage = "local/development image selected; use a published immutable image for shared environments"
+	}
+	report.Checks = append(report.Checks, ReadinessCheck{Name: "image", Status: imageStatus, Message: imageMessage})
+	report.Ready = errorsFound == 0
+	return report
 }
 
 // CreateOptions carries per-create overrides that are not part of the profile.

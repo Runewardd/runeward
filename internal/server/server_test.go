@@ -96,11 +96,12 @@ func TestAuthTokenRequired(t *testing.T) {
 		t.Fatalf("query token on REST: status = %d, want 401", rr.Code)
 	}
 
-	// Query-param token remains accepted for terminal WebSocket compatibility.
+	// Long-lived query-param tokens are rejected for terminal WebSockets too;
+	// browser clients use short-lived scoped tickets.
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/nope/terminal?token=s3cret", nil))
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("query token on terminal: status = %d, want 404", rr.Code)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("query token on terminal: status = %d, want 401", rr.Code)
 	}
 
 	// /healthz is always exempt.

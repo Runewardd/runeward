@@ -1,6 +1,6 @@
 /**
- * @runeward/sdk — TypeScript client and Vercel AI SDK tools for the runeward
- * governed execution cell.
+ * @runeward/sdk — TypeScript client and agent-framework tools for the Runeward
+ * agent governance harness.
  *
  * The core {@link RunewardClient} has no runtime dependencies (uses global
  * `fetch`). The AI SDK tool wrappers in `./ai-tools` require the optional peer

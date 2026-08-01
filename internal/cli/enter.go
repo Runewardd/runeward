@@ -15,8 +15,8 @@ func newEnterCmd(configDir *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "enter <charter> [-- command...]",
-		Short: "Provision a Citadel for a Charter and step into it",
-		Long: "Provision a Citadel (sandbox) for the named Charter (profile) and attach an interactive\n" +
+		Short: "Provision a sandbox from a policy and step into it",
+		Long: "Provision a sandbox (Citadel) for the named policy (Charter/profile) and attach an interactive\n" +
 			"shell, or run an explicit command after `--`.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -61,7 +61,7 @@ func newEnterCmd(configDir *string) *cobra.Command {
 			return attachShell(ctx, be, sb.ID)
 		},
 	}
-	cmd.Flags().BoolVar(&keep, "keep", false, "do not tear down the Citadel on exit")
+	cmd.Flags().BoolVar(&keep, "keep", false, "do not tear down the sandbox on exit")
 	return cmd
 }
 

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +16,8 @@ import (
 	"github.com/Runewardd/runeward/internal/browser"
 	"github.com/Runewardd/runeward/internal/controlplane"
 	"github.com/Runewardd/runeward/internal/egress"
+	"github.com/Runewardd/runeward/internal/evidence"
+	"github.com/Runewardd/runeward/internal/ledger"
 	"github.com/Runewardd/runeward/internal/policy"
 	"github.com/Runewardd/runeward/internal/profile"
 )
@@ -63,6 +67,15 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
 }
 
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "profile is required")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.mgr.CheckReadiness(name))
+}
+
 func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Kind      string `json:"kind"`
@@ -109,6 +122,9 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 	ttl := 30 * time.Second
 	if req.TTLSecond > 0 {
 		ttl = time.Duration(req.TTLSecond) * time.Second
+	}
+	if ttl > 2*time.Minute {
+		ttl = 2 * time.Minute
 	}
 	ticket, expiresAt, err := s.issueTicket(scope, principalFrom(r.Context()), ttl)
 	if err != nil {
@@ -381,7 +397,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	if p := principalFrom(r.Context()); p != nil && !p.Admin {
 		filtered := make([]backend.SnapshotRef, 0, len(snaps))
 		for _, snap := range snaps {
-			if p.CanLaunch(snap.Profile) {
+			if owner, ok := s.mgr.SnapshotOwner(snap.ID); ok && owner == p.Name {
 				filtered = append(filtered, snap)
 			}
 		}
@@ -391,6 +407,71 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 		snaps = []backend.SnapshotRef{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"snapshots": snaps})
+}
+
+func (s *Server) handleWorkspaceExport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.mgr.Sandbox(id); !ok {
+		writeError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", "attachment; filename=runeward-workspace-"+safeFilename(id)+".tar")
+	if err := s.mgr.ExportWorkspace(r.Context(), id, w); err != nil {
+		s.logger.Error("workspace export failed", "sandbox", id, "error", err)
+	}
+}
+
+func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sb, ok := s.mgr.Sandbox(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	p, err := s.mgr.LoadProfile(sb.Profile)
+	if err != nil {
+		writeServerError(w, s.logger, err)
+		return
+	}
+	var policyView bytes.Buffer
+	portableProfile := *p
+	portableProfile.Source = filepath.Base(p.Source)
+	profile.Print(&policyView, &portableProfile)
+	var bundleJSON bytes.Buffer
+	if err := s.mgr.ExportBundle(&bundleJSON, id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var bundle ledger.Bundle
+	if err := json.Unmarshal(bundleJSON.Bytes(), &bundle); err != nil {
+		writeServerError(w, s.logger, err)
+		return
+	}
+	findings := profile.Lint(p)
+	portable := make([]evidence.Finding, 0, len(findings))
+	for _, finding := range findings {
+		portable = append(portable, evidence.Finding{Severity: finding.Severity, Field: finding.Field, Message: finding.Message})
+	}
+	doc := evidence.New(s.Version, p.Name, filepath.Base(p.Source), p.Host.Image, policyView.String(), portable, bundle)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=runeward-evidence-"+safeFilename(id)+".json")
+	if err := evidence.Write(w, doc); err != nil {
+		s.logger.Error("evidence export failed", "sandbox", id, "error", err)
+	}
+}
+
+func safeFilename(s string) string {
+	var out strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			out.WriteRune(r)
+		}
+	}
+	if out.Len() == 0 {
+		return "export"
+	}
+	return out.String()
 }
 
 func (s *Server) handleRestoreSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -608,6 +689,9 @@ func (s *Server) resolveSimulationProfile(profileName string, inline *profile.Pr
 	if profileName != "" {
 		return s.loadProfileByName(profileName)
 	}
+	if inline.Rego.File != "" {
+		return nil, errors.New("inline profiles may not load a Rego file from the server host; use rego.module or a named policy")
+	}
 	p := *inline
 	if p.Name == "" {
 		p.Name = "inline"
@@ -628,8 +712,7 @@ func (s *Server) resolveSimulationProfile(profileName string, inline *profile.Pr
 }
 
 func (s *Server) loadProfileByName(name string) (*profile.Profile, error) {
-	configDir := strings.TrimSpace(os.Getenv("RUNEWARD_CONFIG_DIR"))
-	return profile.Load(name, profile.Options{ConfigDir: configDir})
+	return s.mgr.LoadProfile(name)
 }
 
 func simulationEngineForProfile(p *profile.Profile) (policy.Evaluator, error) {

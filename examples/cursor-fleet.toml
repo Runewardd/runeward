@@ -1,10 +1,9 @@
 # A FLEET of governed Cursor CLI agents: N identical sandboxes sharing one
 # atomic task board. Each task payload is a prompt; workers claim a task, run
 # `agent -p "<payload>" --force --trust --output-format text` (optionally
-# `--model <model>`) in their assigned sandbox, then mark it done. Every action
-# is policy-gated, egress-limited, and written to the signed audit ledger.
+# `--model <model>`) in their assigned sandbox, then mark it done. Launch/task
+# operations are audited; inner agent commands remain sandbox/network constrained.
 #
-#   docker build -f deploy/Dockerfile.agent -t runeward-agent:dev .
 #   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
 #   runeward --config-dir examples serve
 #   POST /v1/fleets {"profile":"cursor-fleet"}   # provisions 3 sandboxes + seeds the board
@@ -12,7 +11,7 @@
 
 [host]
 type    = "container"
-image   = "runeward-agent:dev"
+image   = "ghcr.io/runewardd/runeward-agent:latest"
 user    = "agent"
 workdir = "/workspace"
 

@@ -1,10 +1,9 @@
 # runeward (Python)
 
 A dependency-light Python client and agent-framework adapters for the
-[runeward](https://github.com/Runewardd/runeward) **governed execution cell** —
-provision isolated Citadels and run shell / Python / Node / file tools through a
-policy engine, Chronicle (audit ledger), Rationing, and human-in-the-loop
-approval gates.
+[Runeward](https://github.com/Runewardd/runeward) **agent governance harness**.
+Put policy, human approvals, isolated Citadels, Rationing, and signed Chronicles
+around an existing agent without replacing its model or framework.
 
 The core client uses **only the Python standard library** (`urllib`). The
 LangChain, CrewAI, LlamaIndex, OpenAI Agents SDK, and Strands helpers are

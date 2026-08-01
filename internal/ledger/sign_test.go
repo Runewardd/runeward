@@ -71,6 +71,31 @@ func TestExportAndVerifyBundle(t *testing.T) {
 	}
 }
 
+func TestSessionBundleVerifiesWithInterleavedGlobalEvents(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(filepath.Join(dir, "ledger.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := LoadOrCreateSigner(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetSigner(signer)
+	for _, session := range []string{"s1", "s2", "s1"} {
+		if _, err := l.Append(Event{SessionID: session, Tool: "shell", Action: "echo", Verdict: "allow"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var buf bytes.Buffer
+	if err := l.ExportBundle(&buf, "s1", signer.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := VerifyBundle(bytes.NewReader(buf.Bytes())); err != nil || count != 2 {
+		t.Fatalf("VerifyBundle count=%d err=%v", count, err)
+	}
+}
+
 func TestVerifySignaturesRequiresAllWhenKeyProvided(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ledger.jsonl")

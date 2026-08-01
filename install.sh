@@ -83,7 +83,8 @@ elif $DLO "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null; then
   if [ "$skip_signature" = "1" ]; then
     warn "RUNEWARD_INSECURE_SKIP_SIGNATURE=1 set; skipping checksums.txt signature verification"
   else
-    need cosign
+    command -v cosign >/dev/null 2>&1 \
+      || err "cosign is required to verify the signed release manifest; install it from https://docs.sigstore.dev/cosign/system_config/installation/ (or explicitly set RUNEWARD_INSECURE_SKIP_SIGNATURE=1 to accept checksum-only verification)"
     $DLO "$tmp/checksums.txt.sig" "$base/checksums.txt.sig" 2>/dev/null \
       || err "no checksums.txt.sig published for $version; refusing unsigned checksums (set RUNEWARD_INSECURE_SKIP_SIGNATURE=1 to override)"
     $DLO "$tmp/checksums.txt.pem" "$base/checksums.txt.pem" 2>/dev/null \

@@ -1,8 +1,8 @@
 ---
 name: runeward
 description: >-
-  Run untrusted or high-stakes work inside a governed execution cell instead of
-  on the host. Use runeward whenever you need to execute shell commands, run
+  Put the Runeward agent governance harness around untrusted or high-stakes
+  work instead of running it on the host. Use runeward whenever you need to execute shell commands, run
   Python/Node code, or read/write files as part of a task and you want the work
   isolated, policy-checked, cost/loop-guarded, and recorded in a tamper-evident
   Chronicle. Exposes MCP tools (preferred) and a REST control plane
@@ -10,10 +10,11 @@ description: >-
   verdict means pause and hand off to a human.
 ---
 
-# runeward — governed execution for agents
+# runeward — agent governance harness
 
-runeward is a **governed execution cell**. Every action you take — a shell
-command, a code snippet, a file write — is routed through the same path:
+Runeward is an **agent governance harness**. Each Citadel remains a governed
+execution cell, and every action you take — a shell command, a code snippet, a
+file write — is routed through the same path:
 
 ```
 policy check  →  Conclave gate  →  Rationing  →  Citadel exec  →  Chronicle
