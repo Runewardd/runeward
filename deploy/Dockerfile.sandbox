@@ -12,18 +12,11 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w" \
     -o /out/runeward-browser ./cmd/runeward-browser
 
-FROM debian:stable-slim@sha256:ee12ffb55625b99d62837a72f037d9b2f18fd0c787a89c2b9a4f09666c48776c
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        chromium \
-        ca-certificates \
-        curl \
-        python3 \
-        nodejs \
-    && rm -rf /var/lib/apt/lists/*
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+RUN apk add --no-cache chromium ca-certificates curl python3 nodejs
 COPY --from=build /out/runeward-browser /usr/local/bin/runeward-browser
 
-RUN useradd -m -u 1000 sandbox \
+RUN adduser -D -u 1000 sandbox \
     && mkdir -p /workspace \
     && chown -R sandbox:sandbox /workspace
 USER sandbox

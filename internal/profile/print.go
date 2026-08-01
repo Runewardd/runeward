@@ -10,9 +10,26 @@ import (
 // redacted is the placeholder shown in place of secret values.
 const redacted = "«redacted»"
 
+type errorWriter struct {
+	dst io.Writer
+	err error
+}
+
+func (w *errorWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+	n, err := w.dst.Write(p)
+	if err != nil {
+		w.err = err
+	}
+	return n, err
+}
+
 // Print renders a human-readable view of the resolved Charter. Secret env
 // values are never shown, only their source kind.
-func Print(w io.Writer, p *Profile) {
+func Print(dst io.Writer, p *Profile) error {
+	w := &errorWriter{dst: dst}
 	fmt.Fprintf(w, "policy (Charter): %s\n", p.Name)
 	fmt.Fprintf(w, "source:  %s\n", p.Source)
 	fmt.Fprintln(w)
@@ -33,7 +50,9 @@ func Print(w io.Writer, p *Profile) {
 	if p.Host.RuntimeClass != "" {
 		fmt.Fprintf(tw, "host.runtime_class\t%s\n", p.Host.RuntimeClass)
 	}
-	tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("flush host profile output: %w", err)
+	}
 
 	if p.Prompt.Inline != "" || p.Prompt.File != "" {
 		fmt.Fprintln(w, "\n[prompt]")
@@ -51,7 +70,9 @@ func Print(w io.Writer, p *Profile) {
 		for _, e := range p.Env {
 			fmt.Fprintf(etw, "  %s\t= %s\t(%s)\n", e.Name, envDisplay(e), envSource(e))
 		}
-		etw.Flush()
+		if err := etw.Flush(); err != nil {
+			return fmt.Errorf("flush environment profile output: %w", err)
+		}
 	}
 
 	if len(p.Files) > 0 {
@@ -93,7 +114,9 @@ func Print(w io.Writer, p *Profile) {
 			}
 			fmt.Fprintf(ptw, "  %s\t-> %s\n", r.Expr, v)
 		}
-		ptw.Flush()
+		if err := ptw.Flush(); err != nil {
+			return fmt.Errorf("flush CEL policy output: %w", err)
+		}
 	} else if len(p.Policy) > 0 {
 		fmt.Fprintln(w, "\n[policy] engine: builtin")
 		ptw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
@@ -104,7 +127,9 @@ func Print(w io.Writer, p *Profile) {
 			}
 			fmt.Fprintf(ptw, "  %s\t%s\t-> %s\n", r.Tool, match, r.Verdict)
 		}
-		ptw.Flush()
+		if err := ptw.Flush(); err != nil {
+			return fmt.Errorf("flush builtin policy output: %w", err)
+		}
 	}
 
 	if l := p.Limits; l != (Limits{}) {
@@ -136,6 +161,10 @@ func Print(w io.Writer, p *Profile) {
 	if p.Audit.Sink != "" {
 		fmt.Fprintf(w, "  sink: %s\n", p.Audit.Sink)
 	}
+	if w.err != nil {
+		return fmt.Errorf("render profile output: %w", w.err)
+	}
+	return nil
 }
 
 func envDisplay(e EnvVar) string {

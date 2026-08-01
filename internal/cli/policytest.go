@@ -59,6 +59,8 @@ func newPolicyLearnCmd() *cobra.Command {
 }
 
 func readLearningEvents(path string) ([]ledger.Event, error) {
+	// #nosec G304 -- policy learn intentionally reads the evidence path supplied
+	// by the local CLI operator and verifies portable evidence before using it.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

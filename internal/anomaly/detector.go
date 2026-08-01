@@ -149,7 +149,6 @@ func (d *Detector) Emit(ev ledger.Event) {
 					st.hosts[host] = struct{}{}
 					if len(st.hosts) > d.maxHosts {
 						d.warn(st, kindNovelHost, t, ev,
-							"session contacted an unusual number of distinct destinations",
 							slog.String("host", host),
 							slog.Int("distinct_hosts", len(st.hosts)),
 							slog.Int("threshold", d.maxHosts),
@@ -162,7 +161,6 @@ func (d *Detector) Emit(ev ledger.Event) {
 		st.execTimes = appendWithinWindow(st.execTimes, t, d.window)
 		if len(st.execTimes) > d.execBurst {
 			d.warn(st, kindExecBurst, t, ev,
-				"session exceeded the shell execution burst threshold",
 				slog.Int("execs_in_window", len(st.execTimes)),
 				slog.Int("threshold", d.execBurst),
 				slog.Duration("window", d.window),
@@ -174,7 +172,6 @@ func (d *Detector) Emit(ev ledger.Event) {
 		st.denies++
 		if st.denies > d.maxDenies {
 			d.warn(st, kindDenialSpike, t, ev,
-				"session exceeded the denial spike threshold",
 				slog.Int("denies", st.denies),
 				slog.Int("threshold", d.maxDenies),
 			)
@@ -194,7 +191,7 @@ func (d *Detector) Counts() Counts {
 
 // warn emits a rate-limited warning for the given anomaly kind and, when not
 // suppressed, increments the corresponding counter. The caller holds d.mu.
-func (d *Detector) warn(st *sessionState, kind string, t time.Time, ev ledger.Event, msg string, attrs ...any) {
+func (d *Detector) warn(st *sessionState, kind string, t time.Time, ev ledger.Event, attrs ...any) {
 	if last, ok := st.lastWarn[kind]; ok && t.Sub(last) < warnCooldown {
 		return
 	}
@@ -211,11 +208,25 @@ func (d *Detector) warn(st *sessionState, kind string, t time.Time, ev ledger.Ev
 
 	base := []any{
 		slog.String("anomaly", kind),
+		slog.String("description", anomalyDescription(kind)),
 		slog.String("session_id", ev.SessionID),
 		slog.String("sandbox", ev.Sandbox),
 		slog.String("profile", ev.Profile),
 	}
-	d.logger.Warn(msg, append(base, attrs...)...)
+	d.logger.Warn("agent activity anomaly detected", append(base, attrs...)...)
+}
+
+func anomalyDescription(kind string) string {
+	switch kind {
+	case kindNovelHost:
+		return "session contacted an unusual number of distinct destinations"
+	case kindExecBurst:
+		return "session exceeded the shell execution burst threshold"
+	case kindDenialSpike:
+		return "session exceeded the denial spike threshold"
+	default:
+		return "session activity crossed a configured anomaly threshold"
+	}
 }
 
 // appendWithinWindow appends t to times and drops any entries older than

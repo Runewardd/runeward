@@ -21,6 +21,20 @@ func TestWriteStarterCharter(t *testing.T) {
 	if path != filepath.Join(dir, ".runeward", "quickstart.toml") {
 		t.Fatalf("path = %q", path)
 	}
+	configInfo, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := configInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("config directory permissions = %04o, want 0700", got)
+	}
+	policyInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := policyInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("starter policy permissions = %04o, want 0600", got)
+	}
 	p, err := profile.Load("quickstart", profile.Options{WorkingDir: dir})
 	if err != nil {
 		t.Fatalf("load starter: %v", err)
@@ -35,6 +49,12 @@ func TestWriteStarterCharter(t *testing.T) {
 	if err := os.WriteFile(path, []byte("sentinel"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	_, created, err = writeStarterCharter(dir, "quickstart", false)
 	if err != nil || created {
 		t.Fatalf("existing file: created=%t err=%v", created, err)
@@ -42,6 +62,14 @@ func TestWriteStarterCharter(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	if strings.TrimSpace(string(b)) != "sentinel" {
 		t.Fatal("existing starter was overwritten without --force")
+	}
+	configInfo, _ = os.Stat(filepath.Dir(path))
+	if got := configInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("existing config directory permissions = %04o, want 0700", got)
+	}
+	policyInfo, _ = os.Stat(path)
+	if got := policyInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("existing starter policy permissions = %04o, want 0600", got)
 	}
 }
 

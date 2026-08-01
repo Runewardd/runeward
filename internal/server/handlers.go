@@ -437,7 +437,10 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 	var policyView bytes.Buffer
 	portableProfile := *p
 	portableProfile.Source = filepath.Base(p.Source)
-	profile.Print(&policyView, &portableProfile)
+	if err := profile.Print(&policyView, &portableProfile); err != nil {
+		writeServerError(w, s.logger, err)
+		return
+	}
 	var bundleJSON bytes.Buffer
 	if err := s.mgr.ExportBundle(&bundleJSON, id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

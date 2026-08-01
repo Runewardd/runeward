@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/Runewardd/runeward/internal/profile"
 	"github.com/spf13/cobra"
 )
@@ -18,8 +16,7 @@ func newPrintCmd(configDir *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			profile.Print(os.Stdout, p)
-			return nil
+			return profile.Print(cmd.OutOrStdout(), p)
 		},
 	}
 }

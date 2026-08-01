@@ -72,7 +72,9 @@ func buildEvidenceDocument(mgr *controlplane.Manager, p *profile.Profile, sessio
 	var policyView bytes.Buffer
 	portableProfile := *p
 	portableProfile.Source = filepath.Base(p.Source)
-	profile.Print(&policyView, &portableProfile)
+	if err := profile.Print(&policyView, &portableProfile); err != nil {
+		return evidence.Document{}, fmt.Errorf("render policy for evidence: %w", err)
+	}
 	var bundleJSON bytes.Buffer
 	if err := mgr.ExportBundle(&bundleJSON, sessionID); err != nil {
 		return evidence.Document{}, err
@@ -101,6 +103,8 @@ func evidenceOutput(cmd *cobra.Command, output string, force bool) (io.Writer, f
 	} else {
 		flags |= os.O_EXCL
 	}
+	// #nosec G304 -- output is an explicit destination selected by the local
+	// CLI operator; O_EXCL prevents accidental replacement unless --force is set.
 	f, err := os.OpenFile(output, flags, 0o600)
 	if err != nil {
 		if os.IsExist(err) {

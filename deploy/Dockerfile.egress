@@ -9,12 +9,11 @@ ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/runeward-egress ./cmd/runeward-egress
 
-# debian-slim (not distroless) because strict L3 enforcement shells out to iptables.
-FROM debian:stable-slim@sha256:ee12ffb55625b99d62837a72f037d9b2f18fd0c787a89c2b9a4f09666c48776c
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends iptables ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-RUN useradd -r -u 10001 -g root egress
+# A small Alpine runtime provides iptables without Debian's otherwise-unused
+# Perl runtime, reducing both the attack surface and unfixed package CVEs.
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+RUN apk add --no-cache iptables ca-certificates
+RUN adduser -S -D -H -u 10001 -G root egress
 COPY --from=build /out/runeward-egress /usr/local/bin/runeward-egress
 USER 10001
 ENTRYPOINT ["/usr/local/bin/runeward-egress"]

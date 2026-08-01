@@ -103,17 +103,28 @@ func writeStarterCharter(projectDir, name string, force bool) (string, bool, err
 		return "", false, fmt.Errorf("invalid starter policy name %q", name)
 	}
 	configDir := filepath.Join(projectDir, ".runeward")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return "", false, fmt.Errorf("create %s: %w", configDir, err)
+	}
+	// #nosec G302 -- this is a directory, so owner execute is required; 0700
+	// grants no access to group or other users.
+	if err := os.Chmod(configDir, 0o700); err != nil {
+		return "", false, fmt.Errorf("secure %s: %w", configDir, err)
 	}
 	path := filepath.Join(configDir, name+".toml")
 	if _, err := os.Stat(path); err == nil && !force {
+		if err := os.Chmod(path, 0o600); err != nil {
+			return "", false, fmt.Errorf("secure %s: %w", path, err)
+		}
 		return path, false, nil
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", false, err
 	}
-	if err := os.WriteFile(path, []byte(starterCharter), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(starterCharter), 0o600); err != nil {
 		return "", false, fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return "", false, fmt.Errorf("secure %s: %w", path, err)
 	}
 	return path, true, nil
 }
@@ -250,6 +261,9 @@ func preferredDoctorProfile(names []string, configDir string) string {
 }
 
 func checkWritableDir(dir string) error {
+	// #nosec G703 -- dir is the operator-controlled RUNEWARD_STATE_DIR (or the
+	// OS user-cache default); creating that selected state directory is the
+	// purpose of this readiness check.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
@@ -258,8 +272,14 @@ func checkWritableDir(dir string) error {
 		return fmt.Errorf("state directory %s is not writable: %w", dir, err)
 	}
 	name := f.Name()
-	_ = f.Close()
-	_ = os.Remove(name)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close state-directory probe %s: %w", name, err)
+	}
+	// #nosec G703 -- name is returned by os.CreateTemp above and is therefore
+	// constrained to dir with an unpredictable, library-generated basename.
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("remove state-directory probe %s: %w", name, err)
+	}
 	return nil
 }
 

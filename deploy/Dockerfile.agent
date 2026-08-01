@@ -1,18 +1,15 @@
 # Sandbox image shipping real coding agents (Codex, Cursor CLI, Claude Code) so
 # they run headless inside a governed sandbox. Drive it with the *-agent.toml
 # example profiles. Runs as non-root user `agent` owning /workspace.
-FROM debian:stable-slim@sha256:ee12ffb55625b99d62837a72f037d9b2f18fd0c787a89c2b9a4f09666c48776c
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        git curl ca-certificates python3 nodejs npm \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache bash git curl ca-certificates python3 nodejs npm
 
 ARG CODEX_VERSION=0.142.5
 ARG CLAUDE_CODE_VERSION=2.1.201
 RUN npm install -g "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
-RUN useradd -m -u 1000 agent \
+RUN adduser -D -u 1000 agent \
     && mkdir -p /workspace \
     && chown -R agent:agent /workspace
 
