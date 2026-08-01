@@ -40,9 +40,6 @@ runeward evidence export quickstart -o run.json
 runeward evidence verify run.json              # independent policy/audit verification
 ```
 
-These docs describe `main`. Until the next tagged release includes the commands above, use the
-[from-source install](#install) for this quickstart.
-
 ## What Runeward adds
 
 | Concern | Container alone | Runeward |
@@ -80,36 +77,68 @@ See the full [naming and writing convention](docs/naming.md).
 
 ## Install
 
-### From source (recommended for `main`)
+Choose the package that matches how you use Runeward:
 
-Requires Go **1.26.5** and a running Docker/Podman engine for local sandboxes.
+| Install with | What it installs | Command |
+| --- | --- | --- |
+| [Homebrew](https://github.com/Runewardd/homebrew-tap) | Runeward CLI for macOS or Linux | `brew install Runewardd/tap/runeward` |
+| [PyPI](https://pypi.org/project/runeward/) | Python client and agent-framework adapters | `python -m pip install runeward` |
+| [npm](https://www.npmjs.com/package/@runeward/sdk) | TypeScript client and agent-framework tools | `npm install @runeward/sdk` |
+
+For normal local use, install the CLI with Homebrew. For an agent integration, install the SDK for
+its language as well. The pip and npm packages connect to a running Runeward API; they do not
+replace the CLI/runtime.
+
+### Homebrew — CLI
+
+Local sandboxes require a running Docker, OrbStack, or Podman engine.
 
 ```bash
-git clone https://github.com/Runewardd/runeward
-cd runeward
-go build -o bin/runeward ./cmd/runeward
-./bin/runeward quickstart
+brew install Runewardd/tap/runeward
+runeward version
+runeward quickstart
 ```
 
-### Signed release installer
+### pip — Python SDK
 
-The macOS/Linux installer requires [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/)
-so it can fail closed while verifying the signed checksum manifest. Windows release binaries are
-downloaded manually from [Releases](https://github.com/Runewardd/runeward/releases).
+Requires Python 3.9 or newer. The base client has no third-party runtime dependencies.
+
+```bash
+python -m pip install runeward
+python -c "import runeward; print(runeward.__version__)"
+```
+
+### npm — TypeScript SDK
+
+Requires Node.js 18 or newer.
+
+```bash
+npm install @runeward/sdk
+npm ls @runeward/sdk
+```
+
+See [Adapters](docs/adapters.md) for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands,
+Vercel AI SDK, and LangChain.js installation options.
+
+### Other CLI installation options
+
+The signed macOS/Linux installer requires
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/) so it can fail closed while
+verifying the checksum manifest. Windows binaries are available from
+[Releases](https://github.com/Runewardd/runeward/releases).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
 ```
 
-Install either dependency-light SDK from its language registry:
+To build the current `main` branch, use Go **1.26.5**:
 
 ```bash
-python -m pip install runeward
-npm install @runeward/sdk
+git clone https://github.com/Runewardd/runeward
+cd runeward
+go build -o bin/runeward ./cmd/runeward
+./bin/runeward version
 ```
-
-The Homebrew tap is not published yet. SDK source and framework adapters remain in
-[`adapters/python`](adapters/python) and [`adapters/typescript`](adapters/typescript).
 
 ## Use it with an agent
 

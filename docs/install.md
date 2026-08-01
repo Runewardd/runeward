@@ -1,20 +1,50 @@
 # Install
 
-## From source
+## Choose an installation
 
-The documentation follows `main`. Build from source to use the newest `quickstart`, `doctor`,
-portable evidence, policy-learning, and dashboard recovery features.
+| Install with | What it installs | Command |
+| --- | --- | --- |
+| [Homebrew](https://github.com/Runewardd/homebrew-tap) | Runeward CLI for macOS or Linux | `brew install Runewardd/tap/runeward` |
+| [PyPI](https://pypi.org/project/runeward/) | Python client and agent-framework adapters | `python -m pip install runeward` |
+| [npm](https://www.npmjs.com/package/@runeward/sdk) | TypeScript client and agent-framework tools | `npm install @runeward/sdk` |
 
-Requires **Go 1.26.5**:
+For normal local use, install the CLI with Homebrew. For an agent integration, install the SDK for
+its language as well. The pip and npm packages connect to a running Runeward API; they do not
+replace the CLI/runtime.
+
+## Homebrew — CLI
+
+Homebrew installs the current signed CLI release on macOS or Linux:
 
 ```bash
-git clone https://github.com/Runewardd/runeward
-cd runeward
-go build -o bin/runeward ./cmd/runeward
-./bin/runeward version
+brew install Runewardd/tap/runeward
+runeward version
+runeward quickstart
 ```
 
-## Signed release installer (macOS/Linux)
+Local sandboxes also require a running Docker, OrbStack, or Podman engine.
+
+## pip — Python SDK
+
+Requires Python 3.9 or newer. The base client has no third-party runtime dependencies.
+
+```bash
+python -m pip install runeward
+python -c "import runeward; print(runeward.__version__)"
+```
+
+## npm — TypeScript SDK
+
+Requires Node.js 18 or newer.
+
+```bash
+npm install @runeward/sdk
+npm ls @runeward/sdk
+```
+
+See [Adapters](adapters.md) for optional framework dependencies.
+
+## Signed release installer (macOS/Linux alternative)
 
 The installer requires `curl` or `wget`, `tar`, a SHA-256 utility, and
 [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/). It fails closed: the
@@ -35,18 +65,16 @@ The shell installer supports macOS and Linux. Windows CLI archives are available
 [GitHub Releases](https://github.com/Runewardd/runeward/releases); the in-sandbox helpers are Linux
 binaries because they run inside Docker or Kubernetes.
 
-!!! note "Registry status"
-    The Python and npm SDKs are published independently from the Go CLI. The Homebrew tap is still
-    pending; use the verified installer or a release archive for the CLI.
+## From source
 
-## SDK adapters
+The documentation follows `main`. Build from source with **Go 1.26.5** to use unreleased changes:
 
 ```bash
-python -m pip install runeward
-npm install @runeward/sdk
+git clone https://github.com/Runewardd/runeward
+cd runeward
+go build -o bin/runeward ./cmd/runeward
+./bin/runeward version
 ```
-
-See [Adapters](adapters.md) for optional framework dependencies and repository-development installs.
 
 ## Container images
 

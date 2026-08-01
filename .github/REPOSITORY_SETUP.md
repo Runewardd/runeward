@@ -17,8 +17,9 @@ These settings live in GitHub rather than the repository, so a maintainer must a
 - Confirm the release uses Go 1.26.5 and publishes all four documented container images.
 - Confirm the tagged CLI contains `quickstart`, `doctor`, `evidence`, and `policy learn` before
   removing the `main`/release distinction from the README.
-- Publish and test a Homebrew tap before adding a `brew install` command to public docs.
-- Publish and verify ownership of the Python/npm names before advertising registry installs.
+- Confirm the Homebrew tap contains the current formula and `brew install Runewardd/tap/runeward`
+  still succeeds before updating public install docs.
+- Publish and verify the current Python/npm versions before updating registry install docs.
 - Update `dist/mcp/server.json` and any plugin/package metadata to the tagged implementation version.
 - Generate a short terminal recording of `runeward quickstart` for the release notes and docs.
 
