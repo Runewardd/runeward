@@ -97,14 +97,15 @@ func newServeCmd(configDir *string) *cobra.Command {
 				errCh <- httpSrv.ListenAndServe()
 			}()
 
+			authEnabled := token != "" || authzStore != nil
 			logger.Info("control plane listening",
 				"addr", scheme+"://"+addr, "ui", !noUI, "metrics", "/metrics",
-				"auth", token != "", "tls", tlsCert != "")
-			if token == "" {
-				logger.Warn("control plane is UNAUTHENTICATED (bound to loopback); set --token before exposing it")
+				"auth", authEnabled, "tls", tlsCert != "")
+			if !authEnabled {
+				logger.Warn("control plane is UNAUTHENTICATED (bound to loopback); set --token or RUNEWARD_AUTHZ_FILE before exposing it")
 			}
 			logger.Info(telemetry.Notice())
-			telemetry.Report(version, "serve_start", map[string]string{"ui": fmt.Sprintf("%t", !noUI), "auth": fmt.Sprintf("%t", token != "")})
+			telemetry.Report(version, "serve_start", map[string]string{"ui": fmt.Sprintf("%t", !noUI), "auth": fmt.Sprintf("%t", authEnabled)})
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()

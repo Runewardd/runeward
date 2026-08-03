@@ -1111,7 +1111,11 @@ EOF
 RUNEWARD_AUTHZ_FILE=/tmp/authz.json ./bin/runeward --config-dir examples serve --no-ui &
 
 curl -s -H "Authorization: Bearer tok-dev" $BASE/v1/whoami | jq .
-# => {"authenticated":true,"rbac":true,"principal":{"name":"dev","allowed_profiles":["dev"],...}}
+# => {"authenticated":true,"rbac":true,"principal":{"name":"dev","can_launch":true,"allowed_profiles":["dev"],...}}
+
+# Charters are scoped to launchable profiles for non-admins:
+curl -s -H "Authorization: Bearer tok-dev" $BASE/v1/charters | jq '[.profiles[].name]'
+# => ["dev"]   (not the full catalog)
 
 # dev may launch "dev"...
 curl -s -H "Authorization: Bearer tok-dev" -d '{"profile":"dev"}' $BASE/v1/citadels | jq .id
@@ -1121,8 +1125,10 @@ curl -s -H "Authorization: Bearer tok-dev" -d '{"profile":"governed"}' $BASE/v1/
 ```
 
 Principal fields: `token`, `admin`, `can_approve`, `allowed_profiles` (globs).
-When an RBAC file is loaded it supersedes `--token`. A non-loopback bind is
-satisfied by `--token`, `RUNEWARD_API_TOKEN`, **or** `RUNEWARD_AUTHZ_FILE`.
+`/v1/whoami` reports honest `can_launch` (false when `allowed_profiles` is empty).
+When an RBAC file is loaded it supersedes `--token` and startup logs `auth=true`.
+A non-loopback bind is satisfied by `--token`, `RUNEWARD_API_TOKEN`, **or**
+`RUNEWARD_AUTHZ_FILE`.
 
 ---
 

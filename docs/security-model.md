@@ -39,8 +39,10 @@ Please disclose privately; do not open a public issue.
   approval/admin flags) upgrades the single shared token to per-principal
   access: the server enforces which profiles a caller may launch and whether it
   may resolve approvals, and records the principal name as the audit actor.
-  Each Citadel records its owning principal; a non-admin can see and act on only
-  its own Citadels (an ownership guard enforces this on every
+  `/v1/whoami` reports honest `can_launch` / `can_approve` flags;
+  `/v1/charters` and policy simulation are scoped to launchable Charters for
+  non-admins. Each Citadel records its owning principal; a non-admin can see
+  and act on only its own Citadels (an ownership guard enforces this on every
   `/v1/citadels/{id}` route), while admins see all. The dashboard has an
   interactive token login (backed by `/v1/whoami`) that gates create/approve
   controls to what the caller is permitted; the static dashboard shell loads

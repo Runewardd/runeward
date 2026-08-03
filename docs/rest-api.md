@@ -25,7 +25,7 @@ created; admins see all.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/healthz` | Liveness probe (unauthenticated). |
-| `GET` | `/v1/whoami` | The authenticated caller's identity and capabilities (name, admin, can_approve, allowed_profiles). |
+| `GET` | `/v1/whoami` | The authenticated caller's identity and capabilities (`name`, `admin`, `can_approve`, `can_launch`, `allowed_profiles`). |
 | `GET` | `/v1/readiness?profile=NAME` | Check policy, runtime, and image readiness without exposing host paths. |
 | `GET` | `/metrics` | Prometheus metrics. |
 
@@ -33,7 +33,7 @@ created; admins see all.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/charters` | List reachable Charters. |
+| `GET` | `/v1/charters` | List reachable Charters (under RBAC, scoped to the caller's `allowed_profiles`). |
 
 ## Citadels
 

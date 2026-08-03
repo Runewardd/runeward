@@ -40,7 +40,7 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 			"name":             p.Name,
 			"admin":            p.Admin,
 			"can_approve":      p.MayApprove(),
-			"can_launch":       true,
+			"can_launch":       p.MayLaunch(),
 			"allowed_profiles": p.AllowedProfiles,
 		}
 	} else {
@@ -63,6 +63,17 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	if profiles == nil {
 		profiles = []controlplane.ProfileInfo{}
+	}
+	// Under RBAC, non-admins only see Charters they are allowed to launch so
+	// the dashboard cannot present unauthorized options.
+	if p := principalFrom(r.Context()); p != nil && !p.Admin {
+		filtered := make([]controlplane.ProfileInfo, 0, len(profiles))
+		for _, info := range profiles {
+			if p.CanLaunch(info.Name) {
+				filtered = append(filtered, info)
+			}
+		}
+		profiles = filtered
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
 }
@@ -623,6 +634,24 @@ func (s *Server) handlePolicySimulate(w http.ResponseWriter, r *http.Request) {
 	if len(req.Actions) == 0 {
 		writeError(w, http.StatusBadRequest, "actions is required")
 		return
+	}
+	// Non-admins may only simulate Charters they are allowed to launch; inline
+	// profile bodies are admin/open-mode only so callers can't probe arbitrary
+	// policy via an unrestricted dry-run.
+	if caller := principalFrom(r.Context()); caller != nil && !caller.Admin {
+		if req.Profile != nil {
+			writeError(w, http.StatusForbidden, "not authorized to simulate inline profiles")
+			return
+		}
+		name := strings.TrimSpace(req.ProfileName)
+		if name == "" || !caller.CanLaunch(name) {
+			if name == "" {
+				writeError(w, http.StatusForbidden, "not authorized to simulate this profile")
+				return
+			}
+			writeError(w, http.StatusForbidden, "not authorized to launch profile "+name)
+			return
+		}
 	}
 
 	p, err := s.resolveSimulationProfile(req.ProfileName, req.Profile)

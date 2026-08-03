@@ -207,6 +207,112 @@ func TestCreateFleetEnforcesCanLaunch(t *testing.T) {
 	}
 }
 
+func TestWhoamiCanLaunchReflectsAllowedProfiles(t *testing.T) {
+	h := newTestServerWithRBAC(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/whoami", nil)
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("alice status = %d, want 200", rr.Code)
+	}
+	var alice map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &alice); err != nil {
+		t.Fatalf("decode alice: %v", err)
+	}
+	p, _ := alice["principal"].(map[string]any)
+	if p["can_launch"] != true {
+		t.Fatalf("alice can_launch = %v, want true", p["can_launch"])
+	}
+
+	// Add a locked principal via a fresh store with empty allowed_profiles.
+	t.Setenv("RUNEWARD_STATE_DIR", t.TempDir())
+	mgr, err := controlplane.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("controlplane.New: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	cfgPath := filepath.Join(t.TempDir(), "authz.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"principals":[{"name":"locked","token":"tok-locked","allowed_profiles":[]}]}`), 0o600); err != nil {
+		t.Fatalf("write authz: %v", err)
+	}
+	store, err := authz.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("authz.Load: %v", err)
+	}
+	srv := New(mgr, nil, nil)
+	srv.Authz = store
+	h2 := srv.Handler()
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/v1/whoami", nil)
+	req.Header.Set("Authorization", "Bearer tok-locked")
+	h2.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("locked status = %d, want 200", rr.Code)
+	}
+	var locked map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &locked); err != nil {
+		t.Fatalf("decode locked: %v", err)
+	}
+	lp, _ := locked["principal"].(map[string]any)
+	if lp["can_launch"] != false {
+		t.Fatalf("locked can_launch = %v, want false", lp["can_launch"])
+	}
+}
+
+func TestRBACChartersFilteredByCanLaunch(t *testing.T) {
+	h := newTestServerWithRBAC(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/charters", nil)
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Profiles []struct {
+			Name string `json:"name"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, p := range body.Profiles {
+		if !strings.HasPrefix(p.Name, "team-") {
+			t.Fatalf("alice saw unauthorized charter %q", p.Name)
+		}
+	}
+}
+
+func TestRBACPolicySimulateRequiresCanLaunch(t *testing.T) {
+	h := newTestServerWithRBAC(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/policy/simulate", strings.NewReader(`{
+		"profile_name":"ops-prod",
+		"actions":[{"tool":"shell","command":"echo hi"}]
+	}`))
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/policy/simulate", strings.NewReader(`{
+		"profile":{"host":{"type":"container","image":"debian:stable-slim"},"policy":[]},
+		"actions":[{"tool":"shell","command":"echo hi"}]
+	}`))
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("inline status = %d, want 403: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestTaskOwnerFromRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/cohorts/f/tasks/t/complete", nil)
 	if _, err := taskOwnerFromRequest(req, ""); err == nil {

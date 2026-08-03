@@ -77,16 +77,33 @@ function canApprove() {
   return !p || p.can_approve !== false;
 }
 
-// canLaunch reports whether the current identity may create sandboxes. Under
-// RBAC a non-admin with an empty allowed-profiles list can launch nothing.
+// canLaunch reports whether the current identity may create sandboxes/cohorts.
+// Prefer the server's whoami.can_launch; fall back to allowed_profiles for
+// older servers that always returned can_launch=true.
 function canLaunch() {
   const p = auth.principal;
   if (!p) return true;
   if (p.admin) return true;
+  if (p.can_launch === false) return false;
   if (auth.rbac && Array.isArray(p.allowed_profiles) && p.allowed_profiles.length === 0) {
     return false;
   }
   return p.can_launch !== false;
+}
+
+// profileAllowed mirrors authz.CanLaunch for client-side charter filtering.
+function profileAllowed(name) {
+  const p = auth.principal;
+  if (!p || !auth.rbac || p.admin) return true;
+  const patterns = Array.isArray(p.allowed_profiles) ? p.allowed_profiles : [];
+  for (const pattern of patterns) {
+    if (!pattern) continue;
+    if (pattern === "*") return true;
+    // path.Match-style: * matches any sequence within a single path segment.
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+    if (new RegExp("^" + escaped + "$").test(name)) return true;
+  }
+  return false;
 }
 
 /* ---------------- API layer ---------------- */
@@ -270,7 +287,10 @@ async function loadProfiles() {
 	const previous = $("#profile-select") && $("#profile-select").value;
   try {
     const { data } = await api("GET", "/v1/charters");
-    state.profiles = (data && data.profiles) || [];
+    // Server already scopes charters under RBAC; filter again client-side so
+    // a stale cache or older control plane can't show unauthorized options.
+    const all = (data && data.profiles) || [];
+    state.profiles = all.filter((p) => profileAllowed(p.name));
     fillProfileSelect($("#profile-select"));
     fillProfileSelect($("#fleet-profile-select"));
     fillProfileSelect($("#sim-profile-select"));

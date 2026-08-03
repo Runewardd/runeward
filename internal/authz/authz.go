@@ -68,6 +68,25 @@ func (p *Principal) MayApprove() bool {
 	return p.Admin || p.CanApprove
 }
 
+// MayLaunch reports whether the principal may launch any profile at all.
+// Admins always may. Non-admins may when they have at least one non-empty
+// allowed-profile pattern (including "*"); an empty list means they can
+// launch nothing.
+func (p *Principal) MayLaunch() bool {
+	if p == nil {
+		return false
+	}
+	if p.Admin {
+		return true
+	}
+	for _, pattern := range p.AllowedProfiles {
+		if strings.TrimSpace(pattern) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // Store holds principals indexed by token. It is safe for concurrent reads.
 // A nil *Store means RBAC is not configured.
 type Store struct {

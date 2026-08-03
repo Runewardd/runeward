@@ -212,3 +212,27 @@ func TestMayApprove(t *testing.T) {
 		})
 	}
 }
+
+func TestMayLaunch(t *testing.T) {
+	cases := []struct {
+		name string
+		p    *Principal
+		want bool
+	}{
+		{"admin", &Principal{Admin: true}, true},
+		{"admin empty profiles", &Principal{Admin: true, AllowedProfiles: nil}, true},
+		{"star", &Principal{AllowedProfiles: []string{"*"}}, true},
+		{"named", &Principal{AllowedProfiles: []string{"dev"}}, true},
+		{"empty list", &Principal{AllowedProfiles: []string{}}, false},
+		{"nil list", &Principal{}, false},
+		{"blank patterns only", &Principal{AllowedProfiles: []string{"", "  "}}, false},
+		{"nil principal", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.p.MayLaunch(); got != tc.want {
+				t.Fatalf("MayLaunch() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
