@@ -28,7 +28,7 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26.5"
           cache: true
@@ -56,7 +56,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/setup-go@v7
         with:
           # Pin to the patch that fixes standard library vulnerabilities
           # (GO-2026-4599/4600/4601/4602/4603/4865, etc.) present in go1.26.0.
