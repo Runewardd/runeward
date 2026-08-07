@@ -113,8 +113,9 @@ func TestIDEProxyRedirectAndSecureCookie(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://runeward.example/v1/citadels/ide1/ide", nil)
 	req.Header.Set("Authorization", "Bearer s3cret")
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusTemporaryRedirect || rr.Header().Get("Location") != "ide/" {
-		t.Fatalf("redirect = %d %q, want 307 ide/", rr.Code, rr.Header().Get("Location"))
+	const wantLocation = "/v1/citadels/ide1/ide/"
+	if rr.Code != http.StatusTemporaryRedirect || rr.Header().Get("Location") != wantLocation {
+		t.Fatalf("redirect = %d %q, want 307 %s", rr.Code, rr.Header().Get("Location"), wantLocation)
 	}
 
 	rr = httptest.NewRecorder()
