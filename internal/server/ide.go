@@ -219,7 +219,7 @@ func (s *Server) issueIDETicket(sandboxID string, p *authz.Principal, ttl time.D
 	return s.issueTicket(ticketScope{Kind: ticketKindIDE, SandboxID: sandboxID}, p, ttl)
 }
 
-func (s *Server) attachIDESession(w http.ResponseWriter, r *http.Request, sandboxID string, p *authz.Principal) {
+func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *authz.Principal) {
 	var raw [16]byte
 	if _, err := crand.Read(raw[:]); err != nil {
 		return
@@ -243,21 +243,14 @@ func (s *Server) attachIDESession(w http.ResponseWriter, r *http.Request, sandbo
 		Value:    sid,
 		Path:     "/v1/citadels/" + sandboxID + "/ide",
 		HttpOnly: true,
-		Secure:   requestUsesHTTPS(r),
+		// IDE sessions grant browser access to the sandbox, so never permit the
+		// cookie to travel over a plaintext connection. Loopback development
+		// origins are treated as potentially trustworthy by modern browsers;
+		// remote serving already requires TLS or an explicitly trusted proxy.
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		Expires:  expires,
 	})
-}
-
-func requestUsesHTTPS(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	if r.TLS != nil {
-		return true
-	}
-	forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
-	return strings.EqualFold(forwarded, "https")
 }
 
 func (s *Server) ideSessionFromCookie(r *http.Request, sandboxID string) (*authz.Principal, bool) {

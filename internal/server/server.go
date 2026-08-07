@@ -252,7 +252,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					return
 				}
 				if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
-					s.attachIDESession(w, r, sandboxID, tp)
+					s.attachIDESession(w, sandboxID, tp)
 				}
 				next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), tp)))
 				return
@@ -279,7 +279,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 			if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
-				s.attachIDESession(w, r, sandboxID, tp)
+				s.attachIDESession(w, sandboxID, tp)
 			}
 			next.ServeHTTP(w, r)
 			return

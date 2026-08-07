@@ -119,8 +119,9 @@ func TestIDEProxyRedirectAndSecureCookie(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "https://runeward.example/v1/citadels/ide1/ide/?ticket=unused", nil)
-	srv.attachIDESession(rr, req, "ide1", nil)
+	// The session cookie remains Secure even when the control-plane request is
+	// received over loopback HTTP during local development.
+	srv.attachIDESession(rr, "ide1", nil)
 	cookies := rr.Result().Cookies()
 	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatalf("IDE cookie is not hardened: %#v", cookies)
