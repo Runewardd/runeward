@@ -104,6 +104,41 @@ func TestIDETicketSingleUseAndProxy(t *testing.T) {
 	}
 }
 
+func TestIDEProxyRedirectAndSecureCookie(t *testing.T) {
+	t.Setenv("RUNEWARD_ENABLE_EXPERIMENTAL_IDE", "1")
+	srv, h := newTestServerFull(t, "s3cret")
+	injectIDESession(t, srv, "ide1", "127.0.0.1:8080", "")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "https://runeward.example/v1/citadels/ide1/ide", nil)
+	req.Header.Set("Authorization", "Bearer s3cret")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTemporaryRedirect || rr.Header().Get("Location") != "ide/" {
+		t.Fatalf("redirect = %d %q, want 307 ide/", rr.Code, rr.Header().Get("Location"))
+	}
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "https://runeward.example/v1/citadels/ide1/ide/?ticket=unused", nil)
+	srv.attachIDESession(rr, req, "ide1", nil)
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("IDE cookie is not hardened: %#v", cookies)
+	}
+}
+
+func TestParseIDEProxyTarget(t *testing.T) {
+	for _, endpoint := range []string{"127.0.0.1:8080", "[::1]:8080", "10.0.0.5:65535"} {
+		if _, err := parseIDEProxyTarget(endpoint); err != nil {
+			t.Fatalf("%s: %v", endpoint, err)
+		}
+	}
+	for _, endpoint := range []string{"example.com:8080", "127.0.0.1", "0.0.0.0:8080", "127.0.0.1:65536"} {
+		if _, err := parseIDEProxyTarget(endpoint); err == nil {
+			t.Fatalf("expected %s to be rejected", endpoint)
+		}
+	}
+}
+
 func TestIDEDisabledWithoutFlag(t *testing.T) {
 	t.Setenv("RUNEWARD_ENABLE_EXPERIMENTAL_IDE", "")
 	srv, h := newTestServerFull(t, "s3cret")

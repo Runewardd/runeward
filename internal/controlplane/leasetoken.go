@@ -36,6 +36,8 @@ func loadOrCreateLeaseKey(stateDir string) ([]byte, error) {
 		return nil, errors.New("cohort lease signing requires a state directory")
 	}
 	path := filepath.Join(stateDir, leaseKeyFileName)
+	// #nosec G304 -- path is a fixed filename beneath the operator-selected
+	// private Runeward state directory.
 	if key, err := os.ReadFile(path); err == nil {
 		if info, statErr := os.Stat(path); runtime.GOOS != "windows" && statErr == nil && info.Mode().Perm()&0o077 != 0 {
 			return nil, fmt.Errorf("cohort lease key %s must use 0600 permissions", path)
@@ -54,6 +56,7 @@ func loadOrCreateLeaseKey(stateDir string) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generate cohort lease key: %w", err)
 	}
+	// #nosec G304 -- path is the same fixed state-file location validated above.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		if os.IsExist(err) {

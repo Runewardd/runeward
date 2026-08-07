@@ -70,6 +70,24 @@ type OIDCVerifier struct {
 	lastRefresh time.Time
 }
 
+func oidcHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("OIDC endpoint redirected too many times")
+			}
+			if err := requireSecureOIDCEndpoint(req.URL.String()); err != nil {
+				return err
+			}
+			if len(via) > 0 && !sameOIDCOrigin(via[0].URL.String(), req.URL.String()) {
+				return errors.New("OIDC endpoint redirect changed origin")
+			}
+			return nil
+		},
+	}
+}
+
 // NewOIDCFromEnv configures OIDC when RUNEWARD_OIDC_ISSUER is set.
 func NewOIDCFromEnv() (*OIDCVerifier, bool, error) {
 	issuer := strings.TrimRight(strings.TrimSpace(os.Getenv(EnvOIDCIssuer)), "/")
@@ -83,7 +101,7 @@ func NewOIDCFromEnv() (*OIDCVerifier, bool, error) {
 	if err := requireSecureOIDCEndpoint(issuer); err != nil {
 		return nil, true, err
 	}
-	v := &OIDCVerifier{issuer: issuer, audience: audience, jwksURL: strings.TrimSpace(os.Getenv(EnvOIDCJWKSURL)), client: &http.Client{Timeout: 10 * time.Second}}
+	v := &OIDCVerifier{issuer: issuer, audience: audience, jwksURL: strings.TrimSpace(os.Getenv(EnvOIDCJWKSURL)), client: oidcHTTPClient()}
 	if v.jwksURL == "" {
 		var discovery oidcDiscovery
 		if err := v.getJSON(issuer+"/.well-known/openid-configuration", &discovery); err != nil {
@@ -92,7 +110,13 @@ func NewOIDCFromEnv() (*OIDCVerifier, bool, error) {
 		if discovery.Issuer != "" && strings.TrimRight(discovery.Issuer, "/") != issuer {
 			return nil, true, errors.New("OIDC discovery issuer mismatch")
 		}
-		v.jwksURL = discovery.JWKSURL
+		v.jwksURL = strings.TrimSpace(discovery.JWKSURL)
+		if v.jwksURL == "" {
+			return nil, true, errors.New("OIDC provider did not advertise jwks_uri")
+		}
+		if !sameOIDCOrigin(issuer, v.jwksURL) {
+			return nil, true, fmt.Errorf("OIDC discovery jwks_uri must share the issuer origin; set %s explicitly to trust a different origin", EnvOIDCJWKSURL)
+		}
 	}
 	if err := requireSecureOIDCEndpoint(v.jwksURL); err != nil {
 		return nil, true, err
@@ -108,7 +132,7 @@ func NewOIDCFromEnv() (*OIDCVerifier, bool, error) {
 
 func requireSecureOIDCEndpoint(raw string) error {
 	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" {
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
 		return fmt.Errorf("invalid OIDC endpoint %q", raw)
 	}
 	if u.Scheme == "https" {
@@ -121,15 +145,47 @@ func requireSecureOIDCEndpoint(raw string) error {
 	return errors.New("OIDC endpoints must use HTTPS (HTTP is allowed only for loopback development)")
 }
 
-func (v *OIDCVerifier) getJSON(url string, out any) error {
-	resp, err := v.client.Get(url)
+func sameOIDCOrigin(a, b string) bool {
+	left, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	right, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		effectiveOIDCPort(left) == effectiveOIDCPort(right)
+}
+
+func effectiveOIDCPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		return "443"
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return "80"
+	}
+	return ""
+}
+
+func (v *OIDCVerifier) getJSON(endpoint string, out any) error {
+	if err := requireSecureOIDCEndpoint(endpoint); err != nil {
+		return err
+	}
+	// #nosec G107 G704 -- endpoint is operator-configured or same-origin OIDC
+	// discovery data, requires HTTPS/loopback HTTP, and redirects cannot change origin.
+	resp, err := v.client.Get(endpoint)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("%s returned HTTP %d", url, resp.StatusCode)
+		return fmt.Errorf("%s returned HTTP %d", endpoint, resp.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(out)
 }

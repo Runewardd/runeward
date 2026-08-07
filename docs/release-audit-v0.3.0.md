@@ -35,7 +35,7 @@ module proxy. GitHub Actions must repeat them against the committed `go.mod` and
 | Kubernetes E2E | The configured kind cluster depends on the inaccessible Docker runtime. | CRD/controller/webhook, strict egress, namespace, restore, and Cohort results from a disposable cluster. |
 | Dashboard browser automation | A live local control plane cannot bind a port in this workspace. | Authenticated role-by-role browser run with console/network errors captured. |
 | Image vulnerability gate | Docker and Trivy are unavailable. | Successful builds and zero HIGH/CRITICAL findings for all six images in the release workflow. |
-| IDE base digest | `codercom/code-server:4.96.4` is version-pinned but not digest-pinned; registry lookup was unavailable. | Verify the multi-architecture digest, update both IDE Dockerfiles, then rebuild and scan. |
+| IDE base digest | `codercom/code-server:4.130.0-noble` is version-pinned but not digest-pinned; the registry digest lookup is still pending. | Verify the multi-architecture digest, pin both IDE Dockerfiles, then rebuild and scan. |
 | Python distribution install | The local environment has no cached `hatchling`, and external package access is unavailable. | Build wheel/sdist, `twine check`, clean-venv installation, and import/version check from the artifacts. |
 | SBOM and signatures | Syft and Cosign are not installed locally and keyless signing requires the release workflow's OIDC identity. | Verify archive/image SBOMs, checksum signature, and all six image signatures. |
 | Channel installs | Homebrew, PyPI, npm, OCI, and rollback tests require published RC artifacts. | Install `v0.3.0-rc.1` on clean macOS/Linux environments and verify rollback before the stable tag. |

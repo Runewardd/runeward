@@ -13,7 +13,7 @@
 #
 # Charters: examples/ide-claude.toml, ide-codex.toml, ide-cursor.toml
 # Flag: RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
-FROM codercom/code-server:4.96.4
+FROM codercom/code-server:4.130.0-noble
 
 USER root
 
@@ -48,5 +48,7 @@ RUN if [ "$INSTALL_CURSOR" = "true" ]; then \
     fi
 
 WORKDIR /workspace
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["code-server", "--version"]
 ENTRYPOINT []
 CMD ["sleep", "infinity"]

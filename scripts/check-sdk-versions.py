@@ -6,19 +6,37 @@ from __future__ import annotations
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def python_project_version() -> str:
+    """Read the PEP 621 version without requiring Python 3.11's tomllib."""
+    pyproject = (ROOT / "adapters/python/pyproject.toml").read_text(encoding="utf-8")
+    project = re.search(
+        r"^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
+        pyproject,
+        re.MULTILINE | re.DOTALL,
+    )
+    if project is None:
+        raise SystemExit("could not find [project] in Python pyproject.toml")
+    version = re.search(
+        r'^version\s*=\s*["\']([^"\']+)["\']\s*(?:#.*)?$',
+        project.group("body"),
+        re.MULTILINE,
+    )
+    if version is None:
+        raise SystemExit("could not find Python project version")
+    return version.group(1)
+
+
 def main() -> int:
     expected = sys.argv[1].strip() if len(sys.argv) > 1 else ""
     expected = expected.removeprefix("v")
 
-    with (ROOT / "adapters/python/pyproject.toml").open("rb") as handle:
-        python_version = tomllib.load(handle)["project"]["version"]
+    python_version = python_project_version()
 
     npm_version = json.loads(
         (ROOT / "adapters/typescript/package.json").read_text(encoding="utf-8")

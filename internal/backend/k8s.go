@@ -707,12 +707,12 @@ func (k *K8s) ensureNetworkPolicy(ctx context.Context) error {
 
 // ideContainerPorts advertises the optional in-cell IDE listen port on the pod.
 func ideContainerPorts(port int) []corev1.ContainerPort {
-	if port <= 0 {
+	if port <= 0 || port > 65535 {
 		return nil
 	}
 	return []corev1.ContainerPort{{
 		Name:          "ide",
-		ContainerPort: int32(port),
+		ContainerPort: int32(port), // #nosec G115 -- bounded to the TCP port range above.
 		Protocol:      corev1.ProtocolTCP,
 	}}
 }
@@ -722,7 +722,7 @@ func ideContainerPorts(port int) []corev1.ContainerPort {
 // deny blocks control-plane → pod IP proxying). Additive with the default-deny
 // policy. When NetworkPolicy is off this is a no-op.
 func (k *K8s) ensureIDEIngress(ctx context.Context, id string, port int) error {
-	if !envTruthy(os.Getenv("RUNEWARD_K8S_NETWORK_POLICY")) || port <= 0 {
+	if !envTruthy(os.Getenv("RUNEWARD_K8S_NETWORK_POLICY")) || port <= 0 || port > 65535 {
 		return nil
 	}
 	proto := corev1.ProtocolTCP

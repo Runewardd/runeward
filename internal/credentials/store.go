@@ -42,6 +42,8 @@ func Load() (Login, error) {
 	if info, err := os.Stat(path); runtime.GOOS != "windows" && err == nil && info.Mode().Perm()&0o077 != 0 {
 		return Login{}, fmt.Errorf("credentials file %s must use 0600 permissions", path)
 	}
+	// #nosec G304 -- path is the operator-selected credentials file (or the OS
+	// user-config default), never a path supplied by a remote request.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Login{}, err

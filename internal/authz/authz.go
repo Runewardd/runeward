@@ -149,9 +149,13 @@ type storeFile struct {
 //
 // It rejects entries with empty names, empty tokens, or duplicate tokens.
 func Load(filePath string) (*Store, error) {
+	// #nosec G703 -- filePath is the explicit operator-selected RBAC
+	// configuration file; checking its permissions is required before reading it.
 	if info, err := os.Stat(filePath); runtime.GOOS != "windows" && err == nil && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("authz: %s permissions %04o expose bearer tokens; use 0600", filePath, info.Mode().Perm())
 	}
+	// #nosec G304 G703 -- filePath is the explicit operator-selected RBAC
+	// configuration file; it is not derived from an API request or token.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("authz: read %s: %w", filePath, err)

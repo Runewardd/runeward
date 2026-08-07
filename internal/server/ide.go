@@ -3,9 +3,12 @@ package server
 import (
 	crand "crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -78,16 +81,20 @@ func (s *Server) handleIDE(w http.ResponseWriter, r *http.Request) {
 	// Drop ?ticket= — it was already consumed in authenticate and replaced by
 	// the IDE session cookie; replaying it on the redirect would 401.
 	if r.URL.Path == prefix {
-		http.Redirect(w, r, prefix+"/", http.StatusTemporaryRedirect)
+		// A static relative target preserves the current Citadel prefix without
+		// reflecting path input into a redirect location.
+		http.Redirect(w, r, "ide/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	target, err := url.Parse("http://" + endpoint)
+	target, err := parseIDEProxyTarget(endpoint)
 	if err != nil {
 		writeServerError(w, s.logger, err)
 		return
 	}
 
+	// #nosec G704 -- parseIDEProxyTarget accepts only a numeric backend IP and
+	// a bounded TCP port obtained from the authenticated in-memory Citadel session.
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	// Required for WebSocket / long-lived streams through the proxy.
 	proxy.FlushInterval = -1
@@ -153,6 +160,22 @@ func (s *Server) handleIDE(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
+func parseIDEProxyTarget(endpoint string) (*url.URL, error) {
+	host, rawPort, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid ide endpoint: %w", err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsUnspecified() || ip.IsMulticast() {
+		return nil, fmt.Errorf("invalid ide endpoint IP %q", host)
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid ide endpoint port %q", rawPort)
+	}
+	return &url.URL{Scheme: "http", Host: net.JoinHostPort(ip.String(), strconv.Itoa(port))}, nil
+}
+
 func stripCookie(req *http.Request, name string) {
 	cookies := req.Cookies()
 	req.Header.Del("Cookie")
@@ -196,7 +219,7 @@ func (s *Server) issueIDETicket(sandboxID string, p *authz.Principal, ttl time.D
 	return s.issueTicket(ticketScope{Kind: ticketKindIDE, SandboxID: sandboxID}, p, ttl)
 }
 
-func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *authz.Principal) {
+func (s *Server) attachIDESession(w http.ResponseWriter, r *http.Request, sandboxID string, p *authz.Principal) {
 	var raw [16]byte
 	if _, err := crand.Read(raw[:]); err != nil {
 		return
@@ -220,9 +243,21 @@ func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *au
 		Value:    sid,
 		Path:     "/v1/citadels/" + sandboxID + "/ide",
 		HttpOnly: true,
+		Secure:   requestUsesHTTPS(r),
 		SameSite: http.SameSiteStrictMode,
 		Expires:  expires,
 	})
+}
+
+func requestUsesHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	return strings.EqualFold(forwarded, "https")
 }
 
 func (s *Server) ideSessionFromCookie(r *http.Request, sandboxID string) (*authz.Principal, bool) {

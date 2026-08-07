@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -106,5 +108,28 @@ func TestRequireSecureOIDCEndpoint(t *testing.T) {
 	}
 	if err := requireSecureOIDCEndpoint("http://issuer.example"); err == nil {
 		t.Fatal("expected non-loopback HTTP issuer to be rejected")
+	}
+	for _, endpoint := range []string{"https://user@issuer.example", "https://issuer.example/#fragment"} {
+		if err := requireSecureOIDCEndpoint(endpoint); err == nil {
+			t.Fatalf("expected %s to be rejected", endpoint)
+		}
+	}
+}
+
+func TestOIDCOriginAndRedirectPolicy(t *testing.T) {
+	if !sameOIDCOrigin("https://issuer.example", "https://ISSUER.example:443/jwks") {
+		t.Fatal("default HTTPS port should be the same origin")
+	}
+	if sameOIDCOrigin("https://issuer.example", "https://keys.example/jwks") {
+		t.Fatal("different hosts must not be the same origin")
+	}
+
+	client := oidcHTTPClient()
+	firstURL, _ := url.Parse("https://issuer.example/start")
+	redirectURL, _ := url.Parse("https://keys.example/jwks")
+	first := &http.Request{URL: firstURL}
+	redirect := &http.Request{URL: redirectURL}
+	if err := client.CheckRedirect(redirect, []*http.Request{first}); err == nil {
+		t.Fatal("expected cross-origin redirect to be rejected")
 	}
 }

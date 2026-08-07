@@ -27,6 +27,7 @@ func (m *Manager) loadSnapshots() error {
 	if path == "" {
 		return nil
 	}
+	// #nosec G304 -- path is the fixed snapshotsFileName beneath Manager.stateDir.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
