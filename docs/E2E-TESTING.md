@@ -766,6 +766,7 @@ clients) or **streamable HTTP** (mounted at `/mcp` on `serve`, or standalone via
 - Citadels: `runeward_create_citadel`, `runeward_shell`, `runeward_python`,
 `runeward_node`, `runeward_browser`, `runeward_read_file`, `runeward_write_file`,
 `runeward_list_files`, `runeward_search_files`, `runeward_list_conclave`,
+`runeward_publish_conversation`, `runeward_list_conversation`,
 `runeward_kill_citadel`.
 - Cohorts: `runeward_create_cohort`, `runeward_list_cohorts`, `runeward_list_tasks`,
 `runeward_add_task`, `runeward_claim_task`, `runeward_complete_task`,
@@ -1817,4 +1818,3 @@ rm -rf "$RUNEWARD_STATE_DIR" /tmp/rw-keys /tmp/cases.toml /tmp/authz.json \
 | `unsupported container runtime "…"` at startup                              | `RUNEWARD_CONTAINER_RUNTIME` must be `docker` or `podman` (29).                                                                                                                    |
 | `ledger: "…/ledger.jsonl" is already in use by another runeward process`    | One writer per audit ledger. Another `serve`/`mcp` holds the default state dir — give this instance its own `RUNEWARD_STATE_DIR` (8), or stop the other process.                    |
 | `runeward mcp --http` → `bind: address already in use`                      | A previous `mcp`/`serve` still owns the port. `pkill -f 'runeward.*mcp'` (or stop `serve`), or start with a different `--port`.                                                     |
-

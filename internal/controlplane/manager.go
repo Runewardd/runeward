@@ -73,6 +73,9 @@ type Manager struct {
 	runOpMu   sync.Mutex
 	runs      map[string]Run
 
+	conversationMu sync.Mutex
+	conversation   *conversationHub
+
 	stateDir   string        // ledger, keys, fleets.json
 	fleetLease time.Duration // claim lease for dead-worker recovery
 	leaseKey   []byte        // HMAC key for signed Cohort task leases
@@ -721,6 +724,9 @@ func (m *Manager) KillSandbox(ctx context.Context, id string) error {
 	}
 	if m.accounting != nil {
 		m.accounting.Forget(id)
+	}
+	if hub := m.conversationHub(); hub != nil {
+		hub.forget(id)
 	}
 	m.recordIDEClose(ctx, sess)
 	m.record(ctx, sess, "sandbox", "kill", nil, string(profile.VerdictAllow), 0, 0, "")

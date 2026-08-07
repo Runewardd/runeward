@@ -168,6 +168,13 @@ runeward cohort --agent claude --model sonnet build "Build a tested API"
 Adapters are included for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands, Vercel AI SDK,
 and LangChain.js. See [Adapters](docs/adapters.md) and [agent groups](docs/fleets.md).
 
+The dashboard also has a read-only **Live chat** TTY for each Citadel. Agent harnesses publish
+`user`, `assistant`, `tool`, and `system` turns with `runeward_publish_conversation` (or the REST,
+Python, and TypeScript equivalents), and authorized teammates can follow the redacted conversation
+without terminal input access. Runeward cannot infer private UI chat text that the agent client does
+not publish; wire the publish call into the harness turn callback. The publisher must connect to the
+same `runeward serve` control plane as the dashboard (through `/mcp`, REST, or an SDK).
+
 ## Harness agents and subagents
 
 Runeward is the enforcement boundary around an agent, not the component that decides how the agent

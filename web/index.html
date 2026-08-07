@@ -124,6 +124,7 @@
           </div>
           <nav class="tabs" id="tabs">
             <button class="tab active" data-tab="terminal">Terminal</button>
+            <button class="tab" data-tab="conversation">Live chat</button>
             <button class="tab" data-tab="files">Files</button>
             <button class="tab" data-tab="shell">Shell</button>
             <button id="browser-tab" class="tab hidden" data-tab="browser">Browser</button>
@@ -146,6 +147,16 @@
             <button id="term-reconnect" class="btn btn-sm">Reconnect</button>
           </div>
           <div id="terminal" class="terminal-host"></div>
+        </div>
+
+        <!-- Read-only agent conversation TTY -->
+        <div class="tab-pane" data-pane="conversation">
+          <div class="term-toolbar">
+            <span id="conversation-status" class="conn-status conn-off">disconnected</span>
+            <span class="note">Read-only, secret-redacted feed from agents connected to this control plane.</span>
+            <button id="conversation-reconnect" class="btn btn-sm">Reconnect</button>
+          </div>
+          <div id="conversation-terminal" class="terminal-host conversation-host" aria-label="Live agent conversation"></div>
         </div>
 
         <!-- Files tab -->

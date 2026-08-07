@@ -54,6 +54,7 @@ func TestListTools(t *testing.T) {
 	for _, want := range []string{
 		"runeward_whoami", "runeward_list_charters", "runeward_readiness",
 		"runeward_create_citadel", "runeward_shell", "runeward_browser",
+		"runeward_publish_conversation", "runeward_list_conversation",
 		"runeward_list_citadels", "runeward_report_usage", "runeward_snapshot_citadel", "runeward_list_snapshots",
 		"runeward_list_runs", "runeward_export_evidence", "runeward_verify_chronicle",
 		"runeward_browser_open", "runeward_browser_act", "runeward_browser_close",

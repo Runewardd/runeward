@@ -24,6 +24,11 @@ const state = {
   fitAddon: null,
   socket: null,
   termSandbox: null, // which sandbox the current socket belongs to
+  conversationTerm: null,
+  conversationFitAddon: null,
+  conversationSocket: null,
+  conversationSandbox: null,
+  conversationReconnectTimer: null,
   // polling handles
   timers: { global: null, audit: null },
   // policy simulation
@@ -453,6 +458,7 @@ function selectSandbox(id) {
     empty.classList.remove("hidden");
     bodyEl.classList.add("hidden");
     teardownTerminalSocket();
+    teardownConversationSocket();
     stopAuditPoll();
     state.egress = [];
     state.budget = null;
@@ -513,8 +519,10 @@ function selectSandbox(id) {
 
 function resetSandboxViews() {
   teardownTerminalSocket();
+  teardownConversationSocket();
   stopAuditPoll();
   if (state.term) state.term.reset();
+  if (state.conversationTerm) state.conversationTerm.reset();
   for (const id of ["list-output", "search-output", "shell-stdout", "shell-stderr", "code-stdout", "code-stderr", "browser-stdout", "browser-stderr"]) {
     const node = $("#" + id);
     if (node) node.textContent = "";
@@ -925,6 +933,13 @@ function activateTab(name, force = false) {
     teardownTerminalSocket();
   }
 
+  if (name === "conversation") {
+    ensureConversationTTY();
+    connectConversation();
+  } else {
+    teardownConversationSocket();
+  }
+
   if (name === "audit") {
     refreshAudit();
     startAuditPoll();
@@ -1081,6 +1096,152 @@ async function requestTerminalTicket(sandboxID) {
   if (!data || !data.ticket) {
     throw new Error("terminal ticket unavailable");
   }
+  return data.ticket;
+}
+
+/* ---------------- Live chat (read-only xterm.js + WebSocket) ---------------- */
+function ensureConversationTTY() {
+  if (state.conversationTerm) return;
+  if (typeof Terminal === "undefined") {
+    toast("xterm.js failed to load (offline CDN?)", "error");
+    return;
+  }
+  const term = new Terminal({
+    convertEol: true,
+    cursorBlink: false,
+    disableStdin: true,
+    screenReaderMode: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 13,
+    scrollback: 5000,
+    theme: {
+      background: "#05070d",
+      foreground: "#dde3ee",
+      cursor: "#05070d",
+      selectionBackground: "#2b3550",
+    },
+  });
+  let fit = null;
+  if (typeof FitAddon !== "undefined" && FitAddon.FitAddon) {
+    fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+  }
+  term.open($("#conversation-terminal"));
+  state.conversationTerm = term;
+  state.conversationFitAddon = fit;
+  window.addEventListener("resize", debounce(fitConversationTTY, 120));
+  $("#conversation-reconnect").addEventListener("click", () => connectConversation(true));
+  fitConversationTTY();
+}
+
+function fitConversationTTY() {
+  if (!state.conversationTerm || !state.conversationFitAddon) return;
+  try { state.conversationFitAddon.fit(); } catch {}
+}
+
+function setConversationStatus(kind, label) {
+  const node = $("#conversation-status");
+  if (!node) return;
+  node.className = "conn-status " + kind;
+  node.textContent = label;
+}
+
+function teardownConversationSocket() {
+  if (state.conversationReconnectTimer) {
+    clearTimeout(state.conversationReconnectTimer);
+    state.conversationReconnectTimer = null;
+  }
+  if (state.conversationSocket) {
+    try { state.conversationSocket.close(); } catch {}
+    state.conversationSocket = null;
+  }
+  state.conversationSandbox = null;
+  setConversationStatus("conn-off", "disconnected");
+}
+
+function scheduleConversationReconnect(sandboxID) {
+  if (state.conversationReconnectTimer || state.selected !== sandboxID || state.activeTab !== "conversation") return;
+  setConversationStatus("conn-off", "reconnecting…");
+  state.conversationReconnectTimer = setTimeout(() => {
+    state.conversationReconnectTimer = null;
+    connectConversation();
+  }, 1500);
+}
+
+function conversationColor(role) {
+  if (role === "user") return "\x1b[36m";
+  if (role === "assistant") return "\x1b[32m";
+  if (role === "tool") return "\x1b[33m";
+  return "\x1b[35m";
+}
+
+function renderConversationTurn(msg) {
+  const term = state.conversationTerm;
+  if (!term || !msg) return;
+  const role = String(msg.role || "system").toLowerCase();
+  const author = String(msg.author || role);
+  const when = fmtTime(msg.created_at);
+  const redacted = msg.redacted ? " · redacted" : "";
+  term.write(`${conversationColor(role)}[${when}] ${role} · ${author}${redacted}\x1b[0m\r\n`);
+  term.write(String(msg.content || "").replace(/\r?\n/g, "\r\n"));
+  term.write("\r\n\r\n");
+}
+
+function connectConversation(forceReconnect = false) {
+  if (!state.selected || !state.conversationTerm) return;
+  if (
+    !forceReconnect &&
+    state.conversationSocket &&
+    state.conversationSandbox === state.selected &&
+    (state.conversationSocket.readyState === WebSocket.OPEN || state.conversationSocket.readyState === WebSocket.CONNECTING)
+  ) return;
+
+  teardownConversationSocket();
+  const sandboxID = state.selected;
+  state.conversationTerm.reset();
+  state.conversationTerm.writeln("\x1b[90m[runeward] waiting for published conversation turns…\x1b[0m");
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  setConversationStatus("conn-off", "connecting…");
+  requestConversationTicket(sandboxID)
+    .then((ticket) => {
+      if (state.selected !== sandboxID || state.activeTab !== "conversation") return;
+      const url = `${proto}//${location.host}/v1/citadels/${encodeURIComponent(sandboxID)}/conversation/stream?ticket=${encodeURIComponent(ticket)}`;
+      const socket = new WebSocket(url);
+      state.conversationSocket = socket;
+      state.conversationSandbox = sandboxID;
+      socket.onopen = () => {
+        if (state.conversationSocket !== socket) return;
+        state.conversationTerm.reset();
+        setConversationStatus("conn-on", "following live");
+        fitConversationTTY();
+      };
+      socket.onmessage = (ev) => {
+        if (state.conversationSocket !== socket || state.selected !== sandboxID) return;
+        try { renderConversationTurn(JSON.parse(ev.data)); } catch {}
+      };
+      socket.onerror = () => setConversationStatus("conn-err", "error");
+      socket.onclose = () => {
+        if (state.conversationSocket === socket) {
+          state.conversationSocket = null;
+          state.conversationSandbox = null;
+          scheduleConversationReconnect(sandboxID);
+        }
+      };
+    })
+    .catch((e) => {
+      if (state.selected !== sandboxID || state.activeTab !== "conversation") return;
+      console.warn("Live chat connect failed:", e);
+      scheduleConversationReconnect(sandboxID);
+    });
+}
+
+async function requestConversationTicket(sandboxID) {
+  const { data } = await api("POST", "/v1/tickets", {
+    kind: "conversation",
+    sandbox_id: sandboxID,
+    ttl_seconds: 30,
+  });
+  if (!data || !data.ticket) throw new Error("conversation ticket unavailable");
   return data.ticket;
 }
 

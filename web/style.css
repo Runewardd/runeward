@@ -306,6 +306,7 @@ body {
 .tab-pane { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; }
 .tab-pane.active { display: flex; flex-direction: column; }
 .tab-pane[data-pane="terminal"].active { padding: 0; }
+.tab-pane[data-pane="conversation"].active { padding: 0; }
 
 /* ---------- Terminal ---------- */
 .term-toolbar {
@@ -332,6 +333,7 @@ body {
   padding: 8px 10px;
 }
 .terminal-host .xterm { height: 100%; }
+.conversation-host { border-top: 1px solid #111725; }
 
 /* ---------- Cards / forms ---------- */
 .card {

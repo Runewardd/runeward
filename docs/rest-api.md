@@ -77,6 +77,9 @@ parent run, timestamps, and terminal status.
 | `GET` | `/v1/citadels/{id}/perimeter` | Egress (Perimeter) decision log for the Citadel. |
 | `GET` | `/v1/citadels/{id}/terminal` | WebSocket terminal (same-origin only). |
 | `POST` | `/v1/citadels/{id}/terminal-ticket` | Mint a short-lived terminal ticket. |
+| `GET` | `/v1/citadels/{id}/conversation` | Bounded, redacted Live chat history (`after_id`, `limit`). |
+| `POST` | `/v1/citadels/{id}/conversation` | Publish a `user`, `assistant`, `tool`, or `system` turn. |
+| `GET` | `/v1/citadels/{id}/conversation/stream` | Read-only Live chat WebSocket; use a scoped `conversation` ticket. |
 | `GET` | `/v1/citadels/{id}/ide` / `/ide/{path...}` | Experimental browser IDE reverse proxy (HTTP + WebSocket). |
 | `POST` | `/v1/citadels/{id}/ide-ticket` | Mint a short-lived IDE ticket. |
 

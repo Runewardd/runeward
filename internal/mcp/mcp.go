@@ -585,6 +585,44 @@ func NewServer(mgr *controlplane.Manager) *sdk.Server {
 	})
 
 	sdk.AddTool(s, &sdk.Tool{
+		Name:        "runeward_publish_conversation",
+		Description: "Publish one user, assistant, tool, or system turn to a Citadel's read-only Live chat TTY. Agent harnesses should call this for each turn they want human observers to follow.",
+	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
+		Role    string `json:"role" jsonschema:"turn role: user, assistant, tool, or system"`
+		Content string `json:"content" jsonschema:"turn content; secrets are redacted before broadcast"`
+		RunID   string `json:"run_id,omitempty" jsonschema:"optional agent run id"`
+	}) (*sdk.CallToolResult, any, error) {
+		var err error
+		if ctx, err = authorizeSandboxContext(ctx, req, resolver, resolverErr, mgr, in.Sandbox); err != nil {
+			return errText(err), nil, nil
+		}
+		msg, err := mgr.PublishConversation(ctx, in.Sandbox, in.Role, in.Content, in.RunID)
+		if err != nil {
+			return errText(err), nil, nil
+		}
+		return structured(msg), nil, nil
+	})
+
+	sdk.AddTool(s, &sdk.Tool{
+		Name:        "runeward_list_conversation",
+		Description: "Return the bounded, redacted Live chat history for a Citadel.",
+	}, func(_ context.Context, req *sdk.CallToolRequest, in struct {
+		Sandbox string `json:"sandbox" jsonschema:"the citadel id"`
+		AfterID uint64 `json:"after_id,omitempty" jsonschema:"return messages newer than this id"`
+		Limit   int    `json:"limit,omitempty" jsonschema:"maximum messages, 1-500"`
+	}) (*sdk.CallToolResult, any, error) {
+		if _, err := authorizeSandbox(req, resolver, resolverErr, mgr, in.Sandbox); err != nil {
+			return errText(err), nil, nil
+		}
+		messages, err := mgr.ConversationHistory(in.Sandbox, in.AfterID, in.Limit)
+		if err != nil {
+			return errText(err), nil, nil
+		}
+		return structured(map[string]any{"messages": messages}), nil, nil
+	})
+
+	sdk.AddTool(s, &sdk.Tool{
 		Name:        "runeward_snapshot_citadel",
 		Description: "Create a tenant-scoped recovery snapshot of a Citadel workspace.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in struct {

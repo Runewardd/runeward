@@ -109,6 +109,13 @@ Please disclose privately; do not open a public issue.
 - **Terminal session recording.** With `RUNEWARD_RECORD_TERMINALS=1`, governed
   terminal sessions are captured as asciinema v2 casts under the state dir and
   can be replayed with `runeward replay` as part of the audit trail.
+- **Read-only Live chat.** Conversation turns are opt-in messages published by
+  an agent harness, not automatic capture of private agent UI text. Runeward
+  bounds each Citadel's in-memory history, applies declared-secret and
+  credential-pattern redaction, strips terminal controls, and streams through
+  an ownership-checked, same-origin WebSocket using a short-lived scoped ticket.
+  The observer socket accepts no application input. Live chat is operational
+  visibility; the signed Chronicle remains the authoritative action evidence.
 - **No host mounts.** `copy_from` copies into the sandbox; the host tree is never
   mounted. Request-time overrides are administrator-only. Set
   `RUNEWARD_COPY_FROM_ROOTS` (a colon-separated allowlist) to confine which host

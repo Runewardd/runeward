@@ -150,11 +150,15 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sandbox_id is required for terminal tickets")
 		return
 	}
+	if scope.Kind == ticketKindConversation && scope.SandboxID == "" {
+		writeError(w, http.StatusBadRequest, "sandbox_id is required for conversation tickets")
+		return
+	}
 	if scope.Kind == ticketKindIDE && scope.SandboxID == "" {
 		writeError(w, http.StatusBadRequest, "sandbox_id is required for ide tickets")
 		return
 	}
-	if scope.Kind == ticketKindTerminal || scope.Kind == ticketKindIDE {
+	if scope.Kind == ticketKindTerminal || scope.Kind == ticketKindConversation || scope.Kind == ticketKindIDE {
 		if _, ok := s.mgr.Sandbox(scope.SandboxID); !ok {
 			writeError(w, http.StatusNotFound, "sandbox not found")
 			return
