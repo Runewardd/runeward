@@ -95,6 +95,32 @@ func TestExtractTarRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestExtractTarRejectsPreexistingSymlinkEscape(t *testing.T) {
+	base := t.TempDir()
+	dest := filepath.Join(base, "out")
+	outside := filepath.Join(base, "outside")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dest, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	data := tarball(t,
+		[]*tar.Header{{Name: "link/loot.txt", Typeflag: tar.TypeReg, Mode: 0o644, Size: 4}},
+		[]string{"loot"},
+	)
+	if err := extractTar(bytes.NewReader(data), dest); err == nil {
+		t.Fatal("expected root-scoped extraction to reject pre-existing escape symlink")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "loot.txt")); err == nil {
+		t.Fatal("pre-existing symlink redirected archive write outside destination")
+	}
+}
+
 func TestExtractTarHappyPath(t *testing.T) {
 	dest := t.TempDir()
 	data := tarball(t,
