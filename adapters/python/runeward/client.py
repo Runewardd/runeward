@@ -25,6 +25,7 @@ __all__ = [
     "RunewardClient",
     "RunewardError",
     "RunewardDenied",
+    "RunewardAuthorizationError",
     "RunewardApprovalRequired",
 ]
 
@@ -49,6 +50,13 @@ class RunewardDenied(RunewardError):
     def __init__(self, reason: str, *, payload: Optional[Dict[str, Any]] = None) -> None:
         super().__init__(f"runeward denied action: {reason}", status=403, payload=payload)
         self.reason = reason
+
+
+class RunewardAuthorizationError(RunewardError):
+    """Raised when an authenticated caller lacks role or resource access."""
+
+    def __init__(self, message: str, *, payload: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(f"runeward authorization denied: {message}", status=403, payload=payload)
 
 
 class RunewardApprovalRequired(RunewardError):
@@ -89,7 +97,7 @@ class RunewardClient:
         self.base_url = self._normalize_base_url(base_url)
         self._validate_transport(self.base_url, allow_insecure)
         self.timeout = timeout
-        self.token = token
+        self.token = token or os.environ.get("RUNEWARD_API_TOKEN")
 
     # -- low-level request plumbing ---------------------------------------
 
@@ -182,7 +190,9 @@ class RunewardClient:
 
     @staticmethod
     def _raise_for_status(status: int, payload: Dict[str, Any]) -> None:
-        if status == 403 or payload.get("verdict") == "deny":
+        if payload.get("code") == "authz_denied":
+            raise RunewardAuthorizationError(payload.get("error", "not authorized"), payload=payload)
+        if payload.get("verdict") == "deny" or (status == 403 and not payload.get("code")):
             raise RunewardDenied(payload.get("reason", "denied by policy"), payload=payload)
         if status == 202 or payload.get("verdict") == "require-approval":
             raise RunewardApprovalRequired(
@@ -200,15 +210,40 @@ class RunewardClient:
         """``GET /healthz`` — liveness check."""
         return self._request("GET", "/healthz")
 
+    def whoami(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/whoami")
+
+    def readiness(self, profile: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/readiness?profile={self._segment(profile)}")
+
+    def simulate_policy(self, profile_name: str, actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return self._request("POST", "/v1/policy/simulate", {
+            "profile_name": profile_name, "actions": actions,
+        })
+
     def list_profiles(self) -> List[Dict[str, Any]]:
         """``GET /v1/charters`` — reachable profiles."""
         return self._request("GET", "/v1/charters").get("profiles", [])
 
+    def list_runs(self) -> List[Dict[str, Any]]:
+        return self._request("GET", "/v1/runs").get("runs", [])
+
+    def get_run(self, run_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/runs/{self._segment(run_id)}")
+
     # -- sandbox lifecycle -------------------------------------------------
 
-    def create_sandbox(self, profile: str) -> Dict[str, Any]:
+    def create_sandbox(self, profile: str, *, copy_from: str = "",
+                       parent_citadel: str = "", run_id: str = "",
+                       agent: str = "", provider: str = "", model: str = "") -> Dict[str, Any]:
         """``POST /v1/citadels`` — provision a sandbox from ``profile``."""
-        return self._request("POST", "/v1/citadels", {"profile": profile})
+        body = {"profile": profile}
+        optional = {
+            "copy_from": copy_from, "parent_citadel": parent_citadel,
+            "run_id": run_id, "agent": agent, "provider": provider, "model": model,
+        }
+        body.update({key: value for key, value in optional.items() if value})
+        return self._request("POST", "/v1/citadels", body)
 
     def list_sandboxes(self) -> List[Dict[str, Any]]:
         """``GET /v1/citadels``."""
@@ -243,6 +278,24 @@ class RunewardClient:
     def node(self, sandbox: str, code: str) -> Dict[str, Any]:
         """``POST .../code/node`` — run a Node.js snippet in the sandbox."""
         return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/code/node", {"code": code})
+
+    def browser(self, sandbox: str, url: str, mode: str = "text") -> Dict[str, Any]:
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/browser", {"url": url, "mode": mode})
+
+    def open_browser(self, sandbox: str) -> str:
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/browser/sessions")["session_id"]
+
+    def browser_act(self, sandbox: str, session: str, **action: Any) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/browser/sessions/{self._segment(session)}/act", action)
+
+    def close_browser(self, sandbox: str, session: str) -> Any:
+        return self._request("DELETE", f"/v1/citadels/{self._segment(sandbox)}/browser/sessions/{self._segment(session)}")
+
+    def report_usage(self, sandbox: str, tokens: int, cost_usd: float) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/usage", {"tokens": tokens, "cost_usd": cost_usd})
+
+    def perimeter(self, sandbox: str) -> List[Dict[str, Any]]:
+        return self._request("GET", f"/v1/citadels/{self._segment(sandbox)}/perimeter").get("decisions", [])
 
     # -- files -------------------------------------------------------------
 
@@ -281,6 +334,49 @@ class RunewardClient:
     def verify_audit(self) -> bool:
         """``GET /v1/chronicle/verify`` — verify the ledger hash chain."""
         return bool(self._request("GET", "/v1/chronicle/verify").get("ok", False))
+
+    def export_evidence(self, sandbox: str) -> Dict[str, Any]:
+        """Return the portable signed evidence document for a Citadel."""
+        return self._request("GET", f"/v1/citadels/{self._segment(sandbox)}/evidence")
+
+    def create_cohort(self, profile: str) -> Dict[str, Any]:
+        return self._request("POST", "/v1/cohorts", {"profile": profile})
+
+    def list_cohorts(self) -> List[Dict[str, Any]]:
+        return self._request("GET", "/v1/cohorts").get("fleets", [])
+
+    def get_cohort(self, cohort: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/cohorts/{self._segment(cohort)}")
+
+    def kill_cohort(self, cohort: str) -> Any:
+        return self._request("DELETE", f"/v1/cohorts/{self._segment(cohort)}")
+
+    def list_tasks(self, cohort: str) -> List[Dict[str, Any]]:
+        return self._request("GET", f"/v1/cohorts/{self._segment(cohort)}/tasks").get("tasks", [])
+
+    def add_task(self, cohort: str, payload: str) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/cohorts/{self._segment(cohort)}/tasks", {"payload": payload})
+
+    def claim_task(self, cohort: str, owner: str = "") -> Dict[str, Any]:
+        return self._request("POST", f"/v1/cohorts/{self._segment(cohort)}/claim", {"owner": owner})
+
+    def heartbeat_task(self, cohort: str, task: str, lease_token: str, owner: str = "") -> Any:
+        return self._request("POST", f"/v1/cohorts/{self._segment(cohort)}/tasks/{self._segment(task)}/heartbeat", {"owner": owner, "lease_token": lease_token})
+
+    def complete_task(self, cohort: str, task: str, lease_token: str, result: str = "", owner: str = "") -> Any:
+        return self._request("POST", f"/v1/cohorts/{self._segment(cohort)}/tasks/{self._segment(task)}/complete", {"owner": owner, "lease_token": lease_token, "result": result})
+
+    def fail_task(self, cohort: str, task: str, lease_token: str, error: str, requeue: bool = False, owner: str = "") -> Any:
+        return self._request("POST", f"/v1/cohorts/{self._segment(cohort)}/tasks/{self._segment(task)}/fail", {"owner": owner, "lease_token": lease_token, "error": error, "requeue": requeue})
+
+    def create_snapshot(self, sandbox: str, name: str = "") -> Dict[str, Any]:
+        return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/snapshot", {"name": name})
+
+    def list_snapshots(self) -> List[Dict[str, Any]]:
+        return self._request("GET", "/v1/snapshots").get("snapshots", [])
+
+    def restore_snapshot(self, snapshot: str) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/snapshots/{self._segment(snapshot)}/restore")
 
     # -- approvals ---------------------------------------------------------
 

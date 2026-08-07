@@ -261,6 +261,7 @@ func (k *K8s) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 				Resources:       resources,
 				SecurityContext: sandboxSecCtx,
 				VolumeMounts:    sandboxMounts,
+				Ports:           ideContainerPorts(spec.IDEPort),
 			}},
 			Volumes: []corev1.Volume{{
 				Name: "workspace",
@@ -281,6 +282,13 @@ func (k *K8s) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	if err := k.waitRunning(ctx, podName, 90*time.Second); err != nil {
 		_ = k.Kill(context.Background(), id)
 		return nil, err
+	}
+
+	if spec.IDEPort > 0 {
+		if err := k.ensureIDEIngress(ctx, id, spec.IDEPort); err != nil {
+			_ = k.Kill(context.Background(), id)
+			return nil, err
+		}
 	}
 
 	if spec.SeedDir != "" {
@@ -549,6 +557,7 @@ func (k *K8s) Kill(ctx context.Context, id string) error {
 	podErr := k.client.CoreV1().Pods(k.namespace).Delete(ctx, containerName(id), metav1.DeleteOptions{GracePeriodSeconds: &grace})
 	_ = k.client.CoreV1().PersistentVolumeClaims(k.namespace).Delete(ctx, volumeName(id), metav1.DeleteOptions{})
 	_ = k.client.CoreV1().ConfigMaps(k.namespace).Delete(ctx, egressConfigMapName(id), metav1.DeleteOptions{})
+	_ = k.client.NetworkingV1().NetworkPolicies(k.namespace).Delete(ctx, ideNetworkPolicyName(id), metav1.DeleteOptions{})
 	if podErr != nil && !apierrors.IsNotFound(podErr) {
 		return fmt.Errorf("delete pod: %w", podErr)
 	}
@@ -694,6 +703,68 @@ func (k *K8s) ensureNetworkPolicy(ctx context.Context) error {
 		return fmt.Errorf("create default-deny network policy: %w", err)
 	}
 	return nil
+}
+
+// ideContainerPorts advertises the optional in-cell IDE listen port on the pod.
+func ideContainerPorts(port int) []corev1.ContainerPort {
+	if port <= 0 || port > 65535 {
+		return nil
+	}
+	return []corev1.ContainerPort{{
+		Name:          "ide",
+		ContainerPort: int32(port), // #nosec G115 -- bounded to the TCP port range above.
+		Protocol:      corev1.ProtocolTCP,
+	}}
+}
+
+// ensureIDEIngress adds a NetworkPolicy allowing TCP ingress to the IDE port on
+// this sandbox pod. Required when RUNEWARD_K8S_NETWORK_POLICY is on (default
+// deny blocks control-plane → pod IP proxying). Additive with the default-deny
+// policy. When NetworkPolicy is off this is a no-op.
+func (k *K8s) ensureIDEIngress(ctx context.Context, id string, port int) error {
+	if !envTruthy(os.Getenv("RUNEWARD_K8S_NETWORK_POLICY")) || port <= 0 || port > 65535 {
+		return nil
+	}
+	proto := corev1.ProtocolTCP
+	p := intstr.FromInt(port)
+	policy := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   ideNetworkPolicyName(id),
+			Labels: map[string]string{labelKey(labelManaged): "true", labelKey(labelID): id},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{labelKey(labelID): id},
+			},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			// Empty From allows the control plane (and anything else in-cluster
+			// that can route to the pod IP). Operators who need tighter scoping
+			// can replace this with a CIDR via a cluster policy overlay.
+			Ingress: []networkingv1.NetworkPolicyIngressRule{{
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &proto, Port: &p}},
+			}},
+		},
+	}
+	_, err := k.client.NetworkingV1().NetworkPolicies(k.namespace).Create(ctx, policy, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create ide ingress network policy: %w", err)
+	}
+	return nil
+}
+
+func ideNetworkPolicyName(id string) string { return "runeward-ide-" + id }
+
+// ContainerIP returns the Pod IP for reverse-proxying to in-cell HTTP services.
+func (k *K8s) ContainerIP(ctx context.Context, id string) (string, error) {
+	pod, err := k.client.CoreV1().Pods(k.namespace).Get(ctx, containerName(id), metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get pod IP: %w", err)
+	}
+	ip := strings.TrimSpace(pod.Status.PodIP)
+	if ip == "" {
+		return "", fmt.Errorf("pod %s has no IP yet", containerName(id))
+	}
+	return ip, nil
 }
 
 // intstrTCPUDP returns the DNS (port 53) UDP+TCP port rules for the egress allow.

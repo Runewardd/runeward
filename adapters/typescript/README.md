@@ -36,13 +36,13 @@ Start the control plane first (`runeward serve`, default
 ```ts
 import { RunewardClient, RunewardDenied, RunewardApprovalRequired } from "@runeward/sdk";
 
-const rw = new RunewardClient({ baseUrl: "http://localhost:8080" });
+const rw = new RunewardClient({ baseUrl: "http://localhost:8080" }); // uses RUNEWARD_API_TOKEN in Node when set
 
 const sbx = await rw.createSandbox("dev");
 const version = await rw.shell(sbx.id, ["python3", "--version"]);
 console.log(version.stdout); // "Python 3.11.2\n"
 
-await rw.writeFile(sbx.id, "/workspace/main.py", "print(2 + 2)");
+await rw.writeFile(sbx.id, "main.py", "print(2 + 2)");
 const run = await rw.python(sbx.id, "exec(open('/workspace/main.py').read())");
 console.log(run.stdout); // "4\n"
 
@@ -80,12 +80,18 @@ try {
 | --- | --- |
 | `healthz()` | `GET /healthz` |
 | `listProfiles()` | `GET /v1/charters` |
+| `whoami()` / `readiness(profile)` / `simulatePolicy(...)` | Identity, setup, and dry-run policy APIs |
+| `listRuns()` / `getRun(id)` | Durable provider-neutral Run lineage |
 | `createSandbox(profile)` | `POST /v1/citadels` |
 | `listSandboxes()` / `getSandbox(id)` / `killSandbox(id)` | `GET`/`GET`/`DELETE /v1/citadels[/{id}]` |
 | `shell(sandbox, command, workdir?)` | `POST .../shell/exec` |
 | `python(sandbox, code)` / `node(sandbox, code)` | `POST .../code/{python,node}` |
 | `readFile` / `writeFile` / `listFiles` / `searchFiles` | `POST .../file/{read,write,list,search}` |
 | `audit(sandbox)` / `verifyAudit()` | `GET .../chronicle`, `GET /v1/chronicle/verify` |
+| `exportEvidence(sandbox)` | Portable resolved Charter + signed Chronicle evidence |
+| `createCohort` / `listCohorts` / `addTask` / `claimTask` | Cohort lifecycle and leased work queue |
+| `heartbeatTask` / `completeTask` / `failTask` | Signed-lease task transitions |
+| `createSnapshot` / `listSnapshots` / `restoreSnapshot` | Tenant-scoped recovery |
 | `listApprovals()` / `approve(id)` / `deny(id)` | `GET /v1/conclave`, `POST /v1/conclave/{id}/{approve,deny}` |
 
 ## Vercel AI SDK tools

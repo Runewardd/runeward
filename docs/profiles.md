@@ -68,6 +68,7 @@ max_cost_usd    = 25.0           # cap reported spend in USD (0 = unlimited)
 | `[[policy]]` / `[[cel]]` / `[rego]` | Per-action verdicts. Choose the engine with top-level `policy_engine`. |
 | `[policy_bundle]` | Pull signed, versioned policy from an OCI artifact instead of inline rules. |
 | `[rationing]` | Rationing (guardrails): `wall_clock` (duration string), `max_execs`, `egress_requests`, loop detection via `loop_window`/`loop_threshold`, and budget caps `max_tokens`/`max_cost_usd` (enforced once usage is reported to `POST /v1/citadels/{id}/usage`). |
+| `[ide]` | Optional experimental browser IDE (code-server). Fields: `enabled`, `port` (default 8080), optional `path`, optional `agents = ["claude","codex","cursor"]` (UI hints). Requires `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1` and an IDE image (`deploy/Dockerfile.ide` or `Dockerfile.ide-agents`). See [Browser IDE](browser-ide.md) for setup and limitations (no desktop GUI embed, no first-class Copilot). |
 
 ## Secret injection
 

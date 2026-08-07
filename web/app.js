@@ -18,6 +18,7 @@ const state = {
   fleets: [],
   fleetSelected: null, // fleet id
   fleetTasks: [],
+	taskLeases: {},
   // terminal
   term: null,
   fitAddon: null,
@@ -33,6 +34,7 @@ const state = {
   budget: null,
 	readiness: null,
 	snapshots: [],
+	runs: [],
 };
 
 /* ---------------- DOM helpers ---------------- */
@@ -99,11 +101,26 @@ function profileAllowed(name) {
   for (const pattern of patterns) {
     if (!pattern) continue;
     if (pattern === "*") return true;
-    // path.Match-style: * matches any sequence within a single path segment.
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-    if (new RegExp("^" + escaped + "$").test(name)) return true;
+	if (globMatches(pattern, name)) return true;
   }
   return false;
+}
+
+// Match Go path.Match's useful single-segment glob forms for profile names.
+function globMatches(pattern, value) {
+	let source = "";
+	for (let i = 0; i < pattern.length; i++) {
+		const ch = pattern[i];
+		if (ch === "*") source += "[^/]*";
+		else if (ch === "?") source += "[^/]";
+		else if (ch === "[") {
+			const end = pattern.indexOf("]", i + 1);
+			if (end < 0) return false;
+			source += pattern.slice(i, end + 1);
+			i = end;
+		} else source += ch.replace(/[.+^${}()|\\]/g, "\\$&");
+	}
+	try { return new RegExp("^" + source + "$").test(value); } catch { return false; }
 }
 
 /* ---------------- API layer ---------------- */
@@ -434,6 +451,13 @@ function selectSandbox(id) {
     renderEgress();
     renderBudget();
 		renderSnapshots();
+    const openIde = $("#open-ide");
+    if (openIde) openIde.classList.add("hidden");
+    const ideHint = $("#ide-agents-hint");
+    if (ideHint) {
+      ideHint.textContent = "";
+      ideHint.classList.add("hidden");
+    }
     return;
   }
   empty.classList.add("hidden");
@@ -442,6 +466,25 @@ function selectSandbox(id) {
   const sb = state.sandboxes.find((s) => s.id === id) || {};
   $("#sel-id").textContent = id;
   $("#sel-meta").textContent = `${sb.profile || "—"} · ${sb.backend || "—"} · ${sb.image || "—"} · ${sb.status || "—"}`;
+  const openIde = $("#open-ide");
+  const ideHint = $("#ide-agents-hint");
+  if (openIde) {
+    openIde.classList.toggle("hidden", !sb.ide);
+  }
+  if (ideHint) {
+    const agents = Array.isArray(sb.ide_agents) ? sb.ide_agents.filter(Boolean) : [];
+    if (sb.ide && agents.length) {
+      const cmds = agents.map((a) => {
+        if (a === "cursor") return "agent";
+        return a;
+      });
+      ideHint.textContent = `In IDE terminal: ${cmds.join(" · ")} (CLI — not Cursor/Claude Desktop GUIs)`;
+      ideHint.classList.remove("hidden");
+    } else {
+      ideHint.textContent = "";
+      ideHint.classList.add("hidden");
+    }
+  }
   const simSel = $("#sim-profile-select");
   if (simSel && sb.profile) {
     simSel.value = sb.profile;
@@ -656,20 +699,20 @@ function renderFleetTasks() {
     const resultOrError = st === "failed" ? t.error || "" : t.result || "";
 
     const actions = el("div", { class: "task-actions" });
-    if (st === "claimed") {
+    if (st === "claimed" && state.taskLeases[t.id]) {
       const requeue = el("input", { type: "checkbox", checked: "checked", class: "requeue-box" });
       actions.appendChild(
         el("button", {
           class: "btn btn-sm btn-approve",
           text: "Complete",
-          onClick: () => completeFleetTask(t.id),
+		  onClick: () => completeFleetTask(t.id, t.owner || ""),
         })
       );
       actions.appendChild(
         el("button", {
           class: "btn btn-sm btn-deny",
           text: "Fail",
-          onClick: () => failFleetTask(t.id, requeue.checked),
+		  onClick: () => failFleetTask(t.id, t.owner || "", requeue.checked),
         })
       );
       actions.appendChild(
@@ -727,6 +770,7 @@ async function claimFleetTask() {
     note.classList.remove("hidden");
     if (data && data.claimed && data.task) {
       note.className = "note ok";
+	  state.taskLeases[data.task.id] = data.task.lease_token;
       note.textContent = `Claimed ${data.task.id} by ${owner}: ${data.task.payload || ""}`;
       toast(`Task claimed by ${owner}`, "success");
     } else {
@@ -741,11 +785,12 @@ async function claimFleetTask() {
   }
 }
 
-async function completeFleetTask(taskId) {
+async function completeFleetTask(taskId, owner) {
   const result = window.prompt("Result for this task:", "ok");
   if (result === null) return;
   try {
-    await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/complete`), { result });
+	await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/complete`), { owner, lease_token: state.taskLeases[taskId], result });
+	delete state.taskLeases[taskId];
     toast("Task completed", "success");
     await refreshFleetDetail();
   } catch (e) {
@@ -753,14 +798,17 @@ async function completeFleetTask(taskId) {
   }
 }
 
-async function failFleetTask(taskId, requeue) {
+async function failFleetTask(taskId, owner, requeue) {
   const error = window.prompt("Failure reason:", "error");
   if (error === null) return;
   try {
-    await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/fail`), {
+	await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/fail`), {
+	  owner,
+	  lease_token: state.taskLeases[taskId],
       error,
       requeue: !!requeue,
     });
+	delete state.taskLeases[taskId];
     toast(requeue ? "Task failed — requeued" : "Task failed", "info");
     await refreshFleetDetail();
   } catch (e) {
@@ -841,6 +889,8 @@ function ensureTerminal() {
 
   window.addEventListener("resize", debounce(fitAndResize, 120));
   $("#term-reconnect").addEventListener("click", () => connectTerminal(true));
+  const openIdeBtn = $("#open-ide");
+  if (openIdeBtn) openIdeBtn.addEventListener("click", openIDE);
 }
 
 function fitAndResize() {
@@ -937,6 +987,31 @@ async function requestTerminalTicket(sandboxID) {
     throw new Error("terminal ticket unavailable");
   }
   return data.ticket;
+}
+
+async function openIDE() {
+  if (!state.selected) return;
+  const sb = state.sandboxes.find((s) => s.id === state.selected) || {};
+  if (!sb.ide) {
+    toast("Browser IDE is not available for this Citadel.", "warn");
+    return;
+  }
+  try {
+    const { data } = await api("POST", "/v1/tickets", {
+      kind: "ide",
+      sandbox_id: state.selected,
+      ttl_seconds: 30,
+    });
+    if (!data || !data.ticket) {
+      throw new Error("ide ticket unavailable");
+    }
+    const url =
+      `/v1/citadels/${encodeURIComponent(state.selected)}/ide` +
+      `?ticket=${encodeURIComponent(data.ticket)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (e) {
+    toast("Open IDE failed: " + e.message, "error");
+  }
 }
 
 /* ---------------- Files tab ---------------- */
@@ -1466,13 +1541,41 @@ function renderBudget() {
 async function refreshRecovery() {
 	if (!state.selected) return;
 	try {
-		const { data } = await api("GET", "/v1/snapshots");
-		state.snapshots = (data && data.snapshots) || [];
+		const [snapshotResponse, runResponse] = await Promise.all([
+			api("GET", "/v1/snapshots"),
+			api("GET", "/v1/runs"),
+		]);
+		state.snapshots = (snapshotResponse.data && snapshotResponse.data.snapshots) || [];
+		state.runs = (runResponse.data && runResponse.data.runs) || [];
 	} catch (e) {
 		state.snapshots = [];
+		state.runs = [];
 		toast("Could not load recovery snapshots: " + e.message, "error");
 	}
 	renderSnapshots();
+	renderRuns();
+}
+
+function renderRuns() {
+	const body = $("#run-body");
+	if (!body) return;
+	body.innerHTML = "";
+	const runs = state.runs.slice().reverse();
+	if (runs.length === 0) {
+		body.appendChild(el("tr", {}, el("td", { colspan: "6", class: "empty-note", text: "No agent runs yet." })));
+		return;
+	}
+	for (const run of runs) {
+		const selected = run.citadel_id === state.selected;
+		body.appendChild(el("tr", { class: selected ? "selected" : "" }, [
+			el("td", { class: "mono", text: run.id || "—", title: run.id || "" }),
+			el("td", { class: "mono", text: run.parent_run_id || "—", title: run.parent_run_id || "" }),
+			el("td", { text: run.actor || "—" }),
+			el("td", { text: [run.agent, run.provider, run.model].filter(Boolean).join(" · ") || "—" }),
+			el("td", {}, el("span", { class: "v-tag " + (run.status || ""), text: run.status || "—" })),
+			el("td", { text: fmtDateTime(run.created_at) }),
+		]));
+	}
 }
 
 function renderSnapshots() {
@@ -1689,16 +1792,19 @@ function applyPrincipal() {
   if (chip) {
     chip.classList.remove("hidden");
     let name, role;
-    if (auth.rbac) {
-      name = p.name || "(unnamed)";
-      role = p.admin ? "admin" : (p.can_approve ? "approver" : "user");
+	if (auth.rbac) {
+	  name = p.name || "(unnamed)";
+	  role = p.admin ? "admin" : (p.can_approve && !p.can_launch ? "reviewer-only" : (p.can_approve ? "approver" : (p.can_launch ? "operator" : "locked")));
     } else {
       name = "open mode";
       role = "";
     }
     $("#identity-name").textContent = name;
     $("#identity-role").textContent = role;
-    $("#identity-role").classList.toggle("hidden", !role);
+	$("#identity-role").classList.toggle("hidden", !role);
+	const launchScope = p.admin ? "all Charters" : ((p.allowed_profiles || []).join(", ") || "no Charters");
+	const approvalScope = p.admin ? "all approvals" : (p.can_approve ? ((p.approval_profiles || []).join(", ") || "all approvals") : "no approvals");
+	chip.title = `Launch: ${launchScope}; Review: ${approvalScope}`;
     // A sign-out only makes sense when authenticating with a token.
     $("#signout-btn").classList.toggle("hidden", !auth.token);
   }

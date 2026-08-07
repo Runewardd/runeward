@@ -92,3 +92,15 @@ func TestEnsureNetworkPolicyGatedByEnv(t *testing.T) {
 		t.Fatalf("ensureNetworkPolicy (idempotent): %v", err)
 	}
 }
+
+func TestIDEContainerPortsBounds(t *testing.T) {
+	for _, port := range []int{-1, 0, 65536} {
+		if got := ideContainerPorts(port); got != nil {
+			t.Fatalf("ideContainerPorts(%d) = %#v, want nil", port, got)
+		}
+	}
+	ports := ideContainerPorts(8080)
+	if len(ports) != 1 || ports[0].ContainerPort != 8080 {
+		t.Fatalf("ideContainerPorts(8080) = %#v", ports)
+	}
+}

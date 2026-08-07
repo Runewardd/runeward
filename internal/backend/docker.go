@@ -625,6 +625,37 @@ func (d *Docker) waitEgressReady(ctx context.Context, name string) error {
 	return fmt.Errorf("timed out waiting for transparent egress proxy to become ready")
 }
 
+// ContainerIP returns the Docker-network IP of the sandbox (or its egress
+// sidecar when the sandbox shares that netns). Used to reverse-proxy to
+// in-cell HTTP services without publishing host ports.
+func (d *Docker) ContainerIP(ctx context.Context, id string) (string, error) {
+	target := containerName(id)
+	d.proxyMu.Lock()
+	if egress, ok := d.egressCtr[id]; ok && egress != "" {
+		target = egress
+	}
+	d.proxyMu.Unlock()
+
+	out, err := d.output(ctx, "inspect", "-f",
+		"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", target)
+	if err != nil {
+		return "", fmt.Errorf("inspect container IP: %w", err)
+	}
+	ip := strings.TrimSpace(out)
+	if ip == "" {
+		// Fallback: first IPv4 address from NetworkSettings.IPAddress (bridge).
+		out, err = d.output(ctx, "inspect", "-f", "{{.NetworkSettings.IPAddress}}", target)
+		if err != nil {
+			return "", fmt.Errorf("inspect container IP: %w", err)
+		}
+		ip = strings.TrimSpace(out)
+	}
+	if ip == "" {
+		return "", fmt.Errorf("container %s has no network IP", target)
+	}
+	return ip, nil
+}
+
 func (d *Docker) List(ctx context.Context) ([]Sandbox, error) {
 	out, err := d.output(ctx, "ps", "-a",
 		"--filter", "label="+labelManaged+"=true",

@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/credentials"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +23,7 @@ const fleetStateFile = ".runeward-cohort"
 // newFleetCmd drives a Cohort on a running `runeward serve` over REST: push
 // prompts and run an agent (Cursor, Codex, or Claude) on each, all governed.
 func newFleetCmd() *cobra.Command {
-	var base, agent, model, fleetID string
+	var base, agent, model, fleetID, token string
 
 	cmd := &cobra.Command{
 		Use:   "cohort",
@@ -40,8 +41,10 @@ func newFleetCmd() *cobra.Command {
 		"model slug passed to the agent (or $MODEL)")
 	cmd.PersistentFlags().StringVar(&fleetID, "cohort", "",
 		"Cohort id; defaults to the one saved by `cohort up`")
+	cmd.PersistentFlags().StringVar(&token, "token", firstSet(os.Getenv("RUNEWARD_API_TOKEN"), credentials.LoadToken()),
+		"control-plane bearer token (or $RUNEWARD_API_TOKEN / `runeward auth login`)")
 
-	client := func() *fleetClient { return &fleetClient{base: base, http: &http.Client{}} }
+	client := func() *fleetClient { return &fleetClient{base: base, token: token, http: &http.Client{}} }
 
 	up := &cobra.Command{
 		Use:   "up [charter]",
@@ -234,8 +237,9 @@ func newFleetCmd() *cobra.Command {
 }
 
 type fleetClient struct {
-	base string
-	http *http.Client
+	base  string
+	token string
+	http  *http.Client
 }
 
 type fleetView struct {
@@ -244,9 +248,10 @@ type fleetView struct {
 }
 
 type task struct {
-	ID      string `json:"id"`
-	Payload string `json:"payload"`
-	State   string `json:"state"`
+	ID         string `json:"id"`
+	Payload    string `json:"payload"`
+	State      string `json:"state"`
+	LeaseToken string `json:"lease_token,omitempty"`
 }
 
 type claimResp struct {
@@ -282,6 +287,9 @@ func (c *fleetClient) call(ctx context.Context, method, path string, body, out a
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -356,7 +364,7 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 				out, err := c.shellExec(ctx, sb, cmdVec)
 				if err != nil {
 					_ = c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/tasks/"+claim.Task.ID+"/fail",
-						map[string]any{"error": err.Error(), "requeue": true}, nil)
+						map[string]any{"owner": owner, "lease_token": claim.Task.LeaseToken, "error": err.Error(), "requeue": true}, nil)
 					say("!! [%s] failed (requeued) %s: %v", owner, claim.Task.ID, err)
 					continue
 				}
@@ -364,7 +372,7 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 					say("%s", strings.TrimSpace(out))
 				}
 				_ = c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/tasks/"+claim.Task.ID+"/complete",
-					map[string]string{"result": "done by " + owner}, nil)
+					map[string]string{"owner": owner, "lease_token": claim.Task.LeaseToken, "result": "done by " + owner}, nil)
 				say("<< [%s] done: %s", owner, claim.Task.ID)
 			}
 		}(sb, fmt.Sprintf("worker-%d", i+1))

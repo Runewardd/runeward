@@ -46,6 +46,31 @@ export interface Approval {
   created: string;
 }
 
+export interface Principal {
+  name: string;
+	tenant?: string;
+  admin: boolean;
+  can_approve: boolean;
+  can_launch: boolean;
+  allowed_profiles?: string[];
+  approval_profiles?: string[];
+}
+
+export interface Whoami { authenticated: boolean; rbac: boolean; principal: Principal; }
+export interface Usage { tokens: number; cost_usd: number; }
+export interface Cohort { id: string; profile: string; owner?: string; sandboxes: string[]; stats: Record<string, number>; created: string; }
+export interface CohortTask { id: string; payload: string; state: string; owner?: string; attempts: number; result?: string; error?: string; lease_token?: string; }
+export interface Snapshot { id: string; profile: string; [key: string]: unknown; }
+export interface Run { id: string; parent_run_id?: string; citadel_id: string; tenant?: string; actor?: string; charter: string; agent?: string; provider?: string; model?: string; status: string; created_at: string; finished_at?: string; error?: string; }
+export interface CreateSandboxOptions {
+  copyFrom?: string;
+  parentCitadel?: string;
+  runId?: string;
+  agent?: string;
+  provider?: string;
+  model?: string;
+}
+
 /** Base error for any non-success response from the control plane. */
 export class RunewardError extends Error {
   readonly status?: number;
@@ -71,6 +96,14 @@ export class RunewardDenied extends RunewardError {
     this.name = "RunewardDenied";
     this.reason = reason;
   }
+}
+
+/** Thrown when the caller is authenticated but lacks resource or role access. */
+export class RunewardAuthorizationError extends RunewardError {
+	constructor(message: string, payload: Record<string, unknown> = {}) {
+		super(`runeward authorization denied: ${message}`, 403, payload);
+		this.name = "RunewardAuthorizationError";
+	}
 }
 
 /**
@@ -122,7 +155,8 @@ export class RunewardClient {
     // Normalize so path joins never double up slashes.
     this.baseUrl = this.normalizeBaseUrl(options.baseUrl ?? "http://localhost:8080");
     this.validateTransport(this.baseUrl, options.allowInsecure ?? false);
-    this.token = options.token;
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+    this.token = options.token ?? env?.RUNEWARD_API_TOKEN;
     this.timeoutMs = options.timeoutMs ?? 60_000;
   }
 
@@ -207,9 +241,12 @@ export class RunewardClient {
   }
 
   private raiseForStatus(status: number, payload: Record<string, unknown>): never {
-    if (status === 403 || payload.verdict === "deny") {
-      throw new RunewardDenied(String(payload.reason ?? "denied by policy"), payload);
-    }
+	if (payload.code === "authz_denied") {
+	  throw new RunewardAuthorizationError(String(payload.error ?? "not authorized"), payload);
+	}
+	if (payload.verdict === "deny" || (status === 403 && payload.code === undefined)) {
+	  throw new RunewardDenied(String(payload.reason ?? "denied by policy"), payload);
+	}
     if (status === 202 || payload.verdict === "require-approval") {
       throw new RunewardApprovalRequired(
         String(payload.approval_id ?? ""),
@@ -227,17 +264,42 @@ export class RunewardClient {
     return this.request("GET", "/healthz");
   }
 
+  whoami(): Promise<Whoami> { return this.request("GET", "/v1/whoami"); }
+
+  readiness(profile: string): Promise<Record<string, unknown>> {
+    return this.request("GET", `/v1/readiness?profile=${this.segment(profile)}`);
+  }
+
+  simulatePolicy(profileName: string, actions: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
+    return this.request("POST", "/v1/policy/simulate", { profile_name: profileName, actions });
+  }
+
   /** `GET /v1/charters` — reachable profiles. */
   async listProfiles(): Promise<Profile[]> {
     const res = await this.request<{ profiles: Profile[] }>("GET", "/v1/charters");
     return res.profiles ?? [];
   }
 
+  async listRuns(): Promise<Run[]> {
+    const data = await this.request<{ runs?: Run[] }>("GET", "/v1/runs");
+    return data.runs ?? [];
+  }
+
+  getRun(runId: string): Promise<Run> { return this.request("GET", `/v1/runs/${this.segment(runId)}`); }
+
   // -- sandbox lifecycle -----------------------------------------------
 
   /** `POST /v1/citadels` — provision a sandbox from `profile`. */
-  createSandbox(profile: string): Promise<Sandbox> {
-    return this.request<Sandbox>("POST", "/v1/citadels", { profile });
+  createSandbox(profile: string, options: CreateSandboxOptions = {}): Promise<Sandbox> {
+    return this.request<Sandbox>("POST", "/v1/citadels", {
+      profile,
+      copy_from: options.copyFrom,
+      parent_citadel: options.parentCitadel,
+      run_id: options.runId,
+      agent: options.agent,
+      provider: options.provider,
+      model: options.model,
+    });
   }
 
   /** `GET /v1/citadels`. */
@@ -275,6 +337,32 @@ export class RunewardClient {
   /** `POST .../code/node` — run a Node.js snippet in the sandbox. */
   node(sandbox: string, code: string): Promise<ExecResult> {
     return this.request<ExecResult>("POST", `/v1/citadels/${this.segment(sandbox)}/code/node`, { code });
+  }
+
+  browser(sandbox: string, url: string, mode = "text"): Promise<ExecResult> {
+    return this.request("POST", `/v1/citadels/${this.segment(sandbox)}/browser`, { url, mode });
+  }
+
+  async openBrowser(sandbox: string): Promise<string> {
+    const res = await this.request<{ session_id: string }>("POST", `/v1/citadels/${this.segment(sandbox)}/browser/sessions`);
+    return res.session_id;
+  }
+
+  browserAct(sandbox: string, session: string, action: Record<string, unknown>): Promise<ExecResult> {
+    return this.request("POST", `/v1/citadels/${this.segment(sandbox)}/browser/sessions/${this.segment(session)}/act`, action);
+  }
+
+  closeBrowser(sandbox: string, session: string): Promise<unknown> {
+    return this.request("DELETE", `/v1/citadels/${this.segment(sandbox)}/browser/sessions/${this.segment(session)}`);
+  }
+
+  reportUsage(sandbox: string, tokens: number, costUsd: number): Promise<Usage> {
+    return this.request("POST", `/v1/citadels/${this.segment(sandbox)}/usage`, { tokens, cost_usd: costUsd });
+  }
+
+  async perimeter(sandbox: string): Promise<Array<Record<string, unknown>>> {
+    const res = await this.request<{ decisions: Array<Record<string, unknown>> }>("GET", `/v1/citadels/${this.segment(sandbox)}/perimeter`);
+    return res.decisions ?? [];
   }
 
   // -- files -----------------------------------------------------------
@@ -319,6 +407,25 @@ export class RunewardClient {
     const res = await this.request<{ ok: boolean }>("GET", "/v1/chronicle/verify");
     return Boolean(res.ok);
   }
+
+  exportEvidence(sandbox: string): Promise<Record<string, unknown>> {
+    return this.request("GET", `/v1/citadels/${this.segment(sandbox)}/evidence`);
+  }
+
+  async createCohort(profile: string): Promise<Cohort> { return this.request("POST", "/v1/cohorts", { profile }); }
+  async listCohorts(): Promise<Cohort[]> { const r = await this.request<{ fleets: Cohort[] }>("GET", "/v1/cohorts"); return r.fleets ?? []; }
+  getCohort(id: string): Promise<Cohort> { return this.request("GET", `/v1/cohorts/${this.segment(id)}`); }
+  killCohort(id: string): Promise<unknown> { return this.request("DELETE", `/v1/cohorts/${this.segment(id)}`); }
+  async listTasks(id: string): Promise<CohortTask[]> { const r = await this.request<{ tasks: CohortTask[] }>("GET", `/v1/cohorts/${this.segment(id)}/tasks`); return r.tasks ?? []; }
+  addTask(id: string, payload: string): Promise<CohortTask> { return this.request("POST", `/v1/cohorts/${this.segment(id)}/tasks`, { payload }); }
+  claimTask(id: string, owner = ""): Promise<{ claimed: boolean; task?: CohortTask }> { return this.request("POST", `/v1/cohorts/${this.segment(id)}/claim`, { owner }); }
+  heartbeatTask(id: string, task: string, leaseToken: string, owner = ""): Promise<unknown> { return this.request("POST", `/v1/cohorts/${this.segment(id)}/tasks/${this.segment(task)}/heartbeat`, { owner, lease_token: leaseToken }); }
+  completeTask(id: string, task: string, leaseToken: string, result = "", owner = ""): Promise<unknown> { return this.request("POST", `/v1/cohorts/${this.segment(id)}/tasks/${this.segment(task)}/complete`, { owner, lease_token: leaseToken, result }); }
+  failTask(id: string, task: string, leaseToken: string, error: string, requeue = false, owner = ""): Promise<unknown> { return this.request("POST", `/v1/cohorts/${this.segment(id)}/tasks/${this.segment(task)}/fail`, { owner, lease_token: leaseToken, error, requeue }); }
+
+  createSnapshot(sandbox: string, name = ""): Promise<Snapshot> { return this.request("POST", `/v1/citadels/${this.segment(sandbox)}/snapshot`, { name }); }
+  async listSnapshots(): Promise<Snapshot[]> { const r = await this.request<{ snapshots: Snapshot[] }>("GET", "/v1/snapshots"); return r.snapshots ?? []; }
+  restoreSnapshot(id: string): Promise<Sandbox> { return this.request("POST", `/v1/snapshots/${this.segment(id)}/restore`); }
 
   // -- approvals -------------------------------------------------------
 

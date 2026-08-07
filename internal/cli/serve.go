@@ -26,6 +26,7 @@ func newServeCmd(configDir *string) *cobra.Command {
 	var port int
 	var noUI bool
 	var bind, token, tlsCert, tlsKey string
+	var allowInsecureHTTP bool
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the control plane: governed REST API + web dashboard",
@@ -49,8 +50,19 @@ func newServeCmd(configDir *string) *cobra.Command {
 			if !isLoopbackHost(bind) && token == "" && authzStore == nil {
 				return fmt.Errorf("refusing to bind %s without authentication: set --token / RUNEWARD_API_TOKEN, configure %s, or bind 127.0.0.1", bind, authz.EnvFile)
 			}
+			if !isLoopbackHost(bind) {
+				if token != "" && len(token) < 32 {
+					return fmt.Errorf("refusing network bind with an API token shorter than 32 characters")
+				}
+				if err := authzStore.ValidateForNetwork(); err != nil {
+					return err
+				}
+			}
 			if (tlsCert == "") != (tlsKey == "") {
 				return fmt.Errorf("--tls-cert and --tls-key must be set together")
+			}
+			if !isLoopbackHost(bind) && tlsCert == "" && !allowInsecureHTTP {
+				return fmt.Errorf("refusing plaintext HTTP on non-loopback bind %s: configure --tls-cert/--tls-key or explicitly pass --allow-insecure-http behind a trusted TLS proxy", bind)
 			}
 
 			mgr, err := controlplane.New(resolveConfigDir(*configDir))
@@ -70,16 +82,10 @@ func newServeCmd(configDir *string) *cobra.Command {
 			srv.Version = version
 			srv.AuthToken = token
 			srv.Authz = authzStore
-			// MCP streamable-HTTP lives at /mcp alongside REST.
-			// The current MCP transport has one shared tool session and therefore
-			// cannot safely preserve per-principal ownership. Keep it unavailable
-			// on an RBAC server until its authorization context is unified.
-			if authzStore == nil {
-				mcpSrv := mcp.NewServer(mgr)
-				srv.MCP = mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpSrv }, nil)
-			} else {
-				logger.Warn("MCP HTTP disabled because multi-user RBAC is enabled; run `runeward mcp --http` as a separately scoped service if needed")
-			}
+			// MCP uses the same per-request bearer token and centralized resource
+			// ownership checks as REST, so it is safe to expose under RBAC.
+			mcpSrv := mcp.NewServer(mgr)
+			srv.MCP = mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpSrv }, nil)
 
 			addr := net.JoinHostPort(bind, strconv.Itoa(port))
 			httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
@@ -129,6 +135,7 @@ func newServeCmd(configDir *string) *cobra.Command {
 	cmd.Flags().StringVar(&token, "token", "", "API token required on every request (falls back to RUNEWARD_API_TOKEN)")
 	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to a TLS certificate (enables HTTPS; requires --tls-key)")
 	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to the TLS private key (requires --tls-cert)")
+	cmd.Flags().BoolVar(&allowInsecureHTTP, "allow-insecure-http", false, "allow plaintext HTTP on a non-loopback bind behind a trusted TLS proxy")
 	cmd.Flags().BoolVar(&noUI, "no-ui", false, "serve the REST API only, without the web dashboard")
 	return cmd
 }
@@ -158,7 +165,8 @@ func resolveConfigDir(configDir string) string {
 func newMCPCmd(configDir *string) *cobra.Command {
 	var asHTTP bool
 	var port int
-	var bind, token string
+	var bind, token, tlsCert, tlsKey string
+	var allowInsecureHTTP bool
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Run the MCP server wrapping runeward's governed tools (stdio or --http)",
@@ -167,6 +175,32 @@ func newMCPCmd(configDir *string) *cobra.Command {
 			"serves the streamable-HTTP transport at /mcp on 127.0.0.1 (a non-loopback\n" +
 			"--bind requires --token or RUNEWARD_API_TOKEN).",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			authzStore, err := authz.FromEnv()
+			if err != nil {
+				return fmt.Errorf("load %s: %w", authz.EnvFile, err)
+			}
+			if asHTTP {
+				if token == "" {
+					token = os.Getenv("RUNEWARD_API_TOKEN")
+				}
+				if !isLoopbackHost(bind) && token == "" && authzStore == nil {
+					return fmt.Errorf("refusing to bind %s without authentication: set --token, configure %s, or bind 127.0.0.1", bind, authz.EnvFile)
+				}
+				if !isLoopbackHost(bind) {
+					if token != "" && len(token) < 32 {
+						return fmt.Errorf("refusing network bind with an API token shorter than 32 characters")
+					}
+					if err := authzStore.ValidateForNetwork(); err != nil {
+						return err
+					}
+				}
+				if (tlsCert == "") != (tlsKey == "") {
+					return fmt.Errorf("--tls-cert and --tls-key must be set together")
+				}
+				if !isLoopbackHost(bind) && tlsCert == "" && !allowInsecureHTTP {
+					return fmt.Errorf("refusing plaintext MCP HTTP on non-loopback bind %s: configure --tls-cert/--tls-key or explicitly pass --allow-insecure-http behind a trusted TLS proxy", bind)
+				}
+			}
 			mgr, err := controlplane.New(resolveConfigDir(*configDir))
 			if err != nil {
 				return err
@@ -176,21 +210,29 @@ func newMCPCmd(configDir *string) *cobra.Command {
 			mcpSrv := mcp.NewServer(mgr)
 
 			if asHTTP {
-				if token == "" {
-					token = os.Getenv("RUNEWARD_API_TOKEN")
-				}
-				if !isLoopbackHost(bind) && token == "" {
-					return fmt.Errorf("refusing to bind %s without authentication: set --token or RUNEWARD_API_TOKEN, or bind 127.0.0.1", bind)
-				}
 				handler := mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return mcpSrv }, nil)
 				mux := http.NewServeMux()
 				mux.Handle("/mcp", handler)
 				mux.Handle("/mcp/", handler)
 				addr := net.JoinHostPort(bind, strconv.Itoa(port))
-				httpSrv := &http.Server{Addr: addr, Handler: server.TokenAuth(token, mux), ReadHeaderTimeout: 10 * time.Second}
+				var httpHandler http.Handler = mux
+				if authzStore == nil {
+					httpHandler = server.TokenAuth(token, mux)
+				}
+				httpSrv := &http.Server{Addr: addr, Handler: httpHandler, ReadHeaderTimeout: 10 * time.Second}
 				errCh := make(chan error, 1)
-				go func() { errCh <- httpSrv.ListenAndServe() }()
-				fmt.Fprintf(os.Stderr, "runeward: MCP (streamable HTTP) at http://%s/mcp (auth=%t)\n", addr, token != "")
+				scheme := "http"
+				go func() {
+					if tlsCert != "" {
+						errCh <- httpSrv.ListenAndServeTLS(tlsCert, tlsKey)
+						return
+					}
+					errCh <- httpSrv.ListenAndServe()
+				}()
+				if tlsCert != "" {
+					scheme = "https"
+				}
+				fmt.Fprintf(os.Stderr, "runeward: MCP (streamable HTTP) at %s://%s/mcp (auth=%t)\n", scheme, addr, token != "" || authzStore != nil)
 
 				ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 				defer stop()
@@ -214,5 +256,8 @@ func newMCPCmd(configDir *string) *cobra.Command {
 	cmd.Flags().IntVar(&port, "port", 8081, "listen port for --http")
 	cmd.Flags().StringVar(&bind, "bind", "127.0.0.1", "interface to bind for --http (0.0.0.0 requires --token)")
 	cmd.Flags().StringVar(&token, "token", "", "API token required on every --http request (falls back to RUNEWARD_API_TOKEN)")
+	cmd.Flags().StringVar(&tlsCert, "tls-cert", "", "path to a TLS certificate for --http")
+	cmd.Flags().StringVar(&tlsKey, "tls-key", "", "path to the TLS private key for --http")
+	cmd.Flags().BoolVar(&allowInsecureHTTP, "allow-insecure-http", false, "allow plaintext MCP HTTP on a non-loopback bind behind a trusted TLS proxy")
 	return cmd
 }

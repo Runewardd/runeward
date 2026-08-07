@@ -45,8 +45,10 @@ func newTestServerWithRBAC(t *testing.T) http.Handler {
 	cfg := `{
 		"principals":[
 			{"name":"admin","token":"tok-admin","admin":true},
-			{"name":"alice","token":"tok-alice","allowed_profiles":["team-*"]},
-			{"name":"reviewer","token":"tok-reviewer","can_approve":true,"allowed_profiles":["team-*"]}
+			{"name":"alice","tenant":"team-alpha","token":"tok-alice","allowed_profiles":["team-*"]},
+			{"name":"bob","tenant":"team-alpha","token":"tok-bob","allowed_profiles":["team-*"]},
+			{"name":"eve","tenant":"team-other","token":"tok-eve","allowed_profiles":["team-*"]},
+			{"name":"reviewer","tenant":"team-alpha","token":"tok-reviewer","can_approve":true,"allowed_profiles":["team-*"]}
 		]
 	}`
 	if err := os.WriteFile(p, []byte(cfg), 0o600); err != nil {
@@ -184,6 +186,44 @@ func TestRBACApprovalsInboxRequiresApprovalPermission(t *testing.T) {
 	}
 }
 
+func TestRBACReadinessRequiresCharterScope(t *testing.T) {
+	h := newTestServerWithRBAC(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/readiness?profile=ops-prod", nil)
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestRBACCopyFromRequiresAdmin(t *testing.T) {
+	h := newTestServerWithRBAC(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/citadels", strings.NewReader(`{"profile":"team-dev","copy_from":"/etc"}`))
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestStructuredAuthorizationError(t *testing.T) {
+	h := newTestServerWithRBAC(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/conclave", nil)
+	req.Header.Set("Authorization", "Bearer tok-alice")
+	h.ServeHTTP(rr, req)
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != "authz_denied" {
+		t.Fatalf("code = %v, want authz_denied", body["code"])
+	}
+}
+
 func TestRBACAuditExportRequiresAdmin(t *testing.T) {
 	h := newTestServerWithRBAC(t)
 	rr := httptest.NewRecorder()
@@ -225,6 +265,9 @@ func TestWhoamiCanLaunchReflectsAllowedProfiles(t *testing.T) {
 	if p["can_launch"] != true {
 		t.Fatalf("alice can_launch = %v, want true", p["can_launch"])
 	}
+	if p["tenant"] != "team-alpha" {
+		t.Fatalf("alice tenant = %v, want team-alpha", p["tenant"])
+	}
 
 	// Add a locked principal via a fresh store with empty allowed_profiles.
 	t.Setenv("RUNEWARD_STATE_DIR", t.TempDir())
@@ -259,6 +302,49 @@ func TestWhoamiCanLaunchReflectsAllowedProfiles(t *testing.T) {
 	lp, _ := locked["principal"].(map[string]any)
 	if lp["can_launch"] != false {
 		t.Fatalf("locked can_launch = %v, want false", lp["can_launch"])
+	}
+}
+
+func TestRBACTenantAllowsCollaborationButBlocksOtherTenant(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("RUNEWARD_STATE_DIR", state)
+	if err := os.WriteFile(filepath.Join(state, "fleets.json"), []byte(`[{
+		"id":"fleet-team","profile":"team-dev","owner":"team-alpha",
+		"sandboxes":[],"created":"2026-01-01T00:00:00Z","tasks":[]
+	}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := controlplane.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	authFile := filepath.Join(t.TempDir(), "authz.json")
+	if err := os.WriteFile(authFile, []byte(`{"principals":[
+		{"name":"alice","tenant":"team-alpha","token":"tok-alice"},
+		{"name":"bob","tenant":"team-alpha","token":"tok-bob"},
+		{"name":"eve","tenant":"team-other","token":"tok-eve"}
+	]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := authz.Load(authFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(mgr, nil, nil)
+	srv.Authz = store
+	h := srv.Handler()
+	for _, tc := range []struct {
+		token string
+		want  int
+	}{{"tok-alice", http.StatusOK}, {"tok-bob", http.StatusOK}, {"tok-eve", http.StatusNotFound}} {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/v1/cohorts/fleet-team", nil)
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+		h.ServeHTTP(rr, req)
+		if rr.Code != tc.want {
+			t.Fatalf("token %s: status=%d want=%d body=%s", tc.token, rr.Code, tc.want, rr.Body.String())
+		}
 	}
 }
 

@@ -24,6 +24,13 @@ type Backend interface {
 	List(ctx context.Context) ([]Sandbox, error)
 }
 
+// Reachable is an optional Backend capability: resolve a container/pod IP so the
+// control plane can reverse-proxy to an in-cell HTTP service (e.g. code-server)
+// without publishing host ports.
+type Reachable interface {
+	ContainerIP(ctx context.Context, id string) (string, error)
+}
+
 // Spec is the resolved, backend-agnostic description of a sandbox to create.
 type Spec struct {
 	Profile      string
@@ -44,6 +51,10 @@ type Spec struct {
 	Seccomp string
 	// AppArmor is an AppArmor profile name.
 	AppArmor string
+	// IDEPort, when > 0, declares an in-cell browser IDE listen port (container
+	// port / NetworkPolicy ingress). The IDE process is started by the control
+	// plane after create; this only advertises reachability.
+	IDEPort int
 }
 
 // Resources are best-effort resource caps applied to the sandbox.

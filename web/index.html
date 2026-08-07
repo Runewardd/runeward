@@ -139,6 +139,8 @@
           <div class="term-toolbar">
             <span id="term-status" class="conn-status conn-off">disconnected</span>
             <span class="note">Direct sandbox session: commands are not individually policy-gated. Use Shell for governed calls.</span>
+            <button id="open-ide" class="btn btn-sm hidden" type="button" title="Open browser IDE (code-server; experimental)">Open IDE</button>
+            <span id="ide-agents-hint" class="note hidden"></span>
             <button id="term-reconnect" class="btn btn-sm">Reconnect</button>
           </div>
           <div id="terminal" class="terminal-host"></div>
@@ -320,6 +322,16 @@
 
         <!-- Recovery and evidence tab -->
         <div class="tab-pane" data-pane="recovery">
+          <div class="card">
+            <div class="card-head">Agent run lineage <span class="card-head-hint">provider-neutral · durable</span></div>
+            <p class="note">Runs identify the human or agent actor, model, parent run, governing policy, and terminal state across Codex, Claude, Copilot, and other harnesses.</p>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Run</th><th>Parent</th><th>Actor</th><th>Agent / model</th><th>Status</th><th>Started</th></tr></thead>
+                <tbody id="run-body"><tr><td colspan="6" class="empty-note">No agent runs yet.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
           <div class="card">
             <div class="card-head">Portable exports</div>
             <p class="note">Download the isolated workspace or a JSON evidence package containing the resolved policy and independently verifiable signed audit trail.</p>

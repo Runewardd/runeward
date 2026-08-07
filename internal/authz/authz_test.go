@@ -3,6 +3,7 @@ package authz
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -45,6 +46,26 @@ func TestLoadDuplicateToken(t *testing.T) {
 	}`)
 	if _, err := Load(p); err == nil {
 		t.Fatalf("expected duplicate-token error, got nil")
+	}
+}
+
+func TestLoadDuplicateName(t *testing.T) {
+	p := writeFile(t, `{"principals":[{"name":"same","token":"one"},{"name":"same","token":"two"}]}`)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected duplicate-name error")
+	}
+}
+
+func TestLoadRejectsExposedPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not available")
+	}
+	p := writeFile(t, `{"principals":[{"name":"a","token":"one"}]}`)
+	if err := os.Chmod(p, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected insecure-permissions error")
 	}
 }
 
@@ -136,6 +157,17 @@ func TestIdentify(t *testing.T) {
 	}
 }
 
+func TestTenantIDDefaultsToNameAndCanBeShared(t *testing.T) {
+	legacy := &Principal{Name: "alice"}
+	if legacy.TenantID() != "alice" {
+		t.Fatalf("legacy tenant = %q", legacy.TenantID())
+	}
+	shared := &Principal{Name: "codex", Tenant: "team-alpha"}
+	if shared.TenantID() != "team-alpha" {
+		t.Fatalf("shared tenant = %q", shared.TenantID())
+	}
+}
+
 func TestIdentifyDoesNotDependOnByTokenMap(t *testing.T) {
 	p := writeFile(t, `{
 		"principals": [
@@ -210,6 +242,30 @@ func TestMayApprove(t *testing.T) {
 				t.Fatalf("MayApprove() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCanApproveProfile(t *testing.T) {
+	if (&Principal{CanApprove: true}).CanApproveProfile("any") != true {
+		t.Fatal("legacy approver without scope should remain global")
+	}
+	p := &Principal{CanApprove: true, ApprovalProfiles: []string{"team-*"}}
+	if !p.CanApproveProfile("team-dev") || p.CanApproveProfile("prod") {
+		t.Fatal("approval profile scope not enforced")
+	}
+	if (&Principal{}).CanApproveProfile("team-dev") {
+		t.Fatal("non-approver unexpectedly allowed")
+	}
+}
+
+func TestValidateForNetwork(t *testing.T) {
+	p := writeFile(t, `{"principals":[{"name":"short","token":"tiny"}]}`)
+	s, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ValidateForNetwork(); err == nil {
+		t.Fatal("expected weak network token rejection")
 	}
 }
 

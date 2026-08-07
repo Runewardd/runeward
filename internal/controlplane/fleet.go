@@ -53,6 +53,12 @@ func (m *Manager) CreateFleet(ctx context.Context, profileName string) (*FleetVi
 // board seeded from its task_board list and attributes member sandboxes to the
 // owning principal when provided.
 func (m *Manager) CreateFleetForOwner(ctx context.Context, profileName, owner string) (*FleetView, error) {
+	return m.CreateFleetForIdentity(ctx, profileName, owner, owner)
+}
+
+// CreateFleetForIdentity creates a tenant-owned Cohort while attributing its
+// member Citadels to the authenticated actor that requested it.
+func (m *Manager) CreateFleetForIdentity(ctx context.Context, profileName, owner, actor string) (*FleetView, error) {
 	p, err := profile.Load(profileName, profile.Options{ConfigDir: m.configDir})
 	if err != nil {
 		return nil, err
@@ -77,7 +83,7 @@ func (m *Manager) CreateFleetForOwner(ctx context.Context, profileName, owner st
 	}
 
 	for i := 0; i < replicas; i++ {
-		sb, err := m.CreateSandbox(ctx, profileName, CreateOptions{Owner: owner})
+		sb, err := m.CreateSandbox(ctx, profileName, CreateOptions{Owner: owner, Actor: actor})
 		if err != nil {
 			// Best-effort teardown of anything already created.
 			for _, id := range f.Sandboxes {
@@ -88,11 +94,21 @@ func (m *Manager) CreateFleetForOwner(ctx context.Context, profileName, owner st
 		f.Sandboxes = append(f.Sandboxes, sb.ID)
 	}
 
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	m.fleetMu.Lock()
 	m.fleets[f.ID] = f
 	m.fleetMu.Unlock()
 
-	m.saveFleets()
+	if err := m.saveFleets(); err != nil {
+		m.fleetMu.Lock()
+		delete(m.fleets, f.ID)
+		m.fleetMu.Unlock()
+		for _, id := range f.Sandboxes {
+			_ = m.KillSandbox(context.Background(), id)
+		}
+		return nil, fmt.Errorf("persist cohort: %w", err)
+	}
 	v := f.view()
 	return &v, nil
 }
@@ -118,84 +134,158 @@ func (m *Manager) FleetView(id string) (*FleetView, bool) {
 	return &v, true
 }
 
+// FleetOwner returns the principal that owns a Cohort. A known, unowned
+// Cohort returns ("", true), matching SandboxOwner semantics.
+func (m *Manager) FleetOwner(id string) (string, bool) {
+	f, ok := m.fleet(id)
+	if !ok {
+		return "", false
+	}
+	return f.Owner, true
+}
+
 // KillFleet tears down every sandbox in the fleet and removes it.
 func (m *Manager) KillFleet(ctx context.Context, id string) error {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	f, ok := m.fleet(id)
 	if !ok {
 		return fmt.Errorf("fleet %q not found", id)
 	}
-	for _, sid := range f.Sandboxes {
-		_ = m.KillSandbox(ctx, sid)
-	}
 	m.fleetMu.Lock()
 	delete(m.fleets, id)
 	m.fleetMu.Unlock()
-	m.saveFleets()
+	if err := m.saveFleets(); err != nil {
+		m.fleetMu.Lock()
+		m.fleets[id] = f
+		m.fleetMu.Unlock()
+		return fmt.Errorf("persist cohort removal: %w", err)
+	}
+	for _, sid := range f.Sandboxes {
+		_ = m.KillSandbox(ctx, sid)
+	}
 	return nil
 }
 
 // AddTask appends a task to a fleet's board.
 func (m *Manager) AddTask(fleetID, payload string) (*fleet.Task, error) {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return nil, fmt.Errorf("fleet %q not found", fleetID)
 	}
 	t := f.Board.Add(payload)
-	m.saveFleets()
+	if err := m.saveFleets(); err != nil {
+		f.Board.Remove(t.ID)
+		return nil, fmt.Errorf("persist task: %w", err)
+	}
 	return t, nil
 }
 
 // ClaimTask atomically claims the next pending task for a worker.
 func (m *Manager) ClaimTask(fleetID, owner string) (fleet.Task, bool, error) {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return fleet.Task{}, false, fmt.Errorf("fleet %q not found", fleetID)
 	}
 	t, claimed := f.Board.Claim(owner)
 	if claimed {
-		m.saveFleets()
+		leaseToken, err := m.issueTaskLease(fleetID, t)
+		if err != nil {
+			_ = f.Board.Fail(t.ID, owner, "lease signing failed", true)
+			return fleet.Task{}, false, fmt.Errorf("sign task lease: %w", err)
+		}
+		t.LeaseToken = leaseToken
+		if err := m.saveFleets(); err != nil {
+			_ = f.Board.Fail(t.ID, owner, "persistence failed", true)
+			return fleet.Task{}, false, fmt.Errorf("persist task claim: %w", err)
+		}
 	}
 	return t, claimed, nil
 }
 
 // HeartbeatTask extends a worker's lease on a task so the sweeper won't
 // requeue it.
-func (m *Manager) HeartbeatTask(fleetID, taskID, owner string) (fleet.Task, error) {
+func (m *Manager) HeartbeatTask(fleetID, taskID, owner, leaseToken string) (fleet.Task, error) {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return fleet.Task{}, fmt.Errorf("fleet %q not found", fleetID)
 	}
+	current, exists := f.Board.Get(taskID)
+	if !exists {
+		return fleet.Task{}, fmt.Errorf("%w: %q", fleet.ErrNotFound, taskID)
+	}
+	if err := m.verifyTaskLease(leaseToken, fleetID, taskID, owner, current.LeaseVersion); err != nil {
+		return fleet.Task{}, err
+	}
 	t, err := f.Board.Heartbeat(taskID, owner)
 	if err == nil {
-		m.saveFleets()
+		t.LeaseToken, err = m.issueTaskLease(fleetID, t)
+		if err != nil {
+			f.Board.Restore(current)
+			return fleet.Task{}, fmt.Errorf("refresh task lease: %w", err)
+		}
+		if saveErr := m.saveFleets(); saveErr != nil {
+			f.Board.Restore(current)
+			return fleet.Task{}, fmt.Errorf("persist task heartbeat: %w", saveErr)
+		}
 	}
 	return t, err
 }
 
 // CompleteTask marks a claimed task done. owner must match the claiming worker.
-func (m *Manager) CompleteTask(fleetID, taskID, owner, result string) error {
+func (m *Manager) CompleteTask(fleetID, taskID, owner, leaseToken, result string) error {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return fmt.Errorf("fleet %q not found", fleetID)
 	}
+	current, exists := f.Board.Get(taskID)
+	if !exists {
+		return fmt.Errorf("%w: %q", fleet.ErrNotFound, taskID)
+	}
+	if err := m.verifyTaskLease(leaseToken, fleetID, taskID, owner, current.LeaseVersion); err != nil {
+		return err
+	}
 	if err := f.Board.Complete(taskID, owner, result); err != nil {
 		return err
 	}
-	m.saveFleets()
+	if err := m.saveFleets(); err != nil {
+		f.Board.Restore(current)
+		return fmt.Errorf("persist task completion: %w", err)
+	}
 	return nil
 }
 
 // FailTask marks a claimed task failed, optionally requeuing it. owner must
 // match the claiming worker.
-func (m *Manager) FailTask(fleetID, taskID, owner, errMsg string, requeue bool) error {
+func (m *Manager) FailTask(fleetID, taskID, owner, leaseToken, errMsg string, requeue bool) error {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	f, ok := m.fleet(fleetID)
 	if !ok {
 		return fmt.Errorf("fleet %q not found", fleetID)
 	}
+	current, exists := f.Board.Get(taskID)
+	if !exists {
+		return fmt.Errorf("%w: %q", fleet.ErrNotFound, taskID)
+	}
+	if err := m.verifyTaskLease(leaseToken, fleetID, taskID, owner, current.LeaseVersion); err != nil {
+		return err
+	}
 	if err := f.Board.Fail(taskID, owner, errMsg, requeue); err != nil {
 		return err
 	}
-	m.saveFleets()
+	if err := m.saveFleets(); err != nil {
+		f.Board.Restore(current)
+		return fmt.Errorf("persist task failure: %w", err)
+	}
 	return nil
 }
 

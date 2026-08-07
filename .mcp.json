@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "runeward": {
+      "command": "runeward",
+      "args": ["mcp"]
+    }
+  }
+}
