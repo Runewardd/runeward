@@ -48,6 +48,13 @@ type Task struct {
 	// LeaseExpiry is when the current claim expires; Sweep requeues claimed
 	// tasks past it. Zero means no lease (claims never expire).
 	LeaseExpiry time.Time `json:"lease_expiry,omitempty"`
+	// LeaseVersion rotates on every claim and heartbeat. It is persisted so an
+	// older signed lease cannot be replayed after renewal or requeue.
+	LeaseVersion int `json:"lease_version,omitempty"`
+	// LeaseToken is returned only by a successful claim. It is a signed,
+	// short-lived capability and is never stored on the board or returned by
+	// task-list operations.
+	LeaseToken string `json:"lease_token,omitempty"`
 }
 
 // Stats is a point-in-time count of tasks by state.
@@ -149,6 +156,7 @@ func (b *Board) Claim(owner string) (Task, bool) {
 		t.State = StateClaimed
 		t.Owner = owner
 		t.Attempts++
+		t.LeaseVersion++
 		t.UpdatedAt = now
 		if b.lease > 0 {
 			t.LeaseExpiry = now.Add(b.lease)
@@ -175,6 +183,7 @@ func (b *Board) Heartbeat(id, owner string) (Task, error) {
 		return Task{}, fmt.Errorf("%w: task %q is owned by %q, not %q", ErrIllegalTransition, id, t.Owner, owner)
 	}
 	now := time.Now().UTC()
+	t.LeaseVersion++
 	t.UpdatedAt = now
 	if b.lease > 0 {
 		t.LeaseExpiry = now.Add(b.lease)
@@ -272,6 +281,39 @@ func (b *Board) Get(id string) (Task, bool) {
 		return Task{}, false
 	}
 	return *t, true
+}
+
+// Restore replaces one existing task with a previously captured copy. The
+// control plane uses this only to roll back an in-memory transition when its
+// durable atomic state write fails.
+func (b *Board) Restore(task Task) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, ok := b.tasks[task.ID]; !ok {
+		return false
+	}
+	cp := task
+	cp.LeaseToken = ""
+	b.tasks[task.ID] = &cp
+	return true
+}
+
+// Remove deletes one task while preserving FIFO order. It is used to roll back
+// an Add whose durable state update failed before the caller observed success.
+func (b *Board) Remove(id string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, ok := b.tasks[id]; !ok {
+		return false
+	}
+	delete(b.tasks, id)
+	for i, taskID := range b.order {
+		if taskID == id {
+			b.order = append(b.order[:i], b.order[i+1:]...)
+			break
+		}
+	}
+	return true
 }
 
 // List returns a snapshot copy of every task in insertion order.

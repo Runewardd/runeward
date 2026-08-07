@@ -50,6 +50,7 @@ runeward evidence verify run.json              # independent policy/audit verifi
 | Limits | CPU/memory | Wall-clock, exec, egress, token, cost, and retry-loop budgets |
 | Audit | Runtime logs | Append-only, hash-chained, Ed25519-signed events |
 | Handoff | Ad-hoc logs and folders | Workspace tar, recovery snapshots, and portable signed evidence JSON |
+| Agent identity | One opaque process | Tenant, actor, parent run, provider, model, and durable run lineage |
 | Interfaces | Runtime-specific | CLI, REST, MCP, web dashboard, Kubernetes CRDs, and local SDK adapters |
 
 Every governed action follows one path:
@@ -171,9 +172,15 @@ reasons. Route the tool calls of a parent agent and each delegated subagent thro
 them explicit policy, approval, isolation, budget, and evidence boundaries.
 
 Existing concepts keep their meaning: a **Cohort** is a group of peer workers sharing a task board;
-it is not being renamed to “subagents.” Parent/child delegation remains the orchestrator's concern
-today, while every participating agent can receive the same or a stricter Charter and its own
-Citadel and Chronicle. See [Agent harnessing](docs/agent-harness.md).
+it is not being renamed to “subagents.” The orchestrator still decides when to delegate, while
+Runeward records the parent/run/provider lineage and prevents a child Citadel from widening its
+parent's tenant or Charter. Every participating agent can receive its own Citadel and Chronicle.
+See [Agent harnessing](docs/agent-harness.md).
+
+For local OS-native process sandboxing, [nono](https://github.com/nolabs-ai/nono) is a strong,
+lighter-weight tool with a different center of gravity. Runeward is a multi-tenant governance and
+orchestration control plane for container/Kubernetes Citadels, approvals, budgets, Cohorts, and
+portable signed evidence. See the detailed [Runeward and nono comparison](docs/comparison-nono.md).
 
 ## Policy workflow
 
@@ -192,24 +199,35 @@ actions, produces exact matches, and requires a human to review and broaden them
 ## Security posture
 
 - The server binds to loopback by default and requires authentication before a non-loopback bind.
+- Non-loopback HTTP also requires TLS unless `--allow-insecure-http` explicitly acknowledges that a
+  trusted reverse proxy terminates TLS.
 - Multi-principal RBAC scopes sandboxes, agent groups, recovery snapshots, and dashboard views to
-  their owner. Embedded HTTP MCP is disabled when RBAC is enabled because its authorization context
-  is not yet unified; run a separately scoped MCP service if needed.
+  their tenant while attributing every operation to its actor. Static tokens and OIDC JWTs use the
+  same authorization model, and embedded HTTP MCP shares the REST ownership checks.
 - Browser automation is experimental and disabled by default. Enable it only in a trusted deployment
   with `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` after reviewing the [security model](docs/security-model.md).
+- An optional browser IDE (code-server in-cell + ticketed reverse proxy) is similarly experimental:
+  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, images `Dockerfile.ide` /
+  `Dockerfile.ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
+  Limits: not per-keystroke policy; no Cursor/Claude Desktop/Codex GUIs in-cell; no
+  first-class GitHub Copilot on code-server. See [Browser IDE](docs/browser-ide.md) and the
+  [security model](docs/security-model.md).
 - Per-action policy applies to tool calls routed through the control plane (REST, MCP, dashboard
   file/shell/code actions, and SDKs). An interactive terminal or a process already running inside a
   sandbox is a direct sandbox session: it receives isolation/network/resource controls and terminal
   recording, but its individual commands are not intercepted for approval. Use governed tool calls
   when command-level policy and signed verdicts are required.
-- Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Known pre-1.0 limitations and
-  remediation work remain visible in [ROADMAP.md](ROADMAP.md).
+- Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Runeward remains pre-1.0;
+  release gates and residual limitations are tracked in
+  [release readiness](docs/release-readiness.md) and [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)
 - [Policies / Charters](docs/profiles.md)
 - [REST API](docs/rest-api.md)
+- [Browser IDE](docs/browser-ide.md) (experimental code-server proxy)
+- [Runeward compared with nono](docs/comparison-nono.md)
 - [Security model](docs/security-model.md)
 - [End-to-end testing](docs/E2E-TESTING.md)
 - Published site: [runewardd.github.io/runeward](https://runewardd.github.io/runeward/)

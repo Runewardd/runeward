@@ -79,6 +79,17 @@ func (s *ApprovalStore) List() []ApprovalView {
 	return out
 }
 
+// Get returns one pending approval without resolving it.
+func (s *ApprovalStore) Get(id string) (ApprovalView, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ap, ok := s.m[id]
+	if !ok {
+		return ApprovalView{}, false
+	}
+	return ApprovalView{ID: ap.ID, Sandbox: ap.Sandbox, Tool: ap.Tool, Action: ap.Action, Reason: ap.Reason, Created: ap.Created}, true
+}
+
 // Resolve delivers a decision to the waiting tool call and removes the
 // approval. It reports whether that id was pending.
 func (s *ApprovalStore) Resolve(id string, approve bool) bool {

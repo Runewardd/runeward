@@ -1,8 +1,6 @@
 package server
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -17,7 +15,6 @@ import (
 	"github.com/Runewardd/runeward/internal/controlplane"
 	"github.com/Runewardd/runeward/internal/egress"
 	"github.com/Runewardd/runeward/internal/evidence"
-	"github.com/Runewardd/runeward/internal/ledger"
 	"github.com/Runewardd/runeward/internal/policy"
 	"github.com/Runewardd/runeward/internal/profile"
 )
@@ -37,11 +34,15 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 	}
 	if p := principalFrom(r.Context()); p != nil {
 		resp["principal"] = map[string]any{
-			"name":             p.Name,
-			"admin":            p.Admin,
-			"can_approve":      p.MayApprove(),
-			"can_launch":       p.MayLaunch(),
-			"allowed_profiles": p.AllowedProfiles,
+			"name":              p.Name,
+			"tenant":            p.TenantID(),
+			"admin":             p.Admin,
+			"can_approve":       p.MayApprove(),
+			"can_launch":        p.MayLaunch(),
+			"allowed_profiles":  p.AllowedProfiles,
+			"approval_profiles": p.ApprovalProfiles,
+			"can_manage_all":    p.Admin,
+			"can_export_audit":  p.Admin,
 		}
 	} else {
 		// Legacy single-token or open mode: no named identity, full rights.
@@ -53,6 +54,36 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
+	runs := s.mgr.ListRuns()
+	if p := principalFrom(r.Context()); p != nil && !p.Admin {
+		filtered := make([]controlplane.Run, 0, len(runs))
+		for _, run := range runs {
+			if run.Tenant == p.TenantID() {
+				filtered = append(filtered, run)
+			}
+		}
+		runs = filtered
+	}
+	if runs == nil {
+		runs = []controlplane.Run{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
+func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.mgr.Run(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if p := principalFrom(r.Context()); p != nil && !p.Admin && run.Tenant != p.TenantID() {
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
 }
 
 func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +113,10 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.URL.Query().Get("profile"))
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "profile is required")
+		return
+	}
+	if p := principalFrom(r.Context()); p != nil && !p.CanLaunch(name) {
+		writeError(w, http.StatusNotFound, "charter not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, s.mgr.CheckReadiness(name))
@@ -115,16 +150,30 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sandbox_id is required for terminal tickets")
 		return
 	}
-	if scope.Kind == ticketKindTerminal {
+	if scope.Kind == ticketKindIDE && scope.SandboxID == "" {
+		writeError(w, http.StatusBadRequest, "sandbox_id is required for ide tickets")
+		return
+	}
+	if scope.Kind == ticketKindTerminal || scope.Kind == ticketKindIDE {
 		if _, ok := s.mgr.Sandbox(scope.SandboxID); !ok {
 			writeError(w, http.StatusNotFound, "sandbox not found")
 			return
 		}
 		if p := principalFrom(r.Context()); p != nil && !p.Admin {
-			if owner, ok := s.mgr.SandboxOwner(scope.SandboxID); !ok || owner != p.Name {
+			if owner, ok := s.mgr.SandboxOwner(scope.SandboxID); !ok || owner != p.TenantID() {
 				writeError(w, http.StatusNotFound, "sandbox not found")
 				return
 			}
+		}
+	}
+	if scope.Kind == ticketKindIDE {
+		if !controlplane.ExperimentalIDEEnabled() {
+			writeError(w, http.StatusNotFound, "experimental IDE is disabled; set RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1")
+			return
+		}
+		if _, ok := s.mgr.IDEEndpoint(scope.SandboxID); !ok {
+			writeError(w, http.StatusNotFound, "ide not available for this citadel")
+			return
 		}
 	}
 	if scope.Kind == ticketKindDownload && scope.Path == "" {
@@ -155,8 +204,13 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Profile  string `json:"profile"`
-		CopyFrom string `json:"copy_from"`
+		Profile       string `json:"profile"`
+		CopyFrom      string `json:"copy_from"`
+		ParentCitadel string `json:"parent_citadel"`
+		RunID         string `json:"run_id"`
+		Agent         string `json:"agent"`
+		Provider      string `json:"provider"`
+		Model         string `json:"model"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -166,15 +220,27 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "profile is required")
 		return
 	}
-	owner := ""
+	if p := principalFrom(r.Context()); p != nil && strings.TrimSpace(req.CopyFrom) != "" && !p.Admin {
+		writeError(w, http.StatusForbidden, "copy_from overrides require an administrator")
+		return
+	}
+	if s.Authz != nil && strings.TrimSpace(req.CopyFrom) != "" && strings.TrimSpace(os.Getenv("RUNEWARD_COPY_FROM_ROOTS")) == "" {
+		writeError(w, http.StatusForbidden, "copy_from is disabled under RBAC until RUNEWARD_COPY_FROM_ROOTS is configured")
+		return
+	}
+	owner, actor := "", ""
 	if p := principalFrom(r.Context()); p != nil {
 		if !p.CanLaunch(req.Profile) {
 			writeError(w, http.StatusForbidden, "not authorized to launch profile "+req.Profile)
 			return
 		}
-		owner = p.Name
+		owner = p.TenantID()
+		actor = p.Name
 	}
-	sb, err := s.mgr.CreateSandbox(r.Context(), req.Profile, controlplane.CreateOptions{CopyFrom: req.CopyFrom, Owner: owner})
+	sb, err := s.mgr.CreateSandbox(r.Context(), req.Profile, controlplane.CreateOptions{
+		CopyFrom: req.CopyFrom, Owner: owner, Actor: actor, ParentSandbox: req.ParentCitadel,
+		RunID: req.RunID, Agent: req.Agent, Provider: req.Provider, Model: req.Model,
+	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -189,10 +255,10 @@ func (s *Server) handleListSandboxes(w http.ResponseWriter, r *http.Request) {
 	for i := range infos {
 		// Per-principal visibility: a non-admin principal sees only the
 		// sandboxes it owns. Legacy/open mode (no principal) sees all.
-		if p != nil && !p.Admin && infos[i].Owner != p.Name {
+		if p != nil && !p.Admin && infos[i].Owner != p.TenantID() {
 			continue
 		}
-		views = append(views, sandboxView(&infos[i].Sandbox, infos[i].Owner))
+		views = append(views, sandboxViewWithIDE(s, &infos[i].Sandbox, infos[i].Owner))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sandboxes": views})
 }
@@ -205,7 +271,7 @@ func (s *Server) handleGetSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	owner, _ := s.mgr.SandboxOwner(id)
-	view := sandboxView(sb, owner)
+	view := sandboxViewWithIDE(s, sb, owner)
 	u := s.mgr.SandboxUsage(id)
 	view["usage"] = map[string]any{"tokens": u.Tokens, "cost_usd": u.CostUSD}
 	if p, err := s.loadProfileByName(sb.Profile); err == nil {
@@ -379,7 +445,7 @@ func (s *Server) handleReportUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if err := s.mgr.RecordUsage(id, req.Tokens, req.CostUSD); err != nil {
+	if err := s.mgr.RecordUsageContext(r.Context(), id, req.Tokens, req.CostUSD); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -408,7 +474,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	if p := principalFrom(r.Context()); p != nil && !p.Admin {
 		filtered := make([]backend.SnapshotRef, 0, len(snaps))
 		for _, snap := range snaps {
-			if owner, ok := s.mgr.SnapshotOwner(snap.ID); ok && owner == p.Name {
+			if owner, ok := s.mgr.SnapshotOwner(snap.ID); ok && owner == p.TenantID() {
 				filtered = append(filtered, snap)
 			}
 		}
@@ -435,39 +501,11 @@ func (s *Server) handleWorkspaceExport(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	sb, ok := s.mgr.Sandbox(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "sandbox not found")
-		return
-	}
-	p, err := s.mgr.LoadProfile(sb.Profile)
+	doc, err := s.mgr.Evidence(id, s.Version)
 	if err != nil {
-		writeServerError(w, s.logger, err)
-		return
-	}
-	var policyView bytes.Buffer
-	portableProfile := *p
-	portableProfile.Source = filepath.Base(p.Source)
-	if err := profile.Print(&policyView, &portableProfile); err != nil {
-		writeServerError(w, s.logger, err)
-		return
-	}
-	var bundleJSON bytes.Buffer
-	if err := s.mgr.ExportBundle(&bundleJSON, id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var bundle ledger.Bundle
-	if err := json.Unmarshal(bundleJSON.Bytes(), &bundle); err != nil {
-		writeServerError(w, s.logger, err)
-		return
-	}
-	findings := profile.Lint(p)
-	portable := make([]evidence.Finding, 0, len(findings))
-	for _, finding := range findings {
-		portable = append(portable, evidence.Finding{Severity: finding.Severity, Field: finding.Field, Message: finding.Message})
-	}
-	doc := evidence.New(s.Version, p.Name, filepath.Base(p.Source), p.Host.Image, policyView.String(), portable, bundle)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=runeward-evidence-"+safeFilename(id)+".json")
 	if err := evidence.Write(w, doc); err != nil {
@@ -489,15 +527,20 @@ func safeFilename(s string) string {
 }
 
 func (s *Server) handleRestoreSnapshot(w http.ResponseWriter, r *http.Request) {
-	owner := ""
+	owner, actor := "", ""
 	if p := principalFrom(r.Context()); p != nil {
 		if !p.Admin && !s.snapshotVisibleTo(p, r.PathValue("id")) {
 			writeError(w, http.StatusNotFound, "snapshot not found")
 			return
 		}
-		owner = p.Name
+		if ref, ok := s.mgr.SnapshotRef(r.PathValue("id")); !ok || !p.CanLaunch(ref.Profile) {
+			writeError(w, http.StatusNotFound, "snapshot not found")
+			return
+		}
+		owner = p.TenantID()
+		actor = p.Name
 	}
-	sb, err := s.mgr.RestoreSnapshot(r.Context(), r.PathValue("id"), owner)
+	sb, err := s.mgr.RestoreSnapshotForIdentity(r.Context(), r.PathValue("id"), owner, actor)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -511,6 +554,16 @@ func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list := s.mgr.Approvals().List()
+	if p := principalFrom(r.Context()); p != nil && !p.Admin {
+		filtered := list[:0]
+		for _, approval := range list {
+			sb, ok := s.mgr.Sandbox(approval.Sandbox)
+			if ok && p.CanApproveProfile(sb.Profile) {
+				filtered = append(filtered, approval)
+			}
+		}
+		list = filtered
+	}
 	if list == nil {
 		list = []controlplane.ApprovalView{}
 	}
@@ -529,6 +582,18 @@ func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request, approve
 	if p := principalFrom(r.Context()); p != nil && !p.MayApprove() {
 		writeError(w, http.StatusForbidden, "not authorized to resolve approvals")
 		return
+	}
+	if p := principalFrom(r.Context()); p != nil && !p.Admin {
+		approval, ok := s.mgr.Approvals().Get(r.PathValue("id"))
+		if !ok {
+			writeError(w, http.StatusNotFound, "approval not found or already resolved")
+			return
+		}
+		sb, ok := s.mgr.Sandbox(approval.Sandbox)
+		if !ok || !p.CanApproveProfile(sb.Profile) {
+			writeError(w, http.StatusNotFound, "approval not found or already resolved")
+			return
+		}
 	}
 	if ok := s.mgr.ResolveApproval(r.PathValue("id"), approve, approver(r)); !ok {
 		writeError(w, http.StatusNotFound, "approval not found or already resolved")
@@ -841,6 +906,17 @@ func sandboxView(sb *backend.Sandbox, owner string) map[string]any {
 	}
 	if owner != "" {
 		v["owner"] = owner
+	}
+	return v
+}
+
+func sandboxViewWithIDE(s *Server, sb *backend.Sandbox, owner string) map[string]any {
+	v := sandboxView(sb, owner)
+	if _, ok := s.mgr.IDEEndpoint(sb.ID); ok {
+		v["ide"] = true
+		if agents := s.mgr.IDEAgents(sb.ID); len(agents) > 0 {
+			v["ide_agents"] = agents
+		}
 	}
 	return v
 }

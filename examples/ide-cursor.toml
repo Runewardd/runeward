@@ -1,0 +1,67 @@
+# Browser IDE spin-off with Cursor CLI in-cell.
+#
+# Cursor Desktop/Electron has no self-hosted browser GUI — Open IDE is
+# code-server; run `agent` in the IDE terminal after building with Cursor:
+#
+#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest \
+#     --build-arg INSTALL_CURSOR=true \
+#     --build-arg CURSOR_INSTALLER_SHA256=<digest-from-cursor-install-script> .
+#   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key
+#   RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 ./bin/runeward --config-dir examples serve
+#   Create charter "ide-cursor" → Open IDE → terminal: agent
+
+[host]
+type    = "container"
+image   = "runeward-ide-agents:latest"
+user    = "coder"
+workdir = "/workspace"
+
+[ide]
+enabled = true
+port    = 8080
+agents  = ["cursor"]
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor.sh"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "cursor.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursor-cdn.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "*.cursorapi.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "anysphere-binaries.s3.us-east-1.amazonaws.com"
+
+[[env]]
+name = "CURSOR_API_KEY"
+file = "~/.runeward-cursor.key"
+
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[rationing]
+wall_clock      = "2h"
+max_execs       = 500
+egress_requests = 2000
+
+[chronicle]
+redact = true

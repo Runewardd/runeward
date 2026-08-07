@@ -1,0 +1,52 @@
+# Browser IDE (code-server) plus in-cell coding CLIs for testing.
+#
+# Cursor / Claude Desktop / Codex do NOT ship a self-hosted browser GUI.
+# This image gives the same Open-IDE spin-off as Dockerfile.ide, with the
+# Claude Code / Codex (and optionally Cursor) CLIs available in the IDE terminal.
+#
+#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+#
+# Optional Cursor CLI (pinned installer digest required):
+#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest \
+#     --build-arg INSTALL_CURSOR=true \
+#     --build-arg CURSOR_INSTALLER_SHA256=<digest> .
+#
+# Charters: examples/ide-claude.toml, ide-codex.toml, ide-cursor.toml
+# Flag: RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
+FROM codercom/code-server:4.96.4
+
+USER root
+
+ARG CODEX_VERSION=0.142.5
+ARG CLAUDE_CODE_VERSION=2.1.201
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl git nodejs npm python3 python3-pip \
+    && npm install -g "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && mkdir -p /workspace \
+    && chown -R coder:coder /workspace \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER coder
+ENV HOME=/home/coder
+ENV PATH="/home/coder/.local/bin:/home/coder/.cursor/bin:${PATH}"
+
+# Cursor CLI is opt-in (same posture as Dockerfile.agent).
+ARG INSTALL_CURSOR=false
+ARG CURSOR_INSTALLER_SHA256=""
+RUN if [ "$INSTALL_CURSOR" = "true" ]; then \
+      curl -fsS https://cursor.com/install -o /tmp/cursor-install.sh \
+      && if [ -z "$CURSOR_INSTALLER_SHA256" ]; then \
+           echo "CURSOR_INSTALLER_SHA256 is required when INSTALL_CURSOR=true" >&2 ; \
+           exit 1 ; \
+         fi \
+      && echo "${CURSOR_INSTALLER_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
+      && bash /tmp/cursor-install.sh \
+      && rm -f /tmp/cursor-install.sh ; \
+    fi
+
+WORKDIR /workspace
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

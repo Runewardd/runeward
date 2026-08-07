@@ -111,6 +111,10 @@ jobs:
             image: runeward-agent
           - dockerfile: deploy/Dockerfile.sandbox
             image: runeward-sandbox
+          - dockerfile: deploy/Dockerfile.ide
+            image: runeward-ide
+          - dockerfile: deploy/Dockerfile.ide-agents
+            image: runeward-ide-agents
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Build ${{ matrix.image }} image

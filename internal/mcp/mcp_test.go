@@ -52,7 +52,10 @@ func TestListTools(t *testing.T) {
 		got[tl.Name] = true
 	}
 	for _, want := range []string{
+		"runeward_whoami", "runeward_list_charters", "runeward_readiness",
 		"runeward_create_citadel", "runeward_shell", "runeward_browser",
+		"runeward_list_citadels", "runeward_report_usage", "runeward_snapshot_citadel", "runeward_list_snapshots",
+		"runeward_list_runs", "runeward_export_evidence", "runeward_verify_chronicle",
 		"runeward_browser_open", "runeward_browser_act", "runeward_browser_close",
 		"runeward_python", "runeward_node",
 		"runeward_read_file", "runeward_write_file", "runeward_list_files",
@@ -85,7 +88,7 @@ func TestCallListApprovals(t *testing.T) {
 			text += tc.Text
 		}
 	}
-	if !strings.Contains(text, "no pending conclave") {
+	if !strings.Contains(text, `"approvals":[]`) {
 		t.Fatalf("unexpected content: %q", text)
 	}
 }
@@ -105,8 +108,8 @@ func TestPrincipalResolverUsesAuthzForHTTP(t *testing.T) {
 	authzFile := filepath.Join(dir, "authz.json")
 	if err := os.WriteFile(authzFile, []byte(`{
   "principals": [
-    {"name":"stdio-owner","token":"tok-stdio","allowed_profiles":["dev-*"]},
-    {"name":"http-owner","token":"tok-http","allowed_profiles":["prod-*"]}
+    {"name":"stdio-owner","tenant":"team-one","token":"tok-stdio","allowed_profiles":["dev-*"]},
+    {"name":"http-owner","tenant":"team-two","token":"tok-http","allowed_profiles":["prod-*"]}
   ]
 }`), 0o600); err != nil {
 		t.Fatalf("write authz file: %v", err)
@@ -124,8 +127,8 @@ func TestPrincipalResolverUsesAuthzForHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve stdio: %v", err)
 	}
-	if stdio.Owner != "stdio-owner" {
-		t.Fatalf("stdio owner = %q, want %q", stdio.Owner, "stdio-owner")
+	if stdio.Owner != "team-one" || stdio.Actor != "stdio-owner" {
+		t.Fatalf("stdio identity = %#v", stdio)
 	}
 	req := &sdk.CallToolRequest{
 		Extra: &sdk.RequestExtra{Header: http.Header{"Authorization": []string{"Bearer tok-http"}}},
@@ -134,7 +137,51 @@ func TestPrincipalResolverUsesAuthzForHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve http principal: %v", err)
 	}
-	if httpPrincipal.Owner != "http-owner" {
-		t.Fatalf("http owner = %q, want %q", httpPrincipal.Owner, "http-owner")
+	if httpPrincipal.Owner != "team-two" || httpPrincipal.Actor != "http-owner" {
+		t.Fatalf("http identity = %#v", httpPrincipal)
+	}
+}
+
+func TestCohortToolsEnforcePrincipalOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		token   string
+		wantErr bool
+	}{{"owner", "token-alice", false}, {"same tenant", "token-bob", false}, {"other tenant", "token-eve", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := t.TempDir()
+			t.Setenv("RUNEWARD_STATE_DIR", state)
+			if err := os.WriteFile(filepath.Join(state, "fleets.json"), []byte(`[{"id":"fleet-a","profile":"dev","owner":"team-alpha","sandboxes":[],"tasks":[]}]`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			authzFile := filepath.Join(t.TempDir(), "authz.json")
+			if err := os.WriteFile(authzFile, []byte(`{"principals":[{"name":"alice","tenant":"team-alpha","token":"token-alice","allowed_profiles":["dev"]},{"name":"bob","tenant":"team-alpha","token":"token-bob","allowed_profiles":["dev"]},{"name":"eve","tenant":"team-other","token":"token-eve","allowed_profiles":["dev"]}]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(authz.EnvFile, authzFile)
+			t.Setenv(EnvMCPDefaultToken, tc.token)
+			mgr, err := controlplane.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mgr.Close()
+			srv := NewServer(mgr)
+			serverT, clientT := sdk.NewInMemoryTransports()
+			ctx := context.Background()
+			go func() { _ = srv.Run(ctx, serverT) }()
+			client := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "0"}, nil)
+			cs, err := client.Connect(ctx, clientT, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cs.Close()
+			res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: "runeward_list_tasks", Arguments: map[string]any{"fleet": "fleet-a"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.IsError != tc.wantErr {
+				t.Fatalf("IsError = %v, want %v", res.IsError, tc.wantErr)
+			}
+		})
 	}
 }

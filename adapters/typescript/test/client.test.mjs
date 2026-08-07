@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   RunewardApprovalRequired,
+	RunewardAuthorizationError,
   RunewardClient,
   RunewardDenied,
 } from "../dist/index.js";
@@ -34,4 +35,32 @@ test("the SDK preserves existing concepts and governance verdicts", async () => 
 
   assert.equal(new RunewardDenied("blocked").status, 403);
   assert.equal(new RunewardApprovalRequired("apr_123").status, 202);
+  assert.equal(new RunewardAuthorizationError("wrong owner").status, 403);
+});
+
+test("run lineage and Cohort completion use the v1 endpoints", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url, init });
+    const payload = url.endsWith("/v1/runs") ? { runs: [{ id: "run-1" }] } : { ok: true };
+    return new Response(JSON.stringify(payload), { status: 200 });
+  };
+
+  try {
+    const client = new RunewardClient();
+    assert.equal((await client.listRuns())[0].id, "run-1");
+    await client.completeTask("cohort/1", "task/1", "signed-lease", "done");
+    assert.equal(
+      requests[1].url,
+      "http://localhost:8080/v1/cohorts/cohort%2F1/tasks/task%2F1/complete",
+    );
+    assert.deepEqual(JSON.parse(requests[1].init.body), {
+      owner: "",
+      lease_token: "signed-lease",
+      result: "done",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

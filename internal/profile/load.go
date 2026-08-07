@@ -296,6 +296,17 @@ func (p *Profile) Validate() error {
 	if p.Fleet != nil && p.Fleet.Replicas < 0 {
 		return fmt.Errorf("fleet.replicas must be >= 0")
 	}
+	if p.IDE.Enabled {
+		if p.IDE.Port == 0 {
+			p.IDE.Port = 8080
+		}
+		if p.IDE.Port < 1 || p.IDE.Port > 65535 {
+			return fmt.Errorf("ide.port must be between 1 and 65535, got %d", p.IDE.Port)
+		}
+		if strings.TrimSpace(p.IDE.Path) == "" {
+			p.IDE.Path = "/"
+		}
+	}
 	return nil
 }
 

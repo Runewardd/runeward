@@ -137,3 +137,6 @@ The same governed core is reachable through:
 - **MCP server** — expose governed tools to an IDE/agent (Cursor, Claude Desktop,
   VS Code).
 - **Web dashboard** — served by `runeward serve`.
+- **Browser IDE (experimental)** — optional in-cell code-server via ticketed
+  proxy ([Browser IDE](browser-ide.md)); not a replacement for host MCP or
+  desktop Cursor/Claude GUIs.

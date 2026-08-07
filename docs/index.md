@@ -54,6 +54,7 @@ configuration fields for compatibility. See [Naming](naming.md).
 - :material-file-cog: **[Policies](profiles.md)** — write and test a security contract.
 - :material-shield-lock: **[Security model](security-model.md)** — guarantees and known limits.
 - :material-api: **[REST API](rest-api.md)** — integrate an existing agent or service.
+- :material-monitor: **[Browser IDE](browser-ide.md)** — experimental in-cell code-server (and limits).
 - :material-toy-brick: **[Adapters](adapters.md)** — local Python and TypeScript SDKs.
 - :material-shield-account: **[Agent harnessing](agent-harness.md)** — govern agents and delegated subagents.
 - :material-account-group: **[Agent groups](fleets.md)** — coordinate governed workers.

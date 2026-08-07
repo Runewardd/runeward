@@ -156,6 +156,16 @@ func Print(dst io.Writer, p *Profile) error {
 		}
 	}
 
+	if p.IDE.Enabled {
+		fmt.Fprintln(w, "\n[ide]")
+		fmt.Fprintf(w, "  enabled: true\n")
+		fmt.Fprintf(w, "  port: %d\n", p.IDE.Port)
+		fmt.Fprintf(w, "  path: %s\n", p.IDE.Path)
+		if len(p.IDE.Agents) > 0 {
+			fmt.Fprintf(w, "  agents: %s\n", strings.Join(p.IDE.Agents, ", "))
+		}
+	}
+
 	fmt.Fprintln(w, "\n[signed audit / chronicle]")
 	fmt.Fprintf(w, "  redact: %t\n", p.Audit.RedactEnabled())
 	if p.Audit.Sink != "" {

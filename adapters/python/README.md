@@ -35,7 +35,7 @@ Start the control plane first (`runeward serve`, default
 ```python
 from runeward import RunewardClient, RunewardDenied, RunewardApprovalRequired
 
-rw = RunewardClient("http://localhost:8080")
+rw = RunewardClient("http://localhost:8080")  # uses RUNEWARD_API_TOKEN when set
 
 sbx = rw.create_sandbox("dev")          # -> {"id": "sbx_...", "backend": "docker", ...}
 sid = sbx["id"]
@@ -43,7 +43,7 @@ sid = sbx["id"]
 result = rw.shell(sid, ["python3", "--version"])
 print(result["stdout"])                 # "Python 3.11.2\n"
 
-rw.write_file(sid, "/workspace/main.py", "print(2 + 2)")
+rw.write_file(sid, "main.py", "print(2 + 2)")
 print(rw.python(sid, "exec(open('/workspace/main.py').read())")["stdout"])  # "4\n"
 
 rw.kill_sandbox(sid)                    # always tear down when done
@@ -91,12 +91,18 @@ assert rw.verify_audit()        # verify the tamper-evident hash chain
 | --- | --- |
 | `healthz()` | `GET /healthz` |
 | `list_profiles()` | `GET /v1/charters` |
+| `whoami()` / `readiness(profile)` / `simulate_policy(...)` | Identity, setup, and dry-run policy APIs |
+| `list_runs()` / `get_run(id)` | Durable provider-neutral Run lineage |
 | `create_sandbox(profile)` | `POST /v1/citadels` |
 | `list_sandboxes()` / `get_sandbox(id)` / `kill_sandbox(id)` | `GET`/`GET`/`DELETE /v1/citadels[/{id}]` |
 | `shell(sandbox, command, workdir="")` | `POST .../shell/exec` |
 | `python(sandbox, code)` / `node(sandbox, code)` | `POST .../code/{python,node}` |
 | `read_file` / `write_file` / `list_files` / `search_files` | `POST .../file/{read,write,list,search}` |
 | `audit(sandbox)` / `verify_audit()` | `GET .../chronicle`, `GET /v1/chronicle/verify` |
+| `export_evidence(sandbox)` | Portable resolved Charter + signed Chronicle evidence |
+| `create_cohort` / `list_cohorts` / `add_task` / `claim_task` | Cohort lifecycle and leased work queue |
+| `heartbeat_task` / `complete_task` / `fail_task` | Signed-lease task transitions |
+| `create_snapshot` / `list_snapshots` / `restore_snapshot` | Tenant-scoped recovery |
 | `list_approvals()` / `approve(id)` / `deny(id)` | `GET /v1/conclave`, `POST /v1/conclave/{id}/{approve,deny}` |
 
 ## LangChain
@@ -109,12 +115,10 @@ tools = make_runeward_tools(RunewardClient("http://localhost:8080"))
 # Pass `tools` to any LangChain agent / AgentExecutor.
 ```
 
-The Python framework tools are named `runeward_create_sandbox`,
-`runeward_shell`, …. Governance verdicts are returned as descriptive strings so
-the agent can reason about a denial or an approval gate. (Note: the standalone
-`runeward mcp` server now exposes the renamed `runeward_create_citadel` /
-`runeward_kill_citadel` / `runeward_list_conclave` tools; the Python framework
-tool names have not yet been updated to match.)
+The Python framework tools use the same stable concept names as MCP, including
+`runeward_create_citadel`, `runeward_kill_citadel`, and
+`runeward_list_conclave`. Governance verdicts are returned as descriptive
+strings so the agent can reason about a denial or an approval gate.
 
 ## CrewAI
 

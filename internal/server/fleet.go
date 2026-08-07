@@ -21,15 +21,16 @@ func (s *Server) handleCreateFleet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "profile is required")
 		return
 	}
-	owner := ""
+	owner, actor := "", ""
 	if p := principalFrom(r.Context()); p != nil {
 		if !p.CanLaunch(req.Profile) {
 			writeError(w, http.StatusForbidden, "not authorized to launch profile "+req.Profile)
 			return
 		}
-		owner = p.Name
+		owner = p.TenantID()
+		actor = p.Name
 	}
-	v, err := s.mgr.CreateFleetForOwner(r.Context(), req.Profile, owner)
+	v, err := s.mgr.CreateFleetForIdentity(r.Context(), req.Profile, owner, actor)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -42,7 +43,7 @@ func (s *Server) handleListFleets(w http.ResponseWriter, r *http.Request) {
 	if p := principalFrom(r.Context()); p != nil && !p.Admin {
 		filtered := make([]controlplane.FleetView, 0, len(list))
 		for _, v := range list {
-			if s.fleetOwnedBy(v.ID, p.Name) {
+			if s.fleetOwnedBy(v.ID, p.TenantID()) {
 				filtered = append(filtered, v)
 			}
 		}
@@ -107,7 +108,12 @@ func (s *Server) handleClaimTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	t, ok, err := s.mgr.ClaimTask(r.PathValue("id"), req.Owner)
+	owner, err := taskOwnerFromRequest(r, req.Owner)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	t, ok, err := s.mgr.ClaimTask(r.PathValue("id"), owner)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -121,8 +127,9 @@ func (s *Server) handleClaimTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Owner  string `json:"owner"`
-		Result string `json:"result"`
+		Owner      string `json:"owner"`
+		LeaseToken string `json:"lease_token"`
+		Result     string `json:"result"`
 	}
 	if err := decodeJSON(r, &req); err != nil && err.Error() != "EOF" {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -133,7 +140,7 @@ func (s *Server) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.mgr.CompleteTask(r.PathValue("id"), r.PathValue("taskID"), owner, req.Result); err != nil {
+	if err := s.mgr.CompleteTask(r.PathValue("id"), r.PathValue("taskID"), owner, req.LeaseToken, req.Result); err != nil {
 		writeTaskErr(w, err)
 		return
 	}
@@ -142,13 +149,19 @@ func (s *Server) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHeartbeatTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Owner string `json:"owner"`
+		Owner      string `json:"owner"`
+		LeaseToken string `json:"lease_token"`
 	}
 	if err := decodeJSON(r, &req); err != nil && err.Error() != "EOF" {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	t, err := s.mgr.HeartbeatTask(r.PathValue("id"), r.PathValue("taskID"), req.Owner)
+	owner, err := taskOwnerFromRequest(r, req.Owner)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	t, err := s.mgr.HeartbeatTask(r.PathValue("id"), r.PathValue("taskID"), owner, req.LeaseToken)
 	if err != nil {
 		writeTaskErr(w, err)
 		return
@@ -158,9 +171,10 @@ func (s *Server) handleHeartbeatTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFailTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Owner   string `json:"owner"`
-		Error   string `json:"error"`
-		Requeue bool   `json:"requeue"`
+		Owner      string `json:"owner"`
+		LeaseToken string `json:"lease_token"`
+		Error      string `json:"error"`
+		Requeue    bool   `json:"requeue"`
 	}
 	if err := decodeJSON(r, &req); err != nil && err.Error() != "EOF" {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -171,7 +185,7 @@ func (s *Server) handleFailTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.mgr.FailTask(r.PathValue("id"), r.PathValue("taskID"), owner, req.Error, req.Requeue); err != nil {
+	if err := s.mgr.FailTask(r.PathValue("id"), r.PathValue("taskID"), owner, req.LeaseToken, req.Error, req.Requeue); err != nil {
 		writeTaskErr(w, err)
 		return
 	}
@@ -199,6 +213,8 @@ func writeTaskErr(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, fleet.ErrIllegalTransition):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, controlplane.ErrInvalidLease):
+		writeError(w, http.StatusUnauthorized, err.Error())
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
 	}

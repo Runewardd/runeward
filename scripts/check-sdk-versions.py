@@ -23,6 +23,9 @@ def main() -> int:
     npm_version = json.loads(
         (ROOT / "adapters/typescript/package.json").read_text(encoding="utf-8")
     )["version"]
+    npm_lock = json.loads(
+        (ROOT / "adapters/typescript/package-lock.json").read_text(encoding="utf-8")
+    )
 
     init_text = (ROOT / "adapters/python/runeward/__init__.py").read_text(
         encoding="utf-8"
@@ -37,22 +40,29 @@ def main() -> int:
     if mcp_match is None:
         raise SystemExit("could not find MCP implementation version")
 
-    manifest_version = json.loads(
+    manifest = json.loads(
         (ROOT / "dist/mcp/server.json").read_text(encoding="utf-8")
-    )["version"]
+    )
+    manifest_version = manifest["version"]
 
     chart_text = (ROOT / "deploy/helm/runeward/Chart.yaml").read_text(encoding="utf-8")
     chart_match = re.search(r'^version: ([^\s]+)$', chart_text, re.MULTILINE)
     if chart_match is None:
         raise SystemExit("could not find Helm chart version")
+    app_match = re.search(r'^appVersion: "([^\"]+)"$', chart_text, re.MULTILINE)
+    if app_match is None:
+        raise SystemExit("could not find Helm appVersion")
 
     versions = {
         "Python project": python_version,
         "Python import": import_version,
         "npm package": npm_version,
+        "npm lock": npm_lock["version"],
+        "npm lock root": npm_lock["packages"][""]["version"],
         "MCP implementation": mcp_match.group(1),
         "MCP manifest": manifest_version,
         "Helm chart": chart_match.group(1),
+        "Helm app": app_match.group(1),
     }
     if len(set(versions.values())) != 1:
         for label, version in versions.items():
@@ -62,6 +72,10 @@ def main() -> int:
     actual = python_version
     if expected and actual != expected:
         raise SystemExit(f"SDK version {actual} does not match release version {expected}")
+
+    image = manifest["packages"][0]["identifier"]
+    if not image.endswith(f":v{actual}"):
+        raise SystemExit(f"MCP OCI image {image!r} does not match v{actual}")
 
     print(actual)
     return 0

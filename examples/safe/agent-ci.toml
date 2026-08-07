@@ -1,0 +1,82 @@
+# Fail-closed starting point for one governed coding-agent run.
+policy_default = "deny"
+
+[host]
+type      = "container"
+image     = "debian:bookworm-slim"
+user      = "65532"
+workdir   = "/workspace"
+read_only = true
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.anthropic.com"
+
+[[policy]]
+tool    = "file.read"
+match   = "*"
+verdict = "allow"
+reason  = "workspace reads are allowed"
+
+[[policy]]
+tool    = "file.write"
+match   = "src/*"
+verdict = "allow"
+reason  = "source changes are allowed"
+
+[[policy]]
+tool    = "file.write"
+match   = "*"
+verdict = "require-approval"
+reason  = "writes outside src require human review"
+
+[[policy]]
+tool       = "shell"
+match_argv = "git"
+verdict    = "allow"
+reason     = "git commands are allowed inside the isolated workspace"
+
+[[policy]]
+tool       = "shell"
+match_argv = "go"
+verdict    = "allow"
+reason     = "Go builds and tests are allowed"
+
+[[policy]]
+tool       = "shell"
+match_argv = "npm"
+verdict    = "allow"
+reason     = "npm project scripts are allowed"
+
+[[policy]]
+tool    = "python"
+match   = "*"
+verdict = "require-approval"
+reason  = "arbitrary Python execution requires review"
+
+[[policy]]
+tool    = "node"
+match   = "*"
+verdict = "require-approval"
+reason  = "arbitrary Node execution requires review"
+
+[rationing]
+wall_clock      = "45m"
+max_execs       = 250
+memory          = "1g"
+cpus            = 1.0
+egress_requests = 500
+loop_window     = "2m"
+loop_threshold  = 8
+max_tokens      = 200000
+max_cost_usd    = 25.0
+
+[chronicle]
+redact = true

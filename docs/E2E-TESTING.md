@@ -1589,6 +1589,37 @@ curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"download","path":"/v1/chronic
 # (POST /v1/citadels/{id}/terminal-ticket still works and delegates to this store.)
 ```
 
+### Optional browser IDE (experimental)
+
+Full documentation (additions + limitations): [Browser IDE](browser-ide.md).
+
+Contrast with **host IDE → MCP** (setup 1) and **in-cell CLI agents** (setup 2): this path
+embeds code-server inside the Citadel and reverse-proxies it from `serve`. Keystrokes are
+**not** per-command policy (same caveat as the interactive terminal).
+
+Cursor Desktop / Claude Desktop / Codex do **not** ship a self-hosted browser GUI. To test
+those CLIs through the same Open-IDE spin-off, build `deploy/Dockerfile.ide-agents` and use
+`ide-claude` / `ide-codex` / `ide-cursor` Charters; run `claude`, `codex`, or `agent` in the
+IDE terminal. GitHub Copilot is not first-class on code-server (Open VSX marketplace).
+
+```bash
+# Build the IDE image and enable the feature flag:
+docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+export RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
+# Charter: examples/ide-demo.toml ([ide] enabled = true)
+
+# Or IDE + coding CLIs:
+docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+# Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each)
+
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"ide-demo"}' | jq -r .id)
+TICKET=$(curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"ide","sandbox_id":"'$CID'"}' | jq -r .ticket)
+# Open in a browser (ticket is single-use; a cookie covers subsequent asset loads):
+open "$BASE/v1/citadels/$CID/ide?ticket=$TICKET"
+# Or: dashboard → select Citadel → Open IDE
+# Chronicle: ide.open on create, ide.close on kill.
+```
+
 ---
 
 ## 26. Policy simulation (dry-run) over the API

@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "runeward": {
+      "type": "stdio",
+      "command": "runeward",
+      "args": ["mcp"]
+    }
+  }
+}

@@ -81,7 +81,9 @@ profiles:
   data: {}
 
 egress:
-  image: runeward-egress:latest
+  # Empty uses <image.repository>-egress:<Chart.appVersion>. Override with a
+  # digest-pinned reference for production deployments.
+  image: ""
 
 # Opt-in default-deny NetworkPolicy for the control-plane namespace. Off by
 # default: it only takes effect under a CNI that enforces NetworkPolicy, and a
