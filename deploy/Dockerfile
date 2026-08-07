@@ -18,5 +18,6 @@ LABEL org.opencontainers.image.description="Governed execution cells for AI agen
 # MCP registry OCI ownership check: the value MUST equal the server.json "name".
 LABEL io.modelcontextprotocol.server.name="io.github.Runewardd/runeward"
 COPY --from=build /out/runeward /usr/local/bin/runeward
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/runeward"]
 CMD ["serve", "--port", "8080"]

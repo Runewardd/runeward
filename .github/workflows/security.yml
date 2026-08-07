@@ -90,6 +90,9 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           format: sarif
+          # Keep accepted, path-scoped architecture exceptions reviewable in
+          # source instead of re-failing findings already dismissed in GitHub.
+          trivyignores: .trivyignore.yaml
           limit-severities-for-sarif: true
           output: trivy-fs.sarif
       - name: Upload Trivy fs SARIF

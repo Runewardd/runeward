@@ -23,8 +23,12 @@ rules:
     verbs: ["get", "update", "patch"]
   # Drive the Kubernetes backend (pods + workspace PVCs + egress config).
   - apiGroups: [""]
-    resources: ["pods", "pods/exec", "persistentvolumeclaims", "configmaps"]
+    resources: ["pods", "persistentvolumeclaims", "configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Kubernetes remotecommand uses POST on the exec subresource.
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]

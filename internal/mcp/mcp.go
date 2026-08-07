@@ -29,8 +29,7 @@ const (
 	EnvMCPDefaultPrincipal = "RUNEWARD_MCP_DEFAULT_PRINCIPAL"
 	// EnvMCPDefaultToken maps stdio sessions to an authz principal when
 	// RUNEWARD_AUTHZ_FILE is configured.
-	// #nosec G101 -- this constant is an environment variable name, not a credential.
-	EnvMCPDefaultToken = "RUNEWARD_MCP_DEFAULT_TOKEN"
+	EnvMCPDefaultToken = "RUNEWARD_MCP_DEFAULT_TOKEN" // #nosec G101 -- environment variable name, not a credential value
 )
 
 type principalIdentity struct {
