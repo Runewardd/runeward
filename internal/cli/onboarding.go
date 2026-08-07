@@ -29,6 +29,11 @@ workdir = "/workspace"
 [network]
 default = "deny"
 
+# Keep strict validation useful while preserving deny-by-default egress.
+[[network.rule]]
+verdict  = "allow"
+hostname = "example.com"
+
 # Demonstrates deterministic pre-execution blocking.
 [[policy]]
 tool    = "shell"
@@ -217,6 +222,12 @@ func runDoctor(configDir, requested string) ([]doctorCheck, bool) {
 		ready = false
 	} else {
 		checks = append(checks, doctorCheck{Name: "runtime", Status: "ok", Message: be.Name() + " reachable"})
+	}
+	if err := controlplane.CheckProfilePrerequisites(p); err != nil {
+		checks = append(checks, doctorCheck{Name: "secrets", Status: "fail", Message: err.Error()})
+		ready = false
+	} else {
+		checks = append(checks, doctorCheck{Name: "secrets", Status: "ok", Message: "required environment and secret sources resolved"})
 	}
 	imageStatus := "ok"
 	imageMessage := p.Host.Image

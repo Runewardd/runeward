@@ -75,6 +75,20 @@ class RunewardClientTests(unittest.TestCase):
             {"owner": "", "lease_token": "signed-lease", "result": "done"},
         )
 
+    @mock.patch("runeward.client.urllib.request.urlopen")
+    def test_publish_conversation_uses_citadel_feed(self, urlopen: mock.Mock) -> None:
+        urlopen.return_value = _Response(201, {"id": 1, "role": "assistant"})
+        client = RunewardClient()
+        client.publish_conversation("cit/1", "assistant", "Working on it", "run-1")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            "http://localhost:8080/v1/citadels/cit%2F1/conversation",
+        )
+        self.assertEqual(json.loads(request.data), {
+            "role": "assistant", "content": "Working on it", "run_id": "run-1",
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -124,8 +124,10 @@
           </div>
           <nav class="tabs" id="tabs">
             <button class="tab active" data-tab="terminal">Terminal</button>
+            <button class="tab" data-tab="conversation">Live chat</button>
             <button class="tab" data-tab="files">Files</button>
             <button class="tab" data-tab="shell">Shell</button>
+            <button id="browser-tab" class="tab hidden" data-tab="browser">Browser</button>
             <button class="tab" data-tab="audit">Audit trail</button>
             <button class="tab" data-tab="policy">Policy</button>
             <button class="tab" data-tab="egress">Network</button>
@@ -140,10 +142,21 @@
             <span id="term-status" class="conn-status conn-off">disconnected</span>
             <span class="note">Direct sandbox session: commands are not individually policy-gated. Use Shell for governed calls.</span>
             <button id="open-ide" class="btn btn-sm hidden" type="button" title="Open browser IDE (code-server; experimental)">Open IDE</button>
+            <a id="ide-link" class="btn btn-sm hidden" target="_blank" rel="noopener noreferrer">Open prepared IDE link</a>
             <span id="ide-agents-hint" class="note hidden"></span>
             <button id="term-reconnect" class="btn btn-sm">Reconnect</button>
           </div>
           <div id="terminal" class="terminal-host"></div>
+        </div>
+
+        <!-- Read-only agent conversation TTY -->
+        <div class="tab-pane" data-pane="conversation">
+          <div class="term-toolbar">
+            <span id="conversation-status" class="conn-status conn-off">disconnected</span>
+            <span class="note">Read-only, secret-redacted feed from agents connected to this control plane.</span>
+            <button id="conversation-reconnect" class="btn btn-sm">Reconnect</button>
+          </div>
+          <div id="conversation-terminal" class="terminal-host conversation-host" aria-label="Live agent conversation"></div>
         </div>
 
         <!-- Files tab -->
@@ -206,8 +219,9 @@
             </div>
           </div>
 
-          <div class="card">
+          <div id="code-card" class="card">
             <div class="card-head">Run code</div>
+            <div id="code-capability-note" class="note"></div>
             <div class="row">
               <select id="code-lang" class="select">
                 <option value="python">Python</option>
@@ -231,6 +245,32 @@
                 <div class="std-label">stderr</div>
                 <pre id="code-stderr" class="output output-err"></pre>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Governed browser tab -->
+        <div class="tab-pane" data-pane="browser">
+          <div class="card">
+            <div class="card-head">Governed browser <span class="card-head-hint">Citadel egress + policy enforced</span></div>
+            <div class="row">
+              <input id="browser-url" class="input mono" type="url" value="https://example.com" placeholder="https://example.com" />
+              <select id="browser-mode" class="select">
+                <option value="text">Rendered text</option>
+                <option value="screenshot">Screenshot</option>
+              </select>
+              <button id="browser-run" class="btn btn-accent">Open safely</button>
+            </div>
+            <div id="browser-result" class="shell-result hidden">
+              <div class="shell-result-head">
+                <span id="browser-verdict" class="verdict"></span>
+                <span id="browser-exit" class="exit-code mono"></span>
+                <span id="browser-duration" class="muted mono"></span>
+              </div>
+              <div id="browser-note" class="note hidden"></div>
+              <pre id="browser-stdout" class="output"></pre>
+              <pre id="browser-stderr" class="output output-err"></pre>
+              <img id="browser-screenshot" class="hidden" alt="Screenshot captured inside the governed Citadel" />
             </div>
           </div>
         </div>
@@ -443,8 +483,30 @@
         </label>
       </div>
       <div class="modal-foot">
+        <span id="new-modal-progress" class="note hidden" role="status"></span>
         <button class="btn" data-close-modal>Cancel</button>
         <button id="new-modal-create" class="btn btn-accent">Create sandbox</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cohort task resolution modal (native prompt is unavailable in embedded browsers). -->
+  <div id="task-modal" class="modal hidden" role="dialog" aria-label="Resolve task" aria-modal="true">
+    <div class="modal-backdrop" data-close-task-modal></div>
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h2 id="task-modal-title">Resolve task</h2>
+        <button class="icon-btn" data-close-task-modal title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span id="task-modal-label" class="field-label">Result</span>
+          <textarea id="task-modal-value" class="textarea mono" spellcheck="false"></textarea>
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close-task-modal>Cancel</button>
+        <button id="task-modal-submit" class="btn btn-accent">Submit</button>
       </div>
     </div>
   </div>

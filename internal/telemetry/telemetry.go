@@ -79,11 +79,14 @@ func Report(version, name string, props map[string]string) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
+		// #nosec G704 -- telemetry is disabled by default; endpoint is an explicit
+		// operator-controlled opt-in destination, not remote request input.
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
+		// #nosec G704 -- req uses only the operator-configured telemetry endpoint above.
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return

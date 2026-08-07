@@ -1,10 +1,8 @@
 # Lightweight DAST: build runeward, run it locally with auth enabled, and run
 # the OWASP ZAP baseline scan against the live server.
 #
-# NOTE: this is intentionally non-blocking (`continue-on-error: true`). An
-# unauthenticated baseline crawl will flag the 401s from the token-guarded API;
-# the value here is *regression visibility* (new headers/endpoints/behaviours),
-# not a pass/fail gate. Tighten later with a ZAP context that authenticates.
+# The baseline gate fails on ZAP FAIL-level findings. Warning-only findings are
+# retained in the report while authenticated RBAC/API coverage runs in CI.
 name: dast
 
 on:
@@ -22,8 +20,6 @@ jobs:
   zap-baseline:
     name: ZAP baseline
     runs-on: ubuntu-latest
-    # Non-blocking: baseline findings should not fail the PR gate yet.
-    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -64,12 +60,11 @@ jobs:
         with:
           target: http://127.0.0.1:8080
           token: ${{ secrets.GITHUB_TOKEN }}
-          # Regression-visibility only: don't file/update a GitHub issue (keeps
-          # permissions at contents: read) and don't fail the step on alerts.
+          # Keep issue permissions off, but make FAIL-level findings blocking.
           allow_issue_writing: false
-          fail_action: false
-          # -a: also report alerts marked "IGNORE"/informational.
-          cmd_options: "-a"
+          fail_action: true
+          # Preserve warnings in the report without failing the gate on them.
+          cmd_options: "-I"
 
       - name: Stop runeward
         if: always()

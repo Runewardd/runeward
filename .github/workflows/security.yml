@@ -33,19 +33,48 @@ jobs:
           go-version: "1.26.5"
           cache: true
       - name: Run gosec
-        # -no-fail: findings are surfaced via the SARIF upload below (Security >
-        # Code scanning), not by hard-failing the job. Many gosec findings here
-        # are by design for a tool that executes governed commands (G702/G204
-        # exec, G102 proxy bind, G104 best-effort Close on cleanup paths); gate
-        # via triage in the Security tab / #nosec rather than blocking every push.
+        id: gosec
+        continue-on-error: true
         run: |
           go run github.com/securego/gosec/v2/cmd/gosec@v2.27.1 \
-            -no-fail -fmt sarif -out gosec.sarif ./...
+            -fmt sarif -out gosec.sarif ./...
       - name: Upload gosec SARIF
+        if: always()
         uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: gosec.sarif
           category: gosec
+      - name: Enforce gosec high-severity gate
+        if: always()
+        run: |
+          if [[ ! -s gosec.sarif ]]; then
+            echo "::error::gosec did not produce a SARIF report"
+            exit 1
+          fi
+          high_count=$(jq '[
+            .runs[]
+            | . as $run
+            | ($run.tool.driver.rules
+                | map({key: .id, value: (.properties.tags // [])})
+                | from_entries) as $tags
+            | $run.results[]?
+            | select(($tags[.ruleId] // []) | index("HIGH"))
+          ] | length' gosec.sarif)
+          if (( high_count > 0 )); then
+            jq -r '
+              .runs[]
+              | . as $run
+              | ($run.tool.driver.rules
+                  | map({key: .id, value: (.properties.tags // [])})
+                  | from_entries) as $tags
+              | $run.results[]?
+              | select(($tags[.ruleId] // []) | index("HIGH"))
+              | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine)::gosec \(.ruleId): \(.message.text)"
+            ' gosec.sarif
+            echo "::error::gosec reported ${high_count} unsuppressed HIGH-severity finding(s)"
+            exit 1
+          fi
+          echo "gosec HIGH-severity gate passed; complete SARIF remains available for lower-severity triage"
 
   # Dependency + Go stdlib vulnerability scanning. govulncheck only reports
   # vulnerabilities that are actually reachable from this codebase.
@@ -77,18 +106,32 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Trivy filesystem scan
+        id: trivy
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          exit-code: "1"
           format: sarif
+          # Keep accepted, path-scoped architecture exceptions reviewable in
+          # source instead of re-failing findings already dismissed in GitHub.
+          trivyignores: .trivyignore.yaml
+          limit-severities-for-sarif: true
           output: trivy-fs.sarif
       - name: Upload Trivy fs SARIF
+        if: always()
         uses: github/codeql-action/upload-sarif@v4.37.4
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+      - name: Enforce Trivy filesystem gate
+        if: steps.trivy.outcome == 'failure'
+        run: |
+          echo "::error::Trivy reported a high or critical repository finding"
+          exit 1
 
   # Container image scan. Each Dockerfile is built locally (no push) and then
   # scanned for CRITICAL/HIGH OS + library vulnerabilities. A distinct SARIF

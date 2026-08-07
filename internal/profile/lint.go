@@ -65,11 +65,31 @@ func Lint(p *Profile) []Finding {
 	}
 
 	lintHostFootguns(p, add)
+	lintCapabilities(p, add)
 	lintEnv(p, add)
 	lintNetwork(p, add)
 	lintPolicy(p, add)
 
 	return out
+}
+
+func lintCapabilities(p *Profile, add func(sev, field, msg string)) {
+	if len(p.Host.Command) > 0 && strings.TrimSpace(p.Host.Command[0]) == "" {
+		add(SeverityError, "host.command[0]", "command executable cannot be empty")
+	}
+	seen := map[string]bool{}
+	for i, raw := range p.Capabilities {
+		capability := strings.ToLower(strings.TrimSpace(raw))
+		field := fmt.Sprintf("capabilities[%d]", i)
+		if capability != "python" && capability != "node" && capability != "browser" {
+			add(SeverityError, field, fmt.Sprintf("unsupported capability %q (want python, node, or browser)", raw))
+			continue
+		}
+		if seen[capability] {
+			add(SeverityWarn, field, fmt.Sprintf("duplicate capability %q", capability))
+		}
+		seen[capability] = true
+	}
 }
 
 // lintEnv flags unresolved secret references, missing files, and duplicate

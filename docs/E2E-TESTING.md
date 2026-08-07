@@ -1,5 +1,21 @@
 # runeward — end-to-end local testing
 
+## Automated authenticated release gate
+
+CI runs `scripts/e2e-rbac.sh` against a real Docker-backed Runeward server. It
+exercises six roles, Charter scoping, shared-tenant and cross-tenant access,
+missing-secret readiness, governed execution, capability errors, authoritative
+Cohort ownership, and task completion. Run the same gate locally with:
+
+```bash
+go build -o runeward-e2e ./cmd/runeward
+RUNEWARD_E2E_BINARY="$PWD/runeward-e2e" ./scripts/e2e-rbac.sh
+```
+
+The script creates only temporary credentials/state and removes its Citadel and
+Cohort. The manual provider/Kubernetes/browser sections below remain required
+where CI does not have those external services.
+
 A hands-on walkthrough for exercising the whole stack on your laptop: the
 **Docker** and **Kubernetes** backends, deny-by-default and **strict (L3)**
 egress, the governed REST API, snapshots, multi-agent Cohorts, and wiring the
@@ -750,6 +766,7 @@ clients) or **streamable HTTP** (mounted at `/mcp` on `serve`, or standalone via
 - Citadels: `runeward_create_citadel`, `runeward_shell`, `runeward_python`,
 `runeward_node`, `runeward_browser`, `runeward_read_file`, `runeward_write_file`,
 `runeward_list_files`, `runeward_search_files`, `runeward_list_conclave`,
+`runeward_publish_conversation`, `runeward_list_conversation`,
 `runeward_kill_citadel`.
 - Cohorts: `runeward_create_cohort`, `runeward_list_cohorts`, `runeward_list_tasks`,
 `runeward_add_task`, `runeward_claim_task`, `runeward_complete_task`,
@@ -1747,7 +1764,8 @@ helm template runeward deploy/helm/runeward | grep -E 'kind: (ServiceAccount|Clu
 helm template runeward deploy/helm/runeward | grep -c 'ValidatingWebhookConfiguration'   # => 1 (enabled by default)
 
 # install.sh verifies the cosign signature over checksums.txt (bypass only via an
-# explicit RUNEWARD_INSECURE_SKIP_* env); CI scanners (gosec/Trivy/CodeQL) now gate.
+# explicit RUNEWARD_INSECURE_SKIP_* env); CI uploads complete scanner reports,
+# while gosec gates HIGH and Trivy gates HIGH/CRITICAL release findings.
 grep -n 'cosign verify-blob' install.sh
 ```
 
@@ -1801,5 +1819,3 @@ rm -rf "$RUNEWARD_STATE_DIR" /tmp/rw-keys /tmp/cases.toml /tmp/authz.json \
 | `unsupported container runtime "…"` at startup                              | `RUNEWARD_CONTAINER_RUNTIME` must be `docker` or `podman` (29).                                                                                                                    |
 | `ledger: "…/ledger.jsonl" is already in use by another runeward process`    | One writer per audit ledger. Another `serve`/`mcp` holds the default state dir — give this instance its own `RUNEWARD_STATE_DIR` (8), or stop the other process.                    |
 | `runeward mcp --http` → `bind: address already in use`                      | A previous `mcp`/`serve` still owns the port. `pkill -f 'runeward.*mcp'` (or stop `serve`), or start with a different `--port`.                                                     |
-
-

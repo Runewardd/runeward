@@ -114,6 +114,23 @@ func TestAuthTokenRequired(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersCoverAPIAndAuthenticationFailures(t *testing.T) {
+	h := newTestServerWithToken(t, "s3cret")
+	for _, path := range []string{"/healthz", "/v1/citadels"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("%s missing nosniff header", path)
+		}
+		if rr.Header().Get("X-Frame-Options") != "DENY" {
+			t.Fatalf("%s missing frame denial", path)
+		}
+		if path == "/v1/citadels" && rr.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s missing no-store", path)
+		}
+	}
+}
+
 func TestHealth(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()

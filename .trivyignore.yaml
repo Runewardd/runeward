@@ -1,0 +1,18 @@
+misconfigurations:
+  - id: KSV-0053
+    paths:
+      - "deploy/helm/runeward/templates/rbac.yaml"
+      - "internal/manifests/install/20-rbac.yaml"
+    expired_at: 2027-08-07
+    statement: >-
+      Runeward's Kubernetes backend uses the pods/exec POST subresource to
+      seed workspaces and execute governed commands inside Citadels. Access is
+      limited to the Runeward controller and server service accounts.
+  - id: KSV-0114
+    paths:
+      - "deploy/helm/runeward/templates/webhook.yaml"
+    expired_at: 2027-08-07
+    statement: >-
+      The admission webhook must create and maintain Runeward's own named
+      validating and mutating webhook configurations. Update and patch access
+      is restricted with resourceNames; unscoped access is create-only.

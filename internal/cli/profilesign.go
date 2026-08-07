@@ -54,6 +54,7 @@ func newProfileSignCmd() *cobra.Command {
 			if sigPath == "" {
 				sigPath = args[0] + ".sig"
 			}
+			// #nosec G703 -- sigPath is an explicit local CLI output selected by the operator.
 			if err := os.WriteFile(sigPath, sigBytes, 0o644); err != nil {
 				return err
 			}

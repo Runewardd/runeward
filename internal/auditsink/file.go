@@ -28,6 +28,7 @@ func NewFileSink(path string, logger *slog.Logger) (Sink, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// #nosec G703 -- path is an explicit operator-selected audit sink, not request input.
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open audit file %q: %w", path, err)

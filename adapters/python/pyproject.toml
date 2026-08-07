@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "runeward"
-version = "0.3.0-rc.1"
+version = "0.3.0-rc.2"
 description = "Python SDK for governing AI agent execution with policy, approvals, isolation, budgets, and signed evidence."
 readme = "README.md"
 requires-python = ">=3.9"

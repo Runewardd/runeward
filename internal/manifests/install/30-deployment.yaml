@@ -19,8 +19,18 @@ spec:
         app.kubernetes.io/component: controller
     spec:
       serviceAccountName: runeward-controller
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: controller
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
           # Overridden by `runeward up --image` / $RUNEWARD_IMAGE.
           image: runeward:latest
           # Use a locally-built image when present (OrbStack/kind share the

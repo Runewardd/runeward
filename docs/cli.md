@@ -41,7 +41,7 @@ for `enter <charter>`.
 | `runeward auth login\|status\|logout` | Save or remove a client credential using OIDC device flow or `--token-stdin`. |
 | `runeward init [project-dir]` | Create `.runeward/quickstart.toml` without overwriting an existing policy. |
 | `runeward quickstart [project-dir]` | Prove allow, pre-execution denial, and signed audit. |
-| `runeward doctor [charter] [--json]` | Check policy, runtime, image, and state readiness. |
+| `runeward doctor [charter] [--json]` | Check policy, runtime, required secret sources, image, and state readiness. |
 | `runeward enter <charter> [-- cmd...]` | Create a Citadel and open a shell, or run a one-shot command. |
 | `runeward serve [--token ... --tls-cert ... --tls-key ...]` | Start the control plane: REST API + web dashboard (default `127.0.0.1:8080`). |
 | `runeward mcp [--http --tls-cert ... --tls-key ...]` | Run stdio or streamable-HTTP MCP exposing governed tools to an IDE/agent. |

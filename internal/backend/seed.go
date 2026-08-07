@@ -113,6 +113,11 @@ func writeDirTar(w io.Writer, srcDir string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("seed source %q is not a directory", srcDir)
 	}
+	root, err := os.OpenRoot(srcDir)
+	if err != nil {
+		return fmt.Errorf("seed source root %q: %w", srcDir, err)
+	}
+	defer root.Close()
 
 	tw := tar.NewWriter(w)
 	walkErr := filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
@@ -138,7 +143,7 @@ func writeDirTar(w io.Writer, srcDir string) error {
 		case d.IsDir():
 			return tw.WriteHeader(&tar.Header{Name: name + "/", Typeflag: tar.TypeDir, Mode: mode})
 		case fi.Mode()&fs.ModeSymlink != 0:
-			link, err := os.Readlink(path)
+			link, err := root.Readlink(rel)
 			if err != nil {
 				return err
 			}
@@ -147,7 +152,7 @@ func writeDirTar(w io.Writer, srcDir string) error {
 			if err := tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: mode, Size: fi.Size()}); err != nil {
 				return err
 			}
-			f, err := os.Open(path)
+			f, err := root.Open(rel)
 			if err != nil {
 				return err
 			}
@@ -181,7 +186,7 @@ func extractTar(r io.Reader, destDir string) error {
 		if err != nil {
 			return err
 		}
-		mode := fs.FileMode(hdr.Mode).Perm()
+		mode := hdr.FileInfo().Mode().Perm()
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, mode|0o700); err != nil {

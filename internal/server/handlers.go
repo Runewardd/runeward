@@ -150,11 +150,15 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sandbox_id is required for terminal tickets")
 		return
 	}
+	if scope.Kind == ticketKindConversation && scope.SandboxID == "" {
+		writeError(w, http.StatusBadRequest, "sandbox_id is required for conversation tickets")
+		return
+	}
 	if scope.Kind == ticketKindIDE && scope.SandboxID == "" {
 		writeError(w, http.StatusBadRequest, "sandbox_id is required for ide tickets")
 		return
 	}
-	if scope.Kind == ticketKindTerminal || scope.Kind == ticketKindIDE {
+	if scope.Kind == ticketKindTerminal || scope.Kind == ticketKindConversation || scope.Kind == ticketKindIDE {
 		if _, ok := s.mgr.Sandbox(scope.SandboxID); !ok {
 			writeError(w, http.StatusNotFound, "sandbox not found")
 			return
@@ -912,6 +916,9 @@ func sandboxView(sb *backend.Sandbox, owner string) map[string]any {
 
 func sandboxViewWithIDE(s *Server, sb *backend.Sandbox, owner string) map[string]any {
 	v := sandboxView(sb, owner)
+	if capabilities := s.mgr.SandboxCapabilities(sb.ID); len(capabilities) > 0 {
+		v["capabilities"] = capabilities
+	}
 	if _, ok := s.mgr.IDEEndpoint(sb.ID); ok {
 		v["ide"] = true
 		if agents := s.mgr.IDEAgents(sb.ID); len(agents) > 0 {

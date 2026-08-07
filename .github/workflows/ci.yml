@@ -40,6 +40,22 @@ jobs:
       - name: strict production Charter examples
         run: go run ./cmd/runeward --config-dir examples/safe validate --strict
 
+  authenticated-e2e:
+    name: authenticated API + six-role E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: Build release binary
+        run: go build -o runeward-e2e ./cmd/runeward
+      - name: Run authenticated role and automation suite
+        env:
+          RUNEWARD_E2E_BINARY: ${{ github.workspace }}/runeward-e2e
+        run: ./scripts/e2e-rbac.sh
+
   helm-lint:
     runs-on: ubuntu-latest
     steps:

@@ -33,6 +33,9 @@ The command creates `.runeward/quickstart.toml`, checks the policy, runtime, ima
 runs an allowed command, proves a destructive command is denied before execution, and verifies the
 signed audit trail. It never overwrites an existing policy unless `--force` is passed.
 
+`doctor` and dashboard readiness also resolve required secret sources. A Charter that references an
+unset `env://` value is not presented as launch-ready.
+
 ```bash
 runeward doctor quickstart                     # explain setup problems safely
 runeward --config-dir .runeward serve          # dashboard + governed REST API
@@ -165,6 +168,13 @@ runeward cohort --agent claude --model sonnet build "Build a tested API"
 Adapters are included for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands, Vercel AI SDK,
 and LangChain.js. See [Adapters](docs/adapters.md) and [agent groups](docs/fleets.md).
 
+The dashboard also has a read-only **Live chat** TTY for each Citadel. Agent harnesses publish
+`user`, `assistant`, `tool`, and `system` turns with `runeward_publish_conversation` (or the REST,
+Python, and TypeScript equivalents), and authorized teammates can follow the redacted conversation
+without terminal input access. Runeward cannot infer private UI chat text that the agent client does
+not publish; wire the publish call into the harness turn callback. The publisher must connect to the
+same `runeward serve` control plane as the dashboard (through `/mcp`, REST, or an SDK).
+
 ## Harness agents and subagents
 
 Runeward is the enforcement boundary around an agent, not the component that decides how the agent
@@ -206,6 +216,8 @@ actions, produces exact matches, and requires a human to review and broaden them
   same authorization model, and embedded HTTP MCP shares the REST ownership checks.
 - Browser automation is experimental and disabled by default. Enable it only in a trusted deployment
   with `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` after reviewing the [security model](docs/security-model.md).
+  Browser-capable Charters declare `capabilities = ["browser"]`; the dashboard then exposes governed
+  rendered-text and screenshot actions and their policy/egress results.
 - An optional browser IDE (code-server in-cell + ticketed reverse proxy) is similarly experimental:
   `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, images `Dockerfile.ide` /
   `Dockerfile.ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.

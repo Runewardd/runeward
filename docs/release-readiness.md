@@ -25,6 +25,8 @@ careful evaluation, not that Runeward makes stable or absolute security guarante
 - Exercise snapshot creation, server restart, owner-filtered listing, and restore.
 - Verify run lineage persists, active runs become `interrupted` on restart, and tenant filters hold.
 - Run Docker and Kubernetes end-to-end suites plus dashboard browser automation.
+- Require the authenticated six-role E2E job: identity, launch scope, shared-tenant access,
+  cross-tenant denial, secret readiness, governed shell/code capability errors, and Cohort lifecycle.
 
 ## Agent compatibility
 
@@ -45,9 +47,9 @@ careful evaluation, not that Runeward makes stable or absolute security guarante
 ## Release order
 
 1. Prepare the RC metadata with
-   `python3 scripts/set-release-version.py 0.3.0-rc.1`, commit it, and require
-   `python3 scripts/check-sdk-versions.py v0.3.0-rc.1` to pass.
-2. Merge and run the full protected-branch suite, then tag `v0.3.0-rc.1`.
+   `python3 scripts/set-release-version.py 0.3.0-rc.2`, commit it, and require
+   `python3 scripts/check-sdk-versions.py v0.3.0-rc.2` to pass.
+2. Merge and run the full protected-branch suite, then tag `v0.3.0-rc.2`.
 3. Install the RC through Homebrew, PyPI, npm (`next`), OCI, and the Codex
    plugin package. Perform clean-machine install and rollback tests.
 4. Prepare the stable metadata with

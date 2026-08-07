@@ -25,12 +25,22 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ $webhookSA }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: webhook
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
           image: {{ include "runeward.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:

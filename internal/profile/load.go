@@ -161,6 +161,8 @@ func verifyProfileSignature(path string, content []byte) error {
 	}
 
 	val := verifyKey
+	// #nosec G703 -- verifyKey is an explicit operator-controlled environment
+	// setting that intentionally accepts either key material or a local key path.
 	if b, err := os.ReadFile(verifyKey); err == nil {
 		val = strings.TrimSpace(string(b))
 	}

@@ -62,6 +62,7 @@ export interface Cohort { id: string; profile: string; owner?: string; sandboxes
 export interface CohortTask { id: string; payload: string; state: string; owner?: string; attempts: number; result?: string; error?: string; lease_token?: string; }
 export interface Snapshot { id: string; profile: string; [key: string]: unknown; }
 export interface Run { id: string; parent_run_id?: string; citadel_id: string; tenant?: string; actor?: string; charter: string; agent?: string; provider?: string; model?: string; status: string; created_at: string; finished_at?: string; error?: string; }
+export interface ConversationMessage { id: number; sandbox: string; role: "user" | "assistant" | "tool" | "system"; author: string; content: string; run_id?: string; created_at: string; redacted?: boolean; }
 export interface CreateSandboxOptions {
   copyFrom?: string;
   parentCitadel?: string;
@@ -358,6 +359,16 @@ export class RunewardClient {
 
   reportUsage(sandbox: string, tokens: number, costUsd: number): Promise<Usage> {
     return this.request("POST", `/v1/citadels/${this.segment(sandbox)}/usage`, { tokens, cost_usd: costUsd });
+  }
+
+  publishConversation(sandbox: string, role: ConversationMessage["role"], content: string, runId = ""): Promise<ConversationMessage> {
+    return this.request("POST", `/v1/citadels/${this.segment(sandbox)}/conversation`, { role, content, run_id: runId });
+  }
+
+  async listConversation(sandbox: string, afterId = 0, limit = 500): Promise<ConversationMessage[]> {
+    const path = `/v1/citadels/${this.segment(sandbox)}/conversation?after_id=${afterId}&limit=${limit}`;
+    const result = await this.request<{ messages: ConversationMessage[] }>("GET", path);
+    return result.messages ?? [];
   }
 
   async perimeter(sandbox: string): Promise<Array<Record<string, unknown>>> {

@@ -73,6 +73,9 @@ type Manager struct {
 	runOpMu   sync.Mutex
 	runs      map[string]Run
 
+	conversationMu sync.Mutex
+	conversation   *conversationHub
+
 	stateDir   string        // ledger, keys, fleets.json
 	fleetLease time.Duration // claim lease for dead-worker recovery
 	leaseKey   []byte        // HMAC key for signed Cohort task leases
@@ -347,10 +350,11 @@ func (m *Manager) ResolveApproval(id string, approve bool, actor string) bool {
 
 // ProfileInfo is a lightweight profile descriptor for listing.
 type ProfileInfo struct {
-	Name   string `json:"name"`
-	Host   string `json:"host"`
-	Egress string `json:"egress"`
-	Image  string `json:"image,omitempty"`
+	Name         string   `json:"name"`
+	Host         string   `json:"host"`
+	Egress       string   `json:"egress"`
+	Image        string   `json:"image,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // ListProfiles returns the resolvable profiles for the configured search path.
@@ -364,6 +368,7 @@ func (m *Manager) ListProfiles() ([]ProfileInfo, error) {
 		info := ProfileInfo{Name: n, Host: string(profile.HostContainer), Egress: "open"}
 		if p, err := profile.Load(n, profile.Options{ConfigDir: m.configDir}); err == nil {
 			info.Image = p.Host.Image
+			info.Capabilities = profileCapabilities(p)
 			if p.Host.Type != "" {
 				info.Host = string(p.Host.Type)
 			}
@@ -374,6 +379,57 @@ func (m *Manager) ListProfiles() ([]ProfileInfo, error) {
 		out = append(out, info)
 	}
 	return out, nil
+}
+
+func profileCapabilities(p *profile.Profile) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, capability := range p.Capabilities {
+		capability = strings.ToLower(strings.TrimSpace(capability))
+		if (capability == "python" || capability == "node" || capability == "browser") && !seen[capability] {
+			seen[capability] = true
+			out = append(out, capability)
+		}
+	}
+	// Preserve compatibility for established Charters using official/runtime
+	// images while encouraging explicit declarations for custom images.
+	image := strings.ToLower(p.Host.Image)
+	add := func(capability string) {
+		if !seen[capability] {
+			seen[capability] = true
+			out = append(out, capability)
+		}
+	}
+	if strings.Contains(image, "python") || strings.Contains(image, "runeward-sandbox") || strings.Contains(image, "runeward-agent") || strings.Contains(image, "runeward-ide-agents") {
+		add("python")
+	}
+	if strings.Contains(image, "node") || strings.Contains(image, "runeward-sandbox") || strings.Contains(image, "runeward-agent") || strings.Contains(image, "runeward-ide-agents") {
+		add("node")
+	}
+	if strings.Contains(image, "alpine-chrome") || strings.Contains(image, "runeward-sandbox") {
+		add("browser")
+	}
+	return out
+}
+
+func hasCapability(p *profile.Profile, wanted string) bool {
+	for _, capability := range profileCapabilities(p) {
+		if capability == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+// SandboxCapabilities returns optional runtime tools declared by the
+// Citadel's Charter. Empty intentionally means shell/files only.
+func (m *Manager) SandboxCapabilities(id string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[id]; sess != nil {
+		return profileCapabilities(sess.Profile)
+	}
+	return nil
 }
 
 // LoadProfile resolves a policy from the Manager's configured directory.
@@ -427,13 +483,24 @@ func (m *Manager) CheckReadiness(name string) ReadinessReport {
 		return report
 	}
 	report.Checks = append(report.Checks, ReadinessCheck{Name: "runtime", Status: "ok", Message: be.Name() + " reachable"})
+	prerequisitesReady := true
+	if err := CheckProfilePrerequisites(p); err != nil {
+		report.Checks = append(report.Checks, ReadinessCheck{
+			Name:    "secrets",
+			Status:  "fail",
+			Message: "required environment or secret source is unavailable; check the server configuration and retry",
+		})
+		prerequisitesReady = false
+	} else {
+		report.Checks = append(report.Checks, ReadinessCheck{Name: "secrets", Status: "ok", Message: "required environment and secret sources resolved"})
+	}
 	imageStatus, imageMessage := "ok", p.Host.Image
 	if strings.HasSuffix(p.Host.Image, ":dev") || !strings.Contains(p.Host.Image, "/") {
 		imageStatus = "warn"
 		imageMessage = "local/development image selected; use a published immutable image for shared environments"
 	}
 	report.Checks = append(report.Checks, ReadinessCheck{Name: "image", Status: imageStatus, Message: imageMessage})
-	report.Ready = errorsFound == 0
+	report.Ready = errorsFound == 0 && prerequisitesReady
 	return report
 }
 
@@ -501,6 +568,10 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 	if err != nil {
 		return nil, err
 	}
+	if err := verifyRuntimeCapabilities(ctx, be, sb.ID, p); err != nil {
+		_ = be.Kill(context.Background(), sb.ID)
+		return nil, err
+	}
 
 	guard, err := policyGuard(p)
 	if err != nil {
@@ -555,6 +626,37 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 	obs.IncSandboxCreated()
 	m.record(ctx, sess, "sandbox", "create", nil, string(profile.VerdictAllow), 0, 0, "")
 	return sb, nil
+}
+
+func verifyRuntimeCapabilities(ctx context.Context, be backend.Backend, id string, p *profile.Profile) error {
+	capabilities := profileCapabilities(p)
+	if len(capabilities) == 0 {
+		// Backward compatibility for custom pre-capability Charters: discover
+		// optional runtimes once after create and expose only what is present.
+		script := `command -v python3 >/dev/null 2>&1 && echo python; command -v node >/dev/null 2>&1 && echo node; (command -v runeward-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || command -v headless-shell >/dev/null 2>&1) && echo browser; true`
+		res, err := be.Exec(ctx, id, backend.ExecRequest{Command: []string{"sh", "-c", script}, Workdir: p.Host.Workdir})
+		if err == nil && res != nil && res.ExitCode == 0 {
+			p.Capabilities = strings.Fields(res.Stdout)
+		}
+		return nil
+	}
+
+	checks := map[string]string{
+		"python":  "command -v python3 >/dev/null 2>&1",
+		"node":    "command -v node >/dev/null 2>&1",
+		"browser": "command -v runeward-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 || command -v headless-shell >/dev/null 2>&1",
+	}
+	for _, capability := range capabilities {
+		res, err := be.Exec(ctx, id, backend.ExecRequest{Command: []string{"sh", "-c", checks[capability]}, Workdir: p.Host.Workdir})
+		if err != nil {
+			return fmt.Errorf("verify Charter capability %q: %w", capability, err)
+		}
+		if res == nil || res.ExitCode != 0 {
+			return fmt.Errorf("Charter declares capability %q but image %q does not provide it", capability, p.Host.Image)
+		}
+	}
+	p.Capabilities = capabilities
+	return nil
 }
 
 // Sandbox returns the handle for a sandbox id.
@@ -622,6 +724,9 @@ func (m *Manager) KillSandbox(ctx context.Context, id string) error {
 	}
 	if m.accounting != nil {
 		m.accounting.Forget(id)
+	}
+	if hub := m.conversationHub(); hub != nil {
+		hub.forget(id)
 	}
 	m.recordIDEClose(ctx, sess)
 	m.record(ctx, sess, "sandbox", "kill", nil, string(profile.VerdictAllow), 0, 0, "")
@@ -898,6 +1003,8 @@ func defaultLedgerPath() (string, error) {
 		}
 		dir = filepath.Join(base, "runeward")
 	}
+	// #nosec G703 -- dir is the operator-controlled RUNEWARD_STATE_DIR or an
+	// OS-provided cache directory, never a value supplied through the API.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -943,6 +1050,13 @@ func resolveEnv(p *profile.Profile) (map[string]string, []string, error) {
 		}
 	}
 	return out, secretVals, nil
+}
+
+// CheckProfilePrerequisites resolves required environment and secret sources
+// without exposing their values. It is shared by server readiness and doctor.
+func CheckProfilePrerequisites(p *profile.Profile) error {
+	_, _, err := resolveEnv(p)
+	return err
 }
 
 func expandHome(p string) string {
