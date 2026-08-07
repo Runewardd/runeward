@@ -38,11 +38,18 @@ careful evaluation, not that Runeward makes stable or absolute security guarante
 - Scan every runtime and IDE image for high/critical vulnerabilities.
 - Generate SBOMs, sign images and release checksums, and verify signatures before promotion.
 - Confirm prerelease tags use npm's `next` channel and never move a container `latest` tag.
-- Pin every base image by digest before the final release tag. The IDE images remain release-blocked while their `code-server` base uses a mutable tag.
+- Keep every base image digest-pinned. The IDE images use the verified
+  multi-platform `code-server:4.130.0-noble` index digest recorded in the
+  release audit; both architectures must still rebuild successfully on the RC.
 
 ## Release order
 
-1. Merge and run the full protected-branch suite.
-2. Publish an RC and install it through Homebrew, PyPI, npm, OCI, and the Codex plugin package.
-3. Perform clean-machine install and rollback tests.
-4. Tag `v0.3.0` only after the RC evidence bundle verifies successfully.
+1. Prepare the RC metadata with
+   `python3 scripts/set-release-version.py 0.3.0-rc.1`, commit it, and require
+   `python3 scripts/check-sdk-versions.py v0.3.0-rc.1` to pass.
+2. Merge and run the full protected-branch suite, then tag `v0.3.0-rc.1`.
+3. Install the RC through Homebrew, PyPI, npm (`next`), OCI, and the Codex
+   plugin package. Perform clean-machine install and rollback tests.
+4. Prepare the stable metadata with
+   `python3 scripts/set-release-version.py 0.3.0`, repeat the protected-branch
+   suite, and tag `v0.3.0` only after the RC evidence bundle verifies.

@@ -63,6 +63,11 @@ def main() -> int:
     )
     manifest_version = manifest["version"]
 
+    plugin_root = ROOT / "dist/codex-plugin/runeward"
+    plugin = json.loads(
+        (plugin_root / ".codex-plugin/plugin.json").read_text(encoding="utf-8")
+    )
+
     chart_text = (ROOT / "deploy/helm/runeward/Chart.yaml").read_text(encoding="utf-8")
     chart_match = re.search(r'^version: ([^\s]+)$', chart_text, re.MULTILINE)
     if chart_match is None:
@@ -79,6 +84,7 @@ def main() -> int:
         "npm lock root": npm_lock["packages"][""]["version"],
         "MCP implementation": mcp_match.group(1),
         "MCP manifest": manifest_version,
+        "Codex plugin": plugin["version"],
         "Helm chart": chart_match.group(1),
         "Helm app": app_match.group(1),
     }
@@ -88,12 +94,31 @@ def main() -> int:
         raise SystemExit("SDK package versions do not match")
 
     actual = python_version
+    if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[1-9][0-9]*)?", actual) is None:
+        raise SystemExit(f"unsupported stable/RC release version {actual!r}")
     if expected and actual != expected:
         raise SystemExit(f"SDK version {actual} does not match release version {expected}")
 
     image = manifest["packages"][0]["identifier"]
     if not image.endswith(f":v{actual}"):
         raise SystemExit(f"MCP OCI image {image!r} does not match v{actual}")
+
+    if plugin.get("name") != plugin_root.name:
+        raise SystemExit("Codex plugin name must match its directory")
+    if plugin.get("skills") != "./skills/" or plugin.get("mcpServers") != "./.mcp.json":
+        raise SystemExit("Codex plugin component paths are invalid")
+    plugin_mcp = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
+    runeward_mcp = plugin_mcp.get("mcpServers", {}).get("runeward", {})
+    if runeward_mcp.get("command") != "runeward" or runeward_mcp.get("args") != ["mcp"]:
+        raise SystemExit("Codex plugin MCP command must run `runeward mcp`")
+    skill_path = plugin_root / "skills/runeward-governed-execution/SKILL.md"
+    skill_text = skill_path.read_text(encoding="utf-8")
+    frontmatter = re.match(r"^---\n(?P<body>.*?)\n---", skill_text, re.DOTALL)
+    if frontmatter is None:
+        raise SystemExit("Codex plugin skill has invalid frontmatter")
+    for field in ("name", "description"):
+        if re.search(rf"^{field}:\s*\S", frontmatter.group("body"), re.MULTILINE) is None:
+            raise SystemExit(f"Codex plugin skill is missing {field}")
 
     print(actual)
     return 0
