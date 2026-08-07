@@ -33,6 +33,9 @@ The command creates `.runeward/quickstart.toml`, checks the policy, runtime, ima
 runs an allowed command, proves a destructive command is denied before execution, and verifies the
 signed audit trail. It never overwrites an existing policy unless `--force` is passed.
 
+`doctor` and dashboard readiness also resolve required secret sources. A Charter that references an
+unset `env://` value is not presented as launch-ready.
+
 ```bash
 runeward doctor quickstart                     # explain setup problems safely
 runeward --config-dir .runeward serve          # dashboard + governed REST API
@@ -206,6 +209,8 @@ actions, produces exact matches, and requires a human to review and broaden them
   same authorization model, and embedded HTTP MCP shares the REST ownership checks.
 - Browser automation is experimental and disabled by default. Enable it only in a trusted deployment
   with `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` after reviewing the [security model](docs/security-model.md).
+  Browser-capable Charters declare `capabilities = ["browser"]`; the dashboard then exposes governed
+  rendered-text and screenshot actions and their policy/egress results.
 - An optional browser IDE (code-server in-cell + ticketed reverse proxy) is similarly experimental:
   `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, images `Dockerfile.ide` /
   `Dockerfile.ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.

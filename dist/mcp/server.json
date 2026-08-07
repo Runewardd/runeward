@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Runewardd/runeward",
   "description": "Agent governance harness with Docker/Kubernetes Citadels, policy, Conclave approvals, budgets, and signed Chronicles.",
-  "version": "0.3.0-rc.1",
+  "version": "0.3.0-rc.2",
   "repository": {
     "url": "https://github.com/Runewardd/runeward",
     "source": "github"
@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/runewardd/runeward:v0.3.0-rc.1",
+      "identifier": "ghcr.io/runewardd/runeward:v0.3.0-rc.2",
       "transport": {
         "type": "stdio"
       },

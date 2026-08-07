@@ -29,6 +29,9 @@ Please disclose privately; do not open a public issue.
   `host.seccomp` / `host.apparmor` pin a seccomp/AppArmor profile (Docker
   `--security-opt`; Kubernetes Localhost profiles), and Kubernetes pods default
   to the runtime's seccomp profile rather than Unconfined.
+  A Charter can explicitly override an application image's entrypoint with
+  `host.command`; Docker/Podman creation requires the process to remain alive
+  across post-start checks before the Citadel is reported as running.
 - **Control-plane authentication.** `runeward serve` binds `127.0.0.1` by
   default and refuses any non-loopback `--bind` unless authentication is set (an
   API token via `--token` / `RUNEWARD_API_TOKEN`, or an RBAC store). When set it
@@ -56,6 +59,9 @@ Please disclose privately; do not open a public issue.
   same per-request principal and ownership rules as REST; stdio MCP binds one
   process to the principal selected by `RUNEWARD_MCP_DEFAULT_TOKEN` or the
   credential saved by `runeward auth login`.
+- **HTTP hardening.** Responses set `nosniff`, frame denial, no-referrer, and a
+  restrictive Permissions Policy. API/MCP responses are no-store and use a
+  deny-all content policy; dashboard assets use the explicit dashboard CSP.
 - **OIDC authentication.** `RUNEWARD_OIDC_ISSUER` plus
   `RUNEWARD_OIDC_AUDIENCE` enables RS256 JWT verification from the provider's
   JWKS. Runeward maps only signed claims: `runeward_tenant`,

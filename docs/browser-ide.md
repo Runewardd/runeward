@@ -27,6 +27,8 @@ Enable with `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`. Off by default.
 - Control plane: starts code-server in-cell, records container/pod IP:port (no
   host `-p` / NodePort on the happy path), ticketed HTTP + WebSocket proxy at
   `/v1/citadels/{id}/ide`, dashboard **Open IDE**.
+- Dashboard keeps a normal prepared IDE link visible if an embedded browser or
+  popup blocker prevents `window.open` from opening the ticketed URL.
 - Chronicle: `ide.open` on successful start, `ide.close` on Citadel kill.
 - RBAC: non-owners get 404 on another principal’s IDE (same ownership guard as
   other Citadel routes).
@@ -114,5 +116,7 @@ docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest \
 | `*` | `/v1/citadels/{id}/ide`… | Reverse proxy (HTTP + WebSocket). |
 
 Citadel list/get may include `ide: true` and `ide_agents: [...]` when the IDE is
-running. Full route table: [REST API](rest-api.md). Hands-on steps:
+running. Browser-capable Citadels also include `capabilities: ["browser", ...]`;
+the dashboard Browser tab can perform policy-gated rendered-text or screenshot
+requests and then inspect Perimeter decisions. Full route table: [REST API](rest-api.md). Hands-on steps:
 [E2E testing](E2E-TESTING.md#optional-browser-ide-experimental).

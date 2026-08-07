@@ -1,5 +1,21 @@
 # runeward — end-to-end local testing
 
+## Automated authenticated release gate
+
+CI runs `scripts/e2e-rbac.sh` against a real Docker-backed Runeward server. It
+exercises six roles, Charter scoping, shared-tenant and cross-tenant access,
+missing-secret readiness, governed execution, capability errors, authoritative
+Cohort ownership, and task completion. Run the same gate locally with:
+
+```bash
+go build -o runeward-e2e ./cmd/runeward
+RUNEWARD_E2E_BINARY="$PWD/runeward-e2e" ./scripts/e2e-rbac.sh
+```
+
+The script creates only temporary credentials/state and removes its Citadel and
+Cohort. The manual provider/Kubernetes/browser sections below remain required
+where CI does not have those external services.
+
 A hands-on walkthrough for exercising the whole stack on your laptop: the
 **Docker** and **Kubernetes** backends, deny-by-default and **strict (L3)**
 egress, the governed REST API, snapshots, multi-agent Cohorts, and wiring the
@@ -1801,5 +1817,4 @@ rm -rf "$RUNEWARD_STATE_DIR" /tmp/rw-keys /tmp/cases.toml /tmp/authz.json \
 | `unsupported container runtime "…"` at startup                              | `RUNEWARD_CONTAINER_RUNTIME` must be `docker` or `podman` (29).                                                                                                                    |
 | `ledger: "…/ledger.jsonl" is already in use by another runeward process`    | One writer per audit ledger. Another `serve`/`mcp` holds the default state dir — give this instance its own `RUNEWARD_STATE_DIR` (8), or stop the other process.                    |
 | `runeward mcp --http` → `bind: address already in use`                      | A previous `mcp`/`serve` still owns the port. `pkill -f 'runeward.*mcp'` (or stop `serve`), or start with a different `--port`.                                                     |
-
 

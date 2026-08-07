@@ -31,7 +31,7 @@ to the same authorization model as local tokens.
 | --- | --- | --- |
 | `GET` | `/healthz` | Liveness probe (unauthenticated). |
 | `GET` | `/v1/whoami` | Identity and effective capabilities, including launch and approval scopes. |
-| `GET` | `/v1/readiness?profile=NAME` | Check policy, runtime, and image readiness without exposing host paths. |
+| `GET` | `/v1/readiness?profile=NAME` | Check policy, runtime, required secret sources, and image readiness without exposing host paths or secret values. |
 | `GET` | `/metrics` | Prometheus metrics. |
 
 ## Charters
@@ -46,7 +46,7 @@ to the same authorization model as local tokens.
 | --- | --- | --- |
 | `POST` | `/v1/citadels` | Create a Citadel. Supports `profile`, admin-only `copy_from`, and optional `parent_citadel`, `run_id`, `agent`, `provider`, and `model` lineage. |
 | `GET` | `/v1/citadels` | List Citadels (scoped to the caller under RBAC). |
-| `GET` | `/v1/citadels/{id}` | Get one Citadel (includes `owner` and cumulative `usage`). |
+| `GET` | `/v1/citadels/{id}` | Get one Citadel (includes `owner`, declared/inferred `capabilities`, and cumulative `usage`). |
 | `DELETE` | `/v1/citadels/{id}` | Kill and remove a Citadel. |
 | `GET` | `/v1/citadels/{id}/workspace` | Download the isolated workspace as a tar archive. |
 | `GET` | `/v1/citadels/{id}/evidence` | Download resolved policy + signed audit as portable evidence JSON. |
@@ -67,8 +67,8 @@ parent run, timestamps, and terminal status.
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/v1/citadels/{id}/shell/exec` | Run a shell command. |
-| `POST` | `/v1/citadels/{id}/code/python` | Run Python. |
-| `POST` | `/v1/citadels/{id}/code/node` | Run Node. |
+| `POST` | `/v1/citadels/{id}/code/python` | Run Python when the Charter provides the `python` capability. |
+| `POST` | `/v1/citadels/{id}/code/node` | Run Node when the Charter provides the `node` capability. |
 | `POST` | `/v1/citadels/{id}/file/read` | Read a file. |
 | `POST` | `/v1/citadels/{id}/file/write` | Write a file. |
 | `POST` | `/v1/citadels/{id}/file/list` | List files. |
@@ -109,7 +109,7 @@ reviewing the [security model](security-model.md).
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/citadels/{id}/browser` | One-shot browser action. |
+| `POST` | `/v1/citadels/{id}/browser` | One-shot action for a `browser`-capable Charter. |
 | `POST` | `/v1/citadels/{id}/browser/sessions` | Open a stateful session. |
 | `POST` | `/v1/citadels/{id}/browser/sessions/{sid}/act` | Act in a session. |
 | `DELETE` | `/v1/citadels/{id}/browser/sessions/{sid}` | Close a session. |

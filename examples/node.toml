@@ -1,4 +1,12 @@
+capabilities = ["node"]
+policy_default = "deny"
+
 [host]
 type="container"
-image="node:latest"
+image="node:24-slim"
 workdir="/workspace"
+
+[[policy]]
+tool = "node"
+match = "*"
+verdict = "allow"

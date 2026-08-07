@@ -216,7 +216,15 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		image = "debian:stable-slim"
 	}
 
-	args = append(args, image, "sleep", "infinity")
+	command := spec.Command
+	if len(command) == 0 {
+		command = []string{"sleep", "infinity"}
+	}
+	// Image entrypoints receive positional command arguments. Override the
+	// entrypoint so profiles can select the actual keepalive executable; this
+	// is required for application images such as headless Chrome.
+	args = append(args, "--entrypoint", command[0], image)
+	args = append(args, command[1:]...)
 
 	if err := d.run(ctx, args...); err != nil {
 		hp.stop()
@@ -228,6 +236,22 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 			return nil, fmt.Errorf("run container with runtime %q: is it registered with the docker engine? (see docs/security-model.md): %w", spec.RuntimeClass, err)
 		}
 		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	// A detached run can succeed even when its process exits immediately.
+	// Verify liveness before exposing the sandbox as running.
+	if err := d.waitRunning(ctx, name); err != nil {
+		logs, _ := d.output(context.Background(), "logs", "--tail", "50", name)
+		_ = d.run(context.Background(), "rm", "-f", name)
+		hp.stop()
+		if egressCtrName != "" {
+			_ = d.run(context.Background(), "rm", "-f", egressCtrName)
+		}
+		_ = d.run(context.Background(), "volume", "rm", "-f", vol)
+		if detail := strings.TrimSpace(logs); detail != "" {
+			return nil, fmt.Errorf("container exited during startup: %w: %s", err, detail)
+		}
+		return nil, fmt.Errorf("container exited during startup: %w", err)
 	}
 
 	if hp != nil {
@@ -692,6 +716,29 @@ func (d *Docker) List(ctx context.Context) ([]Sandbox, error) {
 func (d *Docker) run(ctx context.Context, args ...string) error {
 	_, err := d.output(ctx, args...)
 	return err
+}
+
+func (d *Docker) waitRunning(ctx context.Context, name string) error {
+	var last string
+	// Require the process to remain alive across several observations. This
+	// catches entrypoints that start successfully and then fail immediately.
+	for attempt := 0; attempt < 3; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+		out, err := d.output(ctx, "inspect", "--format", "{{.State.Running}}", name)
+		if err != nil {
+			return err
+		}
+		last = strings.TrimSpace(out)
+		if last == "true" {
+			continue
+		}
+		return fmt.Errorf("runtime reported running=%q", last)
+	}
+	return nil
 }
 
 func (d *Docker) output(ctx context.Context, args ...string) (string, error) {

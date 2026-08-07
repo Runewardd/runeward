@@ -31,12 +31,16 @@ type Profile struct {
 	// Source is the absolute path the profile was resolved from.
 	Source string `toml:"-" json:"-"`
 
-	Host    Host         `toml:"host" json:"host"`
-	Prompt  Prompt       `toml:"prompt" json:"prompt"`
-	Env     []EnvVar     `toml:"env" json:"env"`
-	Files   []File       `toml:"file" json:"file"`
-	Network Network      `toml:"network" json:"network"`
-	Policy  []PolicyRule `toml:"policy" json:"policy"`
+	Host Host `toml:"host" json:"host"`
+	// Capabilities declares optional tools present in the image. Supported
+	// values are python, node, and browser. The dashboard and API use this to
+	// avoid offering actions the selected Citadel cannot execute.
+	Capabilities []string     `toml:"capabilities" json:"capabilities,omitempty"`
+	Prompt       Prompt       `toml:"prompt" json:"prompt"`
+	Env          []EnvVar     `toml:"env" json:"env"`
+	Files        []File       `toml:"file" json:"file"`
+	Network      Network      `toml:"network" json:"network"`
+	Policy       []PolicyRule `toml:"policy" json:"policy"`
 	// PolicyDefault controls the fallback verdict when no policy rule matches.
 	// Empty keeps the historical default ("allow"); set to "deny" to fail closed.
 	PolicyDefault Verdict `toml:"policy_default" json:"policy_default"`
@@ -81,6 +85,10 @@ type Host struct {
 	Image   string   `toml:"image" json:"image"`
 	User    string   `toml:"user" json:"user"`
 	Workdir string   `toml:"workdir" json:"workdir"`
+	// Command overrides the image entrypoint and command used to keep the
+	// Citadel alive. The first element is the executable; remaining elements
+	// are its arguments. Empty uses "sleep infinity" for compatibility.
+	Command []string `toml:"command" json:"command,omitempty"`
 	// CopyFrom is a local directory copied into the workspace at creation.
 	// One-time copy, never a mount; supports "~/". The image must have tar.
 	CopyFrom string `toml:"copy_from" json:"copy_from"`

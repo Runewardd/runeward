@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the reported MCP server implementation version.
-const Version = "0.3.0-rc.1"
+const Version = "0.3.0-rc.2"
 
 const (
 	// EnvMCPDefaultPrincipal names the stdio principal to use when no HTTP
@@ -29,6 +29,7 @@ const (
 	EnvMCPDefaultPrincipal = "RUNEWARD_MCP_DEFAULT_PRINCIPAL"
 	// EnvMCPDefaultToken maps stdio sessions to an authz principal when
 	// RUNEWARD_AUTHZ_FILE is configured.
+	// #nosec G101 -- this constant is an environment variable name, not a credential.
 	EnvMCPDefaultToken = "RUNEWARD_MCP_DEFAULT_TOKEN"
 )
 

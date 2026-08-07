@@ -45,6 +45,9 @@ func TestWriteStarterCharter(t *testing.T) {
 	if p.Network.Default != "deny" {
 		t.Fatalf("network default = %q", p.Network.Default)
 	}
+	if findings := profile.Lint(p); len(findings) != 0 {
+		t.Fatalf("starter must pass strict validation, findings: %+v", findings)
+	}
 
 	if err := os.WriteFile(path, []byte("sentinel"), 0o644); err != nil {
 		t.Fatal(err)

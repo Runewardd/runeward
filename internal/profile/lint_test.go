@@ -330,3 +330,21 @@ func TestLintWarnsWritableRootfsWithIsolationSettings(t *testing.T) {
 		t.Fatalf("expected warning for writable rootfs with strict isolation settings")
 	}
 }
+
+func TestLintCapabilitiesAndCommand(t *testing.T) {
+	p := &Profile{
+		Host:         Host{Image: "img", Command: []string{""}},
+		Capabilities: []string{"python", "python", "ruby"},
+		Policy:       []PolicyRule{{Tool: "shell", Match: "*", Verdict: VerdictAllow}},
+	}
+	findings := Lint(p)
+	if !hasFinding(findings, SeverityError, "host.command[0]") {
+		t.Fatalf("expected empty command error, got %+v", findings)
+	}
+	if !hasFinding(findings, SeverityWarn, "capabilities[1]") {
+		t.Fatalf("expected duplicate capability warning, got %+v", findings)
+	}
+	if !hasFinding(findings, SeverityError, "capabilities[2]") {
+		t.Fatalf("expected unsupported capability error, got %+v", findings)
+	}
+}

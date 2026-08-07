@@ -58,6 +58,9 @@ func (m *Manager) runCode(ctx context.Context, id, tool string, command []string
 	if err != nil {
 		return nil, err
 	}
+	if !hasCapability(sess.Profile, tool) {
+		return nil, badInputError("%s is not declared by this Charter; add capabilities = [%q] and use an image that provides it", tool, tool)
+	}
 	return m.govern(ctx, sess, tool, code, nil, func(ctx context.Context) (*backend.ExecResult, error) {
 		return sess.Backend.Exec(ctx, id, backend.ExecRequest{Command: command, Workdir: sess.Workdir, Env: sess.Env})
 	})
@@ -146,6 +149,9 @@ func (m *Manager) Browser(ctx context.Context, id, url, mode string) (*ToolResul
 	sess, err := m.session(id)
 	if err != nil {
 		return nil, err
+	}
+	if !hasCapability(sess.Profile, "browser") {
+		return nil, badInputError("browser is not declared by this Charter; add capabilities = [\"browser\"] and use an image with Chromium")
 	}
 	if url == "" {
 		return nil, fmt.Errorf("url is required")

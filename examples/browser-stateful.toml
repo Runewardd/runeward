@@ -14,6 +14,8 @@
 # Browser automation is experimental and disabled by default; set
 # RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1 only in a trusted test deployment.
 
+capabilities = ["browser", "python", "node"]
+
 [host]
 type    = "container"
 image   = "ghcr.io/runewardd/runeward-sandbox:latest"

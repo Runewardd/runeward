@@ -912,6 +912,9 @@ func sandboxView(sb *backend.Sandbox, owner string) map[string]any {
 
 func sandboxViewWithIDE(s *Server, sb *backend.Sandbox, owner string) map[string]any {
 	v := sandboxView(sb, owner)
+	if capabilities := s.mgr.SandboxCapabilities(sb.ID); len(capabilities) > 0 {
+		v["capabilities"] = capabilities
+	}
 	if _, ok := s.mgr.IDEEndpoint(sb.ID); ok {
 		v["ide"] = true
 		if agents := s.mgr.IDEAgents(sb.ID); len(agents) > 0 {
