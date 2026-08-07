@@ -264,3 +264,26 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: dist-chart/*.tgz
+
+  # Ship the exact versioned Codex plugin directory used by the release tag.
+  codex-plugin:
+    needs: [goreleaser]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Verify plugin and release versions
+        run: python3 scripts/check-sdk-versions.py "${GITHUB_REF_NAME}"
+      - name: Package Codex plugin
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist-plugin
+          tar --exclude='__pycache__' --exclude='*.pyc' \
+            -czf "dist-plugin/runeward-codex-plugin_${version}.tar.gz" \
+            -C dist/codex-plugin runeward
+      - name: Attach Codex plugin to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist-plugin/*.tar.gz
