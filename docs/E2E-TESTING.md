@@ -1764,7 +1764,8 @@ helm template runeward deploy/helm/runeward | grep -E 'kind: (ServiceAccount|Clu
 helm template runeward deploy/helm/runeward | grep -c 'ValidatingWebhookConfiguration'   # => 1 (enabled by default)
 
 # install.sh verifies the cosign signature over checksums.txt (bypass only via an
-# explicit RUNEWARD_INSECURE_SKIP_* env); CI scanners (gosec/Trivy/CodeQL) now gate.
+# explicit RUNEWARD_INSECURE_SKIP_* env); CI uploads complete scanner reports,
+# while gosec gates HIGH and Trivy gates HIGH/CRITICAL release findings.
 grep -n 'cosign verify-blob' install.sh
 ```
 

@@ -742,6 +742,8 @@ func (d *Docker) waitRunning(ctx context.Context, name string) error {
 }
 
 func (d *Docker) output(ctx context.Context, args ...string) (string, error) {
+	// #nosec G702 -- d.bin is resolved by exec.LookPath during backend setup and
+	// args are passed directly to exec without shell interpretation.
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

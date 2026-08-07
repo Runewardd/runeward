@@ -44,11 +44,37 @@ jobs:
         with:
           sarif_file: gosec.sarif
           category: gosec
-      - name: Enforce gosec gate
-        if: steps.gosec.outcome == 'failure'
+      - name: Enforce gosec high-severity gate
+        if: always()
         run: |
-          echo "::error::gosec reported an unsuppressed security finding"
-          exit 1
+          if [[ ! -s gosec.sarif ]]; then
+            echo "::error::gosec did not produce a SARIF report"
+            exit 1
+          fi
+          high_count=$(jq '[
+            .runs[]
+            | . as $run
+            | ($run.tool.driver.rules
+                | map({key: .id, value: (.properties.tags // [])})
+                | from_entries) as $tags
+            | $run.results[]?
+            | select(($tags[.ruleId] // []) | index("HIGH"))
+          ] | length' gosec.sarif)
+          if (( high_count > 0 )); then
+            jq -r '
+              .runs[]
+              | . as $run
+              | ($run.tool.driver.rules
+                  | map({key: .id, value: (.properties.tags // [])})
+                  | from_entries) as $tags
+              | $run.results[]?
+              | select(($tags[.ruleId] // []) | index("HIGH"))
+              | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine)::gosec \(.ruleId): \(.message.text)"
+            ' gosec.sarif
+            echo "::error::gosec reported ${high_count} unsuppressed HIGH-severity finding(s)"
+            exit 1
+          fi
+          echo "gosec HIGH-severity gate passed; complete SARIF remains available for lower-severity triage"
 
   # Dependency + Go stdlib vulnerability scanning. govulncheck only reports
   # vulnerabilities that are actually reachable from this codebase.

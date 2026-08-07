@@ -134,7 +134,9 @@ Please disclose privately; do not open a public issue.
 - **Supply-chain assurance.** Releases are cosign-signed (keyless) with SBOMs,
   and CI runs SAST (gosec, CodeQL), dependency/vuln scanning (govulncheck, Trivy),
   per-image CVE scans, and a DAST baseline, with Dependabot keeping dependencies
-  current.
+  current. Gosec uploads the complete SARIF report for triage and blocks releases
+  on every unsuppressed HIGH-severity result; accepted architecture findings use
+  narrow, source-local `#nosec` comments with justification.
 
 ## In scope (please report)
 

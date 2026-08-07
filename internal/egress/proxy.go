@@ -128,6 +128,8 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	pinnedIP, _, _ := net.SplitHostPort(pinnedTarget)
 
+	// #nosec G704 -- pinnedTarget has passed the Citadel egress allowlist and
+	// resolves to the policy-pinned IP above; dialing it is the proxy boundary.
 	upstream, err := net.DialTimeout("tcp", pinnedTarget, dialTimeout)
 	if err != nil {
 		p.logf("egress: ALLOW CONNECT %s (dial=%s failed: %v)", target, pinnedTarget, err)

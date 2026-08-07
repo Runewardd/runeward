@@ -1003,6 +1003,8 @@ func defaultLedgerPath() (string, error) {
 		}
 		dir = filepath.Join(base, "runeward")
 	}
+	// #nosec G703 -- dir is the operator-controlled RUNEWARD_STATE_DIR or an
+	// OS-provided cache directory, never a value supplied through the API.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

@@ -113,7 +113,17 @@ func sendSize(ch chan<- backend.TermSize) {
 		return
 	}
 	select {
-	case ch <- backend.TermSize{Rows: uint16(rows), Cols: uint16(cols)}:
+	case ch <- backend.TermSize{Rows: clampTermDimension(rows), Cols: clampTermDimension(cols)}:
 	default:
 	}
+}
+
+func clampTermDimension(value int) uint16 {
+	if value < 0 {
+		return 0
+	}
+	if value > 65535 {
+		return 65535
+	}
+	return uint16(value) // #nosec G115 -- value is bounded to uint16 above.
 }
