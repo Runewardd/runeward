@@ -2,8 +2,8 @@ apiVersion: v2
 name: runeward
 description: Agent governance harness — CRDs, controller, Citadels, and optional control plane.
 type: application
-version: 0.3.0-rc.2
-appVersion: "0.3.0-rc.2"
+version: 0.3.0
+appVersion: "0.3.0"
 home: https://github.com/Runewardd/runeward
 sources:
   - https://github.com/Runewardd/runeward

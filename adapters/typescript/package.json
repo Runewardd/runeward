@@ -1,6 +1,6 @@
 {
   "name": "@runeward/sdk",
-  "version": "0.3.0-rc.2",
+  "version": "0.3.0",
   "description": "TypeScript SDK for governing AI agent execution with policy, approvals, isolation, budgets, and signed evidence.",
   "type": "module",
   "license": "Apache-2.0",
