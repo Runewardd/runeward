@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, with or without the v prefix"
+        description: "Existing release tag to publish (for example v0.3.0-rc.2)"
         required: true
         type: string
 
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-sdks-${{ github.ref || inputs.version }}
+  group: publish-sdks-${{ inputs.version || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -34,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
@@ -51,12 +55,15 @@ jobs:
           if-no-files-found: error
 
   build-npm:
+    needs: verify-version
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: adapters/typescript
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: "24"
