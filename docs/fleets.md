@@ -22,6 +22,10 @@ The `runeward cohort` command is a client to a running control plane
 
 Select the agent and model with environment variables, e.g. `AGENT=claude`,
 `MODEL=sonnet`, `AGENT=codex MODEL=gpt-5-codex`, or `AGENT=cursor`.
+When the control plane uses a shared token or RBAC, also set
+`RUNEWARD_TOKEN` to the worker principal's token. The example drivers attach
+it as a bearer credential and use the signed task lease returned by every
+claim; they never persist the token in `.runeward-fleet`.
 
 ## Two ways to work
 
@@ -49,12 +53,11 @@ Use `add` + `run`; each prompt goes to whichever worker is free, in its own
 workspace, and they build in parallel:
 
 ```bash
-AGENT=codex runeward cohort up
-runeward cohort add "Build the auth module in auth/ with tests"
-runeward cohort add "Build the billing module in billing/ with tests"
-runeward cohort add "Build the CLI in cmd/ with tests"
-runeward cohort run          # all workers build in parallel
-runeward cohort export ./out
+RUNEWARD_TOKEN="$DEV_TOKEN" AGENT=codex ./examples/fleet.sh up build-fleet-k8s
+RUNEWARD_TOKEN="$DEV_TOKEN" AGENT=codex ./examples/fleet.sh add "Build the auth module in auth/ with tests"
+RUNEWARD_TOKEN="$DEV_TOKEN" AGENT=codex ./examples/fleet.sh add "Build the billing module in billing/ with tests"
+RUNEWARD_TOKEN="$DEV_TOKEN" AGENT=codex ./examples/fleet.sh add "Build the CLI in cmd/ with tests"
+RUNEWARD_TOKEN="$DEV_TOKEN" AGENT=codex ./examples/fleet.sh run
 ```
 
 ## Inter-agent coordination

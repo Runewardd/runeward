@@ -267,6 +267,7 @@ body {
 
 .setup-note.ready { border-color: var(--green); color: var(--green); }
 .setup-note.blocked { border-color: var(--amber); color: var(--amber); }
+#fleet-setup-note { margin: 0 16px 12px; font-size: 12px; }
 .setup-steps { color: var(--muted); line-height: 1.7; text-align: left; }
 
 .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }

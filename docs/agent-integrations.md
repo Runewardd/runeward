@@ -44,6 +44,23 @@ export RUNEWARD_AUTHZ_FILE="$HOME/.config/runeward/authz.json"
 export RUNEWARD_MCP_DEFAULT_TOKEN="$(security find-generic-password -w -s runeward-agent)"
 ```
 
+Set these optional variables only when the selected Charter imports them:
+
+```bash
+# GitHub operations performed by an agent inside a Citadel.
+export GITHUB_TOKEN="$(security find-generic-password -w -s runeward-github)"
+
+# A self-hosted OpenAI-compatible gateway; omit for the provider default.
+export OPENAI_BASE_URL="http://host.docker.internal:11434/v1"
+```
+
+Host `gh auth login` credentials are not automatically exposed to Citadels.
+Reference `op = "env://GITHUB_TOKEN"` in the Charter when GitHub access is
+required, use a dedicated least-privilege token, and allow only the necessary
+GitHub hosts. Likewise, an `OPENAI_BASE_URL` override must be imported by the
+Charter and permitted by its network rules. Never commit either credential or
+put bearer values in `.mcp.json`.
+
 Alternatively, save a short-lived OIDC credential once; Cohort CLI and stdio
 MCP use it automatically when an explicit environment token is absent:
 

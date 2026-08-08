@@ -19,6 +19,20 @@ func TestExperimentalIDEFlag(t *testing.T) {
 	}
 }
 
+func TestExperimentalIDEReadinessFlag(t *testing.T) {
+	t.Setenv("RUNEWARD_ENABLE_EXPERIMENTAL_IDE", "")
+	check, ready := experimentalIDEReadiness()
+	if ready || check.Status != "fail" {
+		t.Fatalf("disabled IDE readiness = %v, %q; want false, fail", ready, check.Status)
+	}
+
+	t.Setenv("RUNEWARD_ENABLE_EXPERIMENTAL_IDE", "1")
+	check, ready = experimentalIDEReadiness()
+	if !ready || check.Status != "ok" {
+		t.Fatalf("enabled IDE readiness = %v, %q; want true, ok", ready, check.Status)
+	}
+}
+
 func TestIDEEndpointLifecycle(t *testing.T) {
 	m, _ := newTestManager(t, nil, 0)
 	m.InjectSession(&Session{

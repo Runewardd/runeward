@@ -119,12 +119,28 @@ func TestIDEProxyRedirectAndSecureCookie(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	// The session cookie remains Secure even when the control-plane request is
-	// received over loopback HTTP during local development.
-	srv.attachIDESession(rr, "ide1", nil)
+	// TLS keeps the session cookie Secure.
+	srv.attachIDESession(rr, httptest.NewRequest(http.MethodGet, "https://runeward.example/v1/citadels/ide1/ide/", nil), "ide1", nil)
 	cookies := rr.Result().Cookies()
 	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatalf("IDE cookie is not hardened: %#v", cookies)
+	}
+
+	// Loopback HTTP must omit Secure or browsers reject the cookie and every
+	// code-server asset/WebSocket request becomes unauthorized.
+	rr = httptest.NewRecorder()
+	srv.attachIDESession(rr, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8080/v1/citadels/ide1/ide/", nil), "ide1", nil)
+	cookies = rr.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("loopback IDE cookie is not locally usable and hardened: %#v", cookies)
+	}
+
+	rr = httptest.NewRecorder()
+	proxied := httptest.NewRequest(http.MethodGet, "http://runeward.internal/v1/citadels/ide1/ide/", nil)
+	proxied.Header.Set("X-Forwarded-Proto", "https")
+	srv.attachIDESession(rr, proxied, "ide1", nil)
+	if cookies = rr.Result().Cookies(); len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("forwarded HTTPS IDE cookie must remain Secure: %#v", cookies)
 	}
 }
 

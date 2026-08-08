@@ -24,3 +24,9 @@ task_board = ["build module A", "build module B", "run integration tests"]
 
 [rationing]
 max_execs = 500
+
+[[policy]]
+tool    = "shell"
+match   = "*"
+verdict = "allow"
+reason  = "this demonstration Cohort explicitly permits governed worker commands"

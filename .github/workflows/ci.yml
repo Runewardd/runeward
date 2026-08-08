@@ -55,6 +55,8 @@ jobs:
         env:
           RUNEWARD_E2E_BINARY: ${{ github.workspace }}/runeward-e2e
         run: ./scripts/e2e-rbac.sh
+      - name: Test authenticated fleet drivers and signed task leases
+        run: ./scripts/test-fleet-drivers.sh
 
   helm-lint:
     runs-on: ubuntu-latest

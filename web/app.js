@@ -213,19 +213,27 @@ function preferredProfileName() {
 }
 
 function applyCreateAvailability() {
-	const btn = $("#create-btn");
+	const btn = state.activeView === "fleets" ? $("#fleet-create-btn") : $("#create-btn");
 	if (!btn) return;
 	const ready = !!(state.readiness && state.readiness.ready);
 	btn.disabled = !canLaunch() || !ready;
 	btn.title = !canLaunch()
 		? "Your role is not permitted to launch policies"
-		: ready ? "Create sandbox" : "Selected policy is not ready; see setup status";
+		: ready
+			? (state.activeView === "fleets" ? "Create agent group" : "Create sandbox")
+			: "Selected policy is not ready; see setup status";
+}
+
+function refreshSelectedProfileReadiness() {
+	state.readiness = null;
+	applyCreateAvailability();
+	return refreshReadiness();
 }
 
 async function refreshReadiness() {
-	const select = $("#profile-select");
+	const select = state.activeView === "fleets" ? $("#fleet-profile-select") : $("#profile-select");
 	const name = select && select.value;
-	const note = $("#setup-note");
+	const note = state.activeView === "fleets" ? $("#fleet-setup-note") : $("#setup-note");
 	if (!name) {
 		state.readiness = null;
 		if (note) {
@@ -307,7 +315,11 @@ function fillProfileSelect(sel, text) {
 }
 
 async function loadProfiles() {
-	const previous = $("#profile-select") && $("#profile-select").value;
+	const previous = {
+		sandbox: $("#profile-select") && $("#profile-select").value,
+		fleet: $("#fleet-profile-select") && $("#fleet-profile-select").value,
+		simulation: $("#sim-profile-select") && $("#sim-profile-select").value,
+	};
   try {
     const { data } = await api("GET", "/v1/charters");
     // Server already scopes charters under RBAC; filter again client-side so
@@ -317,11 +329,12 @@ async function loadProfiles() {
     fillProfileSelect($("#profile-select"));
     fillProfileSelect($("#fleet-profile-select"));
     fillProfileSelect($("#sim-profile-select"));
-		const preferred = state.profiles.some((p) => p.name === previous) ? previous : preferredProfileName();
-		if (preferred && $("#profile-select")) $("#profile-select").value = preferred;
-		if (preferred && $("#fleet-profile-select")) $("#fleet-profile-select").value = preferred;
-		if (preferred && $("#sim-profile-select")) $("#sim-profile-select").value = preferred;
-		await refreshReadiness();
+		const fallback = preferredProfileName();
+		const preserved = (name) => state.profiles.some((p) => p.name === name) ? name : fallback;
+		if ($("#profile-select")) $("#profile-select").value = preserved(previous.sandbox);
+		if ($("#fleet-profile-select")) $("#fleet-profile-select").value = preserved(previous.fleet);
+		if ($("#sim-profile-select")) $("#sim-profile-select").value = preserved(previous.simulation);
+		await refreshSelectedProfileReadiness();
   } catch (e) {
     fillProfileSelect($("#profile-select"), "policies unavailable");
     fillProfileSelect($("#fleet-profile-select"), "policies unavailable");
@@ -582,6 +595,7 @@ function switchView(name) {
   $("#sb-panel").classList.toggle("hidden", name !== "sandboxes");
   $("#fleet-panel").classList.toggle("hidden", name !== "fleets");
 
+  refreshSelectedProfileReadiness();
   if (name === "fleets") refreshFleets();
 }
 
@@ -2023,7 +2037,8 @@ function wireEvents() {
   $$("[data-close-modal]").forEach((n) => n.addEventListener("click", closeNewSandboxModal));
   $("#new-modal-copyfrom").addEventListener("keydown", (e) => { if (e.key === "Enter") createSandbox(); });
   $("#refresh-btn").addEventListener("click", () => { loadSandboxes(); loadProfiles(); });
-	$("#profile-select").addEventListener("change", refreshReadiness);
+	$("#profile-select").addEventListener("change", refreshSelectedProfileReadiness);
+	$("#fleet-profile-select").addEventListener("change", refreshSelectedProfileReadiness);
 
   // View switch + fleets
   $("#view-sandboxes").addEventListener("click", () => switchView("sandboxes"));

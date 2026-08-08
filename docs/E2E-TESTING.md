@@ -88,7 +88,14 @@ go build -o bin/runeward-egress ./cmd/runeward-egress   # only needed for k8s eg
 | `RUNEWARD_K8S_NAMESPACE` | namespace for sandbox pods                        | `runeward`                  |
 | `RUNEWARD_EGRESS_IMAGE`  | egress sidecar/init image ref                     | `runeward-egress:latest`    |
 | `RUNEWARD_API_TOKEN`     | bearer token for `serve --token` and REST clients | (unset; open local serve)   |
+| `GITHUB_TOKEN`           | optional GitHub credential explicitly imported by a Charter | unset |
+| `OPENAI_BASE_URL`        | optional OpenAI-compatible gateway explicitly imported by a Charter | provider default |
 
+
+`gh auth login` authenticates the host CLI but does not automatically expose a
+GitHub token to a Citadel. Use `op = "env://GITHUB_TOKEN"` only in Charters that
+need GitHub operations. An `OPENAI_BASE_URL` override is also opt-in and its
+hostname must be allowed by the Charter's egress policy.
 
 > The **backend is chosen per profile** by `[host].type` (`container` →
 > Docker, `kubernetes` → K8s). There is no global backend switch — you pick by
@@ -472,6 +479,20 @@ curl -s "${AUTH[@]}" $BASE/v1/citadels/$RID/file/read -d '{"path":"state.txt"}' 
 Point runeward at your cluster (OrbStack exposes it as context
 `orbstack`). Create the namespace and, for **strict egress**, allow the
 privileged capabilities the iptables init container needs:
+
+For a disposable kind release gate covering two workers, shared-tenant actors,
+cross-tenant isolation, governed exec, signed task leases, replay rejection,
+and cleanup, run:
+
+```bash
+RUNEWARD_KUBE_CONTEXT=kind-logjedi ./scripts/e2e-kind.sh
+```
+
+The dashboard exercises the same backend. Start `runeward serve` with
+`RUNEWARD_KUBE_CONTEXT` set, open **Agent groups**, and select `fleet-k8s`.
+The selected Charter's readiness result appears beside the picker and disables
+**New** when the cluster is unavailable, so a Docker readiness result cannot be
+mistaken for Kubernetes readiness.
 
 ```bash
 export RUNEWARD_KUBE_CONTEXT=orbstack        # or: kind-kind, minikube, ...
@@ -1627,7 +1648,8 @@ export RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
 
 # Or IDE + coding CLIs:
 docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
-# Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each)
+# Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each;
+# write CODEX_API_KEY to ~/.runeward-openai.key for ide-codex)
 
 CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"ide-demo"}' | jq -r .id)
 TICKET=$(curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"ide","sandbox_id":"'$CID'"}' | jq -r .ticket)
