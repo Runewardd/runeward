@@ -74,7 +74,7 @@ and `make security` are available while iterating.
 
 Before a release, also run the Docker and Kubernetes end-to-end procedures in
 [docs/E2E-TESTING.md](docs/E2E-TESTING.md), build and scan every release image,
-and complete [docs/release-readiness.md](docs/release-readiness.md).
+and require every hosted release workflow to pass.
 
 ## Commit messages
 

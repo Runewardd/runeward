@@ -187,11 +187,6 @@ Runeward records the parent/run/provider lineage and prevents a child Citadel fr
 parent's tenant or Charter. Every participating agent can receive its own Citadel and Chronicle.
 See [Agent harnessing](docs/agent-harness.md).
 
-For local OS-native process sandboxing, [nono](https://github.com/nolabs-ai/nono) is a strong,
-lighter-weight tool with a different center of gravity. Runeward is a multi-tenant governance and
-orchestration control plane for container/Kubernetes Citadels, approvals, budgets, Cohorts, and
-portable signed evidence. See the detailed [Runeward and nono comparison](docs/comparison-nono.md).
-
 ## Policy workflow
 
 Policies support built-in glob rules, CEL, OPA/Rego, and signed OCI bundles. Test them in CI, start
@@ -230,8 +225,7 @@ actions, produces exact matches, and requires a human to review and broaden them
   recording, but its individual commands are not intercepted for approval. Use governed tool calls
   when command-level policy and signed verdicts are required.
 - Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Runeward remains pre-1.0;
-  release gates and residual limitations are tracked in
-  [release readiness](docs/release-readiness.md) and [ROADMAP.md](ROADMAP.md).
+  residual limitations are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 
@@ -239,7 +233,6 @@ actions, produces exact matches, and requires a human to review and broaden them
 - [Policies / Charters](docs/profiles.md)
 - [REST API](docs/rest-api.md)
 - [Browser IDE](docs/browser-ide.md) (experimental code-server proxy)
-- [Runeward compared with nono](docs/comparison-nono.md)
 - [Security model](docs/security-model.md)
 - [End-to-end testing](docs/E2E-TESTING.md)
 - Published site: [runewardd.github.io/runeward](https://runewardd.github.io/runeward/)

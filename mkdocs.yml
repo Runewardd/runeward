@@ -64,9 +64,6 @@ nav:
   - Naming: naming.md
   - Agent harnessing: agent-harness.md
   - Codex, Claude & Copilot: agent-integrations.md
-  - Runeward vs nono: comparison-nono.md
-  - Release readiness: release-readiness.md
-  - v0.3.0 release audit: release-audit-v0.3.0.md
   - Concepts: concepts.md
   - Charters: profiles.md
   - Bring your own model: byo-model.md
