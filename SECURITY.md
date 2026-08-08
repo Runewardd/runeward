@@ -105,5 +105,5 @@ a test is safe, contact us privately before proceeding.
 Before claiming stable 1.0 security guarantees, the project intends to complete
 independent review of its threat model and enforcement boundaries, harden native
 and remote execution paths, and publish the resulting guarantees and residual
-risks. Current release gates live in
-[docs/release-readiness.md](docs/release-readiness.md).
+risks. Current release gates are enforced by the CI, security, and release
+workflows.
