@@ -232,17 +232,22 @@ func (s *Server) Handler() http.Handler {
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isIDE := strings.Contains(r.URL.Path, "/ide")
+		isIDE := isIDEPath(r.URL.Path)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if !isIDE {
 			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 			w.Header().Set("X-Frame-Options", "DENY")
 		}
-		if strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/") {
+		if isIDE {
+			// The authenticated reverse proxy must not inherit the API-only
+			// default-src 'none' policy: code-server needs its own scripts,
+			// styles, workers, and WebSocket connection. Preserve upstream CSP.
+			w.Header().Set("Cache-Control", "no-store")
+		} else if strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/") {
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 			w.Header().Set("Cache-Control", "no-store")
-		} else if !isIDE {
+		} else {
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' ws: wss:; base-uri 'self'; object-src 'none'; frame-ancestors 'none'")
 		}
 		next.ServeHTTP(w, r)
@@ -276,7 +281,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					return
 				}
 				if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
-					s.attachIDESession(w, sandboxID, tp)
+					s.attachIDESession(w, r, sandboxID, tp)
 				}
 				next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), tp)))
 				return
@@ -303,7 +308,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 			if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
-				s.attachIDESession(w, sandboxID, tp)
+				s.attachIDESession(w, r, sandboxID, tp)
 			}
 			next.ServeHTTP(w, r)
 			return

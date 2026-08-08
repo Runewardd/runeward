@@ -33,6 +33,13 @@ for `enter <charter>`.
 | `RUNEWARD_DNS_RESOLVERS` | Comma-separated resolver IPs to confine DNS to under strict egress. |
 | `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER` | Set to `1` to enable the experimental browser surface in a trusted deployment; disabled by default. |
 | `RUNEWARD_ENABLE_EXPERIMENTAL_IDE` | Set to `1` to enable the optional in-Citadel browser IDE (code-server) + ticketed reverse proxy; disabled by default. See [Browser IDE](browser-ide.md). |
+| `GITHUB_TOKEN` | Optional GitHub credential for an agent running inside a Citadel. Runeward injects it only when the Charter explicitly references `op = "env://GITHUB_TOKEN"`; use a least-privilege token and never place it in an MCP config or committed file. Host `gh` authentication is not passed into a Citadel automatically. |
+| `OPENAI_BASE_URL` | Optional OpenAI-compatible API endpoint for agents or SDKs. It is used only when a Charter explicitly injects it; leave it unset for the provider's default endpoint. For Docker-hosted gateways use a container-reachable address such as `http://host.docker.internal:11434/v1` and allow the hostname in the Charter's network policy. |
+
+Provider and source-control variables are not ambient Citadel credentials. They
+remain on the host unless a Charter deliberately imports them with an `env://`
+secret source, where they become subject to readiness validation, redaction,
+and the Charter's egress policy.
 
 ## Commands
 

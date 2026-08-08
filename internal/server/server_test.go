@@ -129,6 +129,18 @@ func TestSecurityHeadersCoverAPIAndAuthenticationFailures(t *testing.T) {
 			t.Fatalf("%s missing no-store", path)
 		}
 	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/ide1/ide/", nil))
+	if got := rr.Header().Get("Content-Security-Policy"); got != "" {
+		t.Fatalf("IDE proxy inherited API CSP %q; code-server assets would be blocked", got)
+	}
+	if got := rr.Header().Get("X-Frame-Options"); got != "" {
+		t.Fatalf("IDE proxy unexpectedly denies its browser UI frame: %q", got)
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("IDE proxy responses must remain non-cacheable")
+	}
 }
 
 func TestHealth(t *testing.T) {

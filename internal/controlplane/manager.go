@@ -477,6 +477,12 @@ func (m *Manager) CheckReadiness(name string) ReadinessReport {
 		status = "warn"
 	}
 	report.Checks = append(report.Checks, ReadinessCheck{Name: "policy", Status: status, Message: fmt.Sprintf("%d errors, %d warnings", errorsFound, warningsFound)})
+	ideReady := true
+	if p.IDE.Enabled {
+		var ideCheck ReadinessCheck
+		ideCheck, ideReady = experimentalIDEReadiness()
+		report.Checks = append(report.Checks, ideCheck)
+	}
 	be, err := backend.For(p)
 	if err != nil {
 		report.Checks = append(report.Checks, ReadinessCheck{Name: "runtime", Status: "fail", Message: "sandbox runtime is unavailable; start Docker/Podman or check Kubernetes access, then run `runeward doctor`"})
@@ -500,8 +506,19 @@ func (m *Manager) CheckReadiness(name string) ReadinessReport {
 		imageMessage = "local/development image selected; use a published immutable image for shared environments"
 	}
 	report.Checks = append(report.Checks, ReadinessCheck{Name: "image", Status: imageStatus, Message: imageMessage})
-	report.Ready = errorsFound == 0 && prerequisitesReady
+	report.Ready = errorsFound == 0 && prerequisitesReady && ideReady
 	return report
+}
+
+func experimentalIDEReadiness() (ReadinessCheck, bool) {
+	if !experimentalIDEEnabled() {
+		return ReadinessCheck{
+			Name:    "ide",
+			Status:  "fail",
+			Message: "experimental browser IDE is disabled; restart the server with RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1",
+		}, false
+	}
+	return ReadinessCheck{Name: "ide", Status: "ok", Message: "experimental browser IDE enabled"}, true
 }
 
 // CreateOptions carries per-create overrides that are not part of the profile.

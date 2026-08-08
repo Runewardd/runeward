@@ -4,7 +4,7 @@
 # run `codex` in the IDE terminal (or dashboard Terminal tab).
 #
 #   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
-#   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
+#   printf '%s' "$CODEX_API_KEY" > ~/.runeward-openai.key
 #   RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 ./bin/runeward --config-dir examples serve
 #   Create charter "ide-codex" → Open IDE → terminal: codex
 
@@ -25,6 +25,10 @@ default = "deny"
 [[network.rule]]
 verdict  = "allow"
 hostname = "api.openai.com"
+
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
 
 [[env]]
 name = "OPENAI_API_KEY"

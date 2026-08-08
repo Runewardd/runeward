@@ -219,7 +219,7 @@ func (s *Server) issueIDETicket(sandboxID string, p *authz.Principal, ttl time.D
 	return s.issueTicket(ticketScope{Kind: ticketKindIDE, SandboxID: sandboxID}, p, ttl)
 }
 
-func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *authz.Principal) {
+func (s *Server) attachIDESession(w http.ResponseWriter, r *http.Request, sandboxID string, p *authz.Principal) {
 	var raw [16]byte
 	if _, err := crand.Read(raw[:]); err != nil {
 		return
@@ -243,14 +243,35 @@ func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *au
 		Value:    sid,
 		Path:     "/v1/citadels/" + sandboxID + "/ide",
 		HttpOnly: true,
-		// IDE sessions grant browser access to the sandbox, so never permit the
-		// cookie to travel over a plaintext connection. Loopback development
-		// origins are treated as potentially trustworthy by modern browsers;
-		// remote serving already requires TLS or an explicitly trusted proxy.
-		Secure:   true,
+		// Loopback HTTP is the supported local-development exception. Some
+		// browsers reject Secure cookies from http://127.0.0.1, which leaves the
+		// ticket-authenticated HTML unable to load its IDE assets or WebSocket.
+		// HTTPS, forwarded HTTPS, and every non-loopback host stay Secure.
+		Secure:   ideCookieSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		Expires:  expires,
 	})
+}
+
+func ideCookieSecure(r *http.Request) bool {
+	if r == nil {
+		return true
+	}
+	if r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return true
+	}
+	host := strings.TrimSpace(r.Host)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return false
+	}
+	return true
 }
 
 func (s *Server) ideSessionFromCookie(r *http.Request, sandboxID string) (*authz.Principal, bool) {
