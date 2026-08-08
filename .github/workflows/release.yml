@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing release tag to publish (for example v0.3.0-rc.2)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,9 +19,10 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  RELEASE_REF: ${{ inputs.version || github.ref_name }}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.version || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,6 +32,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26.5"
@@ -39,8 +48,8 @@ jobs:
       - name: Verify release source and package versions
         run: |
           go test ./...
-          python3 scripts/check-sdk-versions.py "${GITHUB_REF_NAME}"
-          python -m unittest discover -s adapters/python/tests
+          python3 scripts/check-sdk-versions.py "${RELEASE_REF}"
+          PYTHONPATH=adapters/python python -m unittest discover -s adapters/python/tests
           cd adapters/typescript
           npm ci --ignore-scripts
           npm run typecheck
@@ -71,6 +80,8 @@ jobs:
             image: runeward-ide-agents
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - name: Build candidate image
         run: docker build -f "${{ matrix.dockerfile }}" -t "${{ matrix.image }}:release-candidate" .
       - name: Reject high and critical image vulnerabilities
@@ -92,6 +103,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26.5"
@@ -122,6 +134,8 @@ jobs:
       DOCKER_BUILD_SUMMARY: "false"
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       # GHCR only accepts lowercase repository paths; the org name is mixed-case.
       - name: Compute lowercase image name
         run: echo "IMAGE=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
@@ -143,9 +157,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ env.RELEASE_REF }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.RELEASE_REF }}
           cache-from: type=gha,scope=runeward
           cache-to: type=gha,mode=max,scope=runeward
 
@@ -158,7 +172,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-egress:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-egress:${{ env.RELEASE_REF }}
           cache-from: type=gha,scope=runeward-egress
           cache-to: type=gha,mode=max,scope=runeward-egress
 
@@ -171,7 +185,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-agent:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-agent:${{ env.RELEASE_REF }}
           cache-from: type=gha,scope=runeward-agent
           cache-to: type=gha,mode=max,scope=runeward-agent
 
@@ -184,7 +198,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-sandbox:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-sandbox:${{ env.RELEASE_REF }}
           cache-from: type=gha,scope=runeward-sandbox
           cache-to: type=gha,mode=max,scope=runeward-sandbox
 
@@ -197,7 +211,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-ide:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-ide:${{ env.RELEASE_REF }}
           cache-from: type=gha,scope=runeward-ide
           cache-to: type=gha,mode=max,scope=runeward-ide
 
@@ -210,7 +224,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-ide-agents:${{ github.ref_name }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-ide-agents:${{ env.RELEASE_REF }}
           cache-from: type=gha,scope=runeward-ide-agents
           cache-to: type=gha,mode=max,scope=runeward-ide-agents
 
@@ -237,7 +251,7 @@ jobs:
           cosign sign "${REGISTRY}/${IMAGE}-ide-agents@${IDE_AGENTS_DIGEST}"
 
       - name: Promote stable images to latest
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ !contains(env.RELEASE_REF, '-') }}
         run: |
           docker buildx imagetools create -t "${REGISTRY}/${IMAGE}:latest" "${REGISTRY}/${IMAGE}@${{ steps.runeward.outputs.digest }}"
           docker buildx imagetools create -t "${REGISTRY}/${IMAGE}-egress:latest" "${REGISTRY}/${IMAGE}-egress@${{ steps.egress.outputs.digest }}"
@@ -252,6 +266,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: azure/setup-helm@v5
         with:
           version: v3.16.2
@@ -259,10 +275,11 @@ jobs:
         run: |
           mkdir -p dist-chart
           helm package deploy/helm/runeward --destination dist-chart \
-            --version "${GITHUB_REF_NAME#v}" --app-version "${GITHUB_REF_NAME#v}"
+            --version "${RELEASE_REF#v}" --app-version "${RELEASE_REF#v}"
       - name: Attach chart to release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_REF }}
           files: dist-chart/*.tgz
 
   # Ship the exact versioned Codex plugin directory used by the release tag.
@@ -271,14 +288,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.version || github.ref }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: Verify plugin and release versions
-        run: python3 scripts/check-sdk-versions.py "${GITHUB_REF_NAME}"
+        run: python3 scripts/check-sdk-versions.py "${RELEASE_REF}"
       - name: Package Codex plugin
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_REF#v}"
           mkdir -p dist-plugin
           tar --exclude='__pycache__' --exclude='*.pyc' \
             -czf "dist-plugin/runeward-codex-plugin_${version}.tar.gz" \
@@ -286,4 +305,5 @@ jobs:
       - name: Attach Codex plugin to release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_REF }}
           files: dist-plugin/*.tar.gz
