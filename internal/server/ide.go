@@ -258,7 +258,6 @@ func (s *Server) attachIDESession(w http.ResponseWriter, r *http.Request, sandbo
 	}
 	// The only non-Secure path is the direct, dual-validated loopback exception
 	// above; every deployable HTTPS or non-loopback request retains Secure.
-	// codeql[go/cookie-secure-not-set]
 	http.SetCookie(w, cookie)
 }
 
