@@ -81,6 +81,13 @@ type ExecRequest struct {
 	Workdir string
 	Env     map[string]string
 	Timeout time.Duration
+	// Stdout and Stderr receive output as the command runs. They are optional;
+	// ordinary one-shot calls continue to receive captured output in ExecResult.
+	Stdout io.Writer
+	Stderr io.Writer
+	// StreamOnly avoids retaining a second in-memory copy when a caller persists
+	// output incrementally (for example, an observable agent session).
+	StreamOnly bool
 }
 
 // ExecResult captures the outcome of an Exec.

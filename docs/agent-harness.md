@@ -61,6 +61,7 @@ This prevents one agent in a shared tenant from finishing another worker's task 
 | TypeScript agent framework | `@runeward/sdk` and its framework subpath |
 | Custom orchestrator | REST API or the dependency-light SDK client |
 | Parallel peer workers | Existing `runeward cohort` commands and `/v1/cohorts` API |
+| Live/replayable worker output | Durable agent sessions and `/v1/agent-sessions/{id}/stream` |
 
 See [Adapters](adapters.md), [Cohorts](fleets.md), the [Security model](security-model.md), and
 [Browser IDE](browser-ide.md) for the experimental code-server path and its limitations.

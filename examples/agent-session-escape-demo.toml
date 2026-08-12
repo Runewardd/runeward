@@ -1,0 +1,98 @@
+# A single real Codex worker for the recorded agent-session + isolation demo.
+# The outer agent launch and deterministic follow-up probes are policy-gated;
+# commands the agent starts are contained by the non-root, read-only container,
+# private workspace volume, resource limits, and strict egress sidecar.
+policy_default = "deny"
+
+[host]
+type      = "container"
+image     = "ghcr.io/runewardd/runeward-agent:latest"
+user      = "agent"
+workdir   = "/workspace"
+read_only = true
+
+[cohort]
+replicas   = 1
+task_board = []
+
+[network]
+default = "deny"
+enforce = "strict"
+
+# Codex needs only the OpenAI API. The escape probe deliberately targets
+# example.com, which is absent from this allowlist and must fail closed.
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+# Launch the real agent. The intentionally permissive flags are safe here
+# because Runeward is the outer sandbox and governance boundary.
+[[policy]]
+tool       = "shell"
+match_argv = "codex"
+verdict    = "allow"
+reason     = "launch the recorded Codex worker inside the Citadel"
+
+# Deterministic, non-destructive isolation probes run after the agent so the
+# recording does not depend only on how the model phrases its answer.
+[[policy]]
+tool       = "shell"
+match_argv = "cat"
+verdict    = "allow"
+reason     = "read-only host marker isolation probe"
+
+[[policy]]
+tool       = "shell"
+match_argv = "test"
+verdict    = "allow"
+reason     = "container socket isolation probe"
+
+[[policy]]
+tool       = "shell"
+match_argv = "curl"
+verdict    = "allow"
+reason     = "strict egress denial probe"
+
+[[policy]]
+tool       = "shell"
+match_argv = "sh"
+verdict    = "allow"
+reason     = "read-only root and writable workspace probes"
+
+[rationing]
+wall_clock      = "20m"
+max_execs       = 40
+memory          = "1g"
+cpus            = 1.0
+egress_requests = 500
+loop_window     = "60s"
+loop_threshold  = 8
+
+# Codex needs a small writable home for its runtime state. Keep it inside the
+# governed workspace so the rest of the container root remains read-only.
+[[env]]
+name  = "HOME"
+value = "/workspace/.agent-home"
+
+[[env]]
+name  = "CODEX_HOME"
+value = "/workspace/.agent-home/.codex"
+
+[[env]]
+name  = "XDG_CONFIG_HOME"
+value = "/workspace/.agent-home/.config"
+
+[[env]]
+name  = "XDG_CACHE_HOME"
+value = "/tmp/.cache"
+
+[[env]]
+name = "CODEX_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[chronicle]
+redact = true

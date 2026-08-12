@@ -76,6 +76,12 @@ type Manager struct {
 	conversationMu sync.Mutex
 	conversation   *conversationHub
 
+	agentMu          sync.Mutex
+	agentSessions    map[string]*AgentSession
+	agentSubscribers map[string]map[chan AgentEvent]struct{}
+	agentCancels     map[string]context.CancelFunc
+	agentWG          sync.WaitGroup
+
 	stateDir   string        // ledger, keys, fleets.json
 	fleetLease time.Duration // claim lease for dead-worker recovery
 	leaseKey   []byte        // HMAC key for signed Cohort task leases
@@ -174,20 +180,23 @@ func New(configDir string) (*Manager, error) {
 	sink := auditsink.NewMulti(envSink, anomaly.New(nil))
 
 	m := &Manager{
-		configDir:      configDir,
-		ledger:         l,
-		signer:         signer,
-		sink:           sink,
-		accounting:     accounting.New(),
-		approvals:      NewApprovalStore(),
-		approvalWait:   5 * time.Minute,
-		sessions:       make(map[string]*Session),
-		snapshots:      make(map[string]backend.SnapshotRef),
-		snapshotOwners: make(map[string]string),
-		fleets:         make(map[string]*Fleet),
-		runs:           make(map[string]Run),
-		stateDir:       filepath.Dir(path),
-		fleetLease:     fleetLeaseFromEnv(),
+		configDir:        configDir,
+		ledger:           l,
+		signer:           signer,
+		sink:             sink,
+		accounting:       accounting.New(),
+		approvals:        NewApprovalStore(),
+		approvalWait:     5 * time.Minute,
+		sessions:         make(map[string]*Session),
+		snapshots:        make(map[string]backend.SnapshotRef),
+		snapshotOwners:   make(map[string]string),
+		fleets:           make(map[string]*Fleet),
+		runs:             make(map[string]Run),
+		agentSessions:    make(map[string]*AgentSession),
+		agentSubscribers: make(map[string]map[chan AgentEvent]struct{}),
+		agentCancels:     make(map[string]context.CancelFunc),
+		stateDir:         filepath.Dir(path),
+		fleetLease:       fleetLeaseFromEnv(),
 	}
 	if m.leaseKey, err = loadOrCreateLeaseKey(m.stateDir); err != nil {
 		return nil, err
@@ -199,6 +208,9 @@ func New(configDir string) (*Manager, error) {
 		return nil, err
 	}
 	if err := m.loadRuns(); err != nil {
+		return nil, err
+	}
+	if err := m.loadAgentSessions(); err != nil {
 		return nil, err
 	}
 	m.startSweeper(30 * time.Second)
@@ -283,6 +295,8 @@ func (m *Manager) VerifyLedger() error {
 // Close stops the sweeper, flushes audit sinks, and releases the ledger handle.
 func (m *Manager) Close() error {
 	m.stopSweeper()
+	m.cancelAgentSessions("")
+	m.agentWG.Wait()
 	if m.sink != nil {
 		_ = m.sink.Close()
 	}
@@ -730,6 +744,7 @@ func (m *Manager) SandboxOwner(id string) (owner string, ok bool) {
 
 // KillSandbox tears down a sandbox and removes its session.
 func (m *Manager) KillSandbox(ctx context.Context, id string) error {
+	m.cancelAgentSessions(id)
 	m.mu.Lock()
 	sess, ok := m.sessions[id]
 	if ok {

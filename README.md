@@ -214,8 +214,8 @@ actions, produces exact matches, and requires a human to review and broaden them
   Browser-capable Charters declare `capabilities = ["browser"]`; the dashboard then exposes governed
   rendered-text and screenshot actions and their policy/egress results.
 - An optional browser IDE (code-server in-cell + ticketed reverse proxy) is similarly experimental:
-  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, images `Dockerfile.ide` /
-  `Dockerfile.ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
+  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, `Dockerfile.ide` targets
+  `ide` / `ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
   Limits: not per-keystroke policy; no Cursor/Claude Desktop/Codex GUIs in-cell; no
   first-class GitHub Copilot on code-server. See [Browser IDE](docs/browser-ide.md) and the
   [security model](docs/security-model.md).

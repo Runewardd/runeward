@@ -3,7 +3,7 @@
 # Cursor Desktop/Electron has no self-hosted browser GUI — Open IDE is
 # code-server; run `agent` in the IDE terminal after building with Cursor:
 #
-#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest \
+#   docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest \
 #     --build-arg INSTALL_CURSOR=true \
 #     --build-arg CURSOR_INSTALLER_SHA256=<digest-from-cursor-install-script> .
 #   printf '%s' "$CURSOR_API_KEY" > ~/.runeward-cursor.key

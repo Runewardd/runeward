@@ -19,6 +19,11 @@ const state = {
   fleetSelected: null, // fleet id
   fleetTasks: [],
 	taskLeases: {},
+  agentSessions: [],
+  agentSessionSelected: null,
+  agentEvents: [],
+  agentLastSeq: 0,
+  agentStreamAbort: null,
   // terminal
   term: null,
   fitAddon: null,
@@ -488,6 +493,12 @@ function selectSandbox(id) {
       ideHint.textContent = "";
       ideHint.classList.add("hidden");
     }
+    const agentSessions = $("#view-agent-sessions");
+    if (agentSessions) {
+      agentSessions.classList.add("hidden");
+      delete agentSessions.dataset.cohortId;
+      delete agentSessions.dataset.sandboxId;
+    }
     return;
   }
   empty.classList.add("hidden");
@@ -525,9 +536,44 @@ function selectSandbox(id) {
   if (simSel && sb.profile) {
     simSel.value = sb.profile;
   }
+  updateAgentSessionsLink(id);
 
   // Re-activate the current tab for the new sandbox.
   activateTab(state.activeTab, true);
+}
+
+async function updateAgentSessionsLink(sandboxID) {
+  const button = $("#view-agent-sessions");
+  if (!button) return;
+  button.classList.add("hidden");
+  delete button.dataset.cohortId;
+  delete button.dataset.sandboxId;
+  try {
+    const { data } = await api("GET", "/v1/cohorts");
+    if (state.selected !== sandboxID) return;
+    const cohorts = (data && data.fleets) || [];
+    const cohort = cohorts.find((item) => Array.isArray(item.sandboxes) && item.sandboxes.includes(sandboxID));
+    if (!cohort) return;
+    button.dataset.cohortId = cohort.id;
+    button.dataset.sandboxId = sandboxID;
+    button.classList.remove("hidden");
+  } catch (_) {
+    // The global health indicator covers connectivity; keep this shortcut hidden.
+  }
+}
+
+async function openAgentSessionsForSelectedSandbox() {
+  const button = $("#view-agent-sessions");
+  const cohortID = button && button.dataset.cohortId;
+  const sandboxID = button && button.dataset.sandboxId;
+  if (!cohortID) return;
+  switchView("fleets");
+  await loadFleets();
+  await selectFleet(cohortID);
+  const latest = [...state.agentSessions]
+    .filter((session) => !sandboxID || session.citadel_id === sandboxID)
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+  if (latest) await selectAgentSession(latest.id);
 }
 
 function resetSandboxViews() {
@@ -698,8 +744,13 @@ async function deleteFleet(id) {
 }
 
 function selectFleet(id) {
+  stopAgentStream();
   state.fleetSelected = id;
   state.fleetTasks = [];
+  state.agentSessions = [];
+  state.agentSessionSelected = null;
+  state.agentEvents = [];
+  state.agentLastSeq = 0;
   renderFleetList();
 
   const empty = $("#fleet-empty");
@@ -707,22 +758,24 @@ function selectFleet(id) {
   if (!id) {
     empty.classList.remove("hidden");
     bodyEl.classList.add("hidden");
-    return;
+    return Promise.resolve();
   }
   empty.classList.add("hidden");
   bodyEl.classList.remove("hidden");
   $("#fleet-claim-note").classList.add("hidden");
-  refreshFleetDetail();
+  return refreshFleetDetail();
 }
 
 async function refreshFleetDetail() {
   if (!state.fleetSelected) return;
   try {
-    const [fleetRes, tasksRes] = await Promise.all([
+    const [fleetRes, tasksRes, sessionsRes] = await Promise.all([
       api("GET", fleetPath("")),
       api("GET", fleetPath("/tasks")),
+      api("GET", "/v1/agent-sessions?cohort_id=" + encodeURIComponent(state.fleetSelected)),
     ]);
     state.fleetTasks = (tasksRes.data && tasksRes.data.tasks) || [];
+    state.agentSessions = (sessionsRes.data && sessionsRes.data.sessions) || [];
     renderFleetDetail(fleetRes.data || {});
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
@@ -745,6 +798,7 @@ function renderFleetDetail(fleet) {
   renderFleetStats(fleet.stats || {});
   renderFleetChips(sbs);
   renderFleetTasks();
+  renderAgentSessions();
 }
 
 function renderFleetStats(stats) {
@@ -821,6 +875,140 @@ function renderFleetTasks() {
         el("td", {}, actions),
       ])
     );
+  }
+}
+
+function renderAgentSessions() {
+  const body = $("#agent-session-body");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!state.agentSessions.length) {
+    body.appendChild(el("tr", {}, el("td", { colspan: "6", class: "empty-note", text: "No agent sessions yet." })));
+    return;
+  }
+  const sessions = [...state.agentSessions].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  for (const s of sessions) {
+    const status = String(s.status || "unknown").toLowerCase();
+    body.appendChild(el("tr", { class: s.id === state.agentSessionSelected ? "selected-row" : "" }, [
+      el("td", { text: [s.agent || "agent", s.model || ""].filter(Boolean).join(" · ") }),
+      el("td", { class: "mono", text: s.task_id || "—", title: s.task_id || "" }),
+      el("td", { class: "mono", text: s.citadel_id || "—", title: s.citadel_id || "" }),
+      el("td", {}, el("span", { class: "state-tag " + status, text: status })),
+      el("td", { text: fmtTime(s.started_at || s.created_at) }),
+      el("td", {}, el("button", { class: "btn btn-sm", text: "View", onClick: () => selectAgentSession(s.id) })),
+    ]));
+  }
+  if (state.agentSessionSelected && !sessions.some((s) => s.id === state.agentSessionSelected)) {
+    stopAgentStream();
+    state.agentSessionSelected = null;
+    $("#agent-transcript").classList.add("hidden");
+  }
+}
+
+async function selectAgentSession(id) {
+  stopAgentStream();
+  state.agentSessionSelected = id;
+  state.agentEvents = [];
+  state.agentLastSeq = 0;
+  renderAgentSessions();
+  $("#agent-transcript").classList.remove("hidden");
+  $("#agent-transcript-id").textContent = id;
+  $("#agent-transcript-output").textContent = "";
+  setAgentTranscriptStatus("conn-off", "loading…");
+  try {
+    const { data } = await api("GET", `/v1/agent-sessions/${encodeURIComponent(id)}/events?after=0`);
+    appendAgentEvents((data && data.events) || []);
+    const session = (data && data.session) || {};
+    if (agentSessionTerminal(session.status)) {
+      setAgentTranscriptStatus(session.status === "completed" ? "conn-on" : "conn-err", session.status || "finished");
+    } else {
+      startAgentStream(id, state.agentLastSeq);
+    }
+  } catch (e) {
+    setAgentTranscriptStatus("conn-err", "error");
+    toast("Transcript read failed: " + e.message, "error");
+  }
+}
+
+function appendAgentEvents(events) {
+  const out = $("#agent-transcript-output");
+  if (!out) return;
+  for (const ev of events) {
+    if (!ev || Number(ev.seq || 0) <= state.agentLastSeq) continue;
+    state.agentLastSeq = Number(ev.seq || state.agentLastSeq);
+    state.agentEvents.push(ev);
+    if (ev.stream === "status") {
+      out.textContent += `\n[runeward] ${ev.data}\n`;
+      const terminal = agentSessionTerminal(ev.data);
+      setAgentTranscriptStatus(terminal && ev.data !== "completed" ? "conn-err" : "conn-on", ev.data);
+    } else {
+      const prefix = ev.stream === "stderr" ? "[stderr] " : "";
+      out.textContent += prefix + String(ev.data || "");
+    }
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+function setAgentTranscriptStatus(kind, label) {
+  const node = $("#agent-transcript-status");
+  if (!node) return;
+  node.className = "conn-status " + kind;
+  node.textContent = label;
+}
+
+function agentSessionTerminal(status) {
+  return ["completed", "failed", "denied", "canceled", "interrupted"].includes(String(status || ""));
+}
+
+function stopAgentStream() {
+  if (state.agentStreamAbort) {
+    state.agentStreamAbort.abort();
+    state.agentStreamAbort = null;
+  }
+}
+
+async function startAgentStream(id, after) {
+  stopAgentStream();
+  const controller = new AbortController();
+  state.agentStreamAbort = controller;
+  setAgentTranscriptStatus("conn-on", "live");
+  const headers = { Accept: "text/event-stream" };
+  if (auth.token) headers.Authorization = "Bearer " + auth.token;
+  try {
+    const res = await fetch(`/v1/agent-sessions/${encodeURIComponent(id)}/stream?after=${Number(after || 0)}`, {
+      headers,
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const dataLines = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart());
+        if (!dataLines.length) continue;
+        try { appendAgentEvents([JSON.parse(dataLines.join("\n"))]); } catch {}
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      setAgentTranscriptStatus("conn-err", "disconnected");
+    }
+  } finally {
+    if (state.agentStreamAbort === controller) state.agentStreamAbort = null;
+    if (!controller.signal.aborted && state.agentSessionSelected === id) {
+      try {
+        const { data } = await api("GET", `/v1/agent-sessions/${encodeURIComponent(id)}`);
+        setAgentTranscriptStatus(data.status === "completed" ? "conn-on" : "conn-err", data.status || "disconnected");
+      } catch {}
+      refreshFleetDetail();
+    }
   }
 }
 
@@ -2043,12 +2231,16 @@ function wireEvents() {
   // View switch + fleets
   $("#view-sandboxes").addEventListener("click", () => switchView("sandboxes"));
   $("#view-fleets").addEventListener("click", () => switchView("fleets"));
+  $("#view-agent-sessions").addEventListener("click", openAgentSessionsForSelectedSandbox);
   $("#fleet-create-btn").addEventListener("click", createFleet);
   $("#fleet-refresh-btn").addEventListener("click", () => { loadFleets(); loadProfiles(); });
   $("#fleet-add-task").addEventListener("click", addFleetTask);
   $("#fleet-task-payload").addEventListener("keydown", (e) => { if (e.key === "Enter") addFleetTask(); });
   $("#fleet-claim").addEventListener("click", claimFleetTask);
   $("#fleet-claim-owner").addEventListener("keydown", (e) => { if (e.key === "Enter") claimFleetTask(); });
+  $("#agent-transcript-reconnect").addEventListener("click", () => {
+    if (state.agentSessionSelected) startAgentStream(state.agentSessionSelected, state.agentLastSeq);
+  });
 
   $$(".tab").forEach((t) =>
     t.addEventListener("click", () => activateTab(t.dataset.tab))

@@ -309,8 +309,8 @@ func (d *Docker) Exec(ctx context.Context, id string, req ExecRequest) (*ExecRes
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = execOutputWriter(&stdout, req.Stdout, req.StreamOnly)
+	cmd.Stderr = execOutputWriter(&stderr, req.Stderr, req.StreamOnly)
 	err := cmd.Run()
 
 	res := &ExecResult{
@@ -326,6 +326,19 @@ func (d *Docker) Exec(ctx context.Context, id string, req ExecRequest) (*ExecRes
 		return res, fmt.Errorf("%s exec: %w", d.Name(), err)
 	}
 	return res, nil
+}
+
+func execOutputWriter(capture *bytes.Buffer, stream io.Writer, streamOnly bool) io.Writer {
+	if streamOnly {
+		if stream != nil {
+			return stream
+		}
+		return io.Discard
+	}
+	if stream != nil {
+		return io.MultiWriter(capture, stream)
+	}
+	return capture
 }
 
 func (d *Docker) AttachPTY(ctx context.Context, id string, s PTYStream) error {

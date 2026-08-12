@@ -125,7 +125,7 @@
             <span id="sel-meta" class="panel-meta"></span>
           </div>
           <nav class="tabs" id="tabs">
-            <button class="tab active" data-tab="terminal">Terminal</button>
+            <button class="tab active" data-tab="terminal">PTY Terminal</button>
             <button class="tab" data-tab="conversation">Live chat</button>
             <button class="tab" data-tab="files">Files</button>
             <button class="tab" data-tab="shell">Shell</button>
@@ -143,6 +143,7 @@
           <div class="term-toolbar">
             <span id="term-status" class="conn-status conn-off">disconnected</span>
             <span class="note">Direct sandbox session: commands are not individually policy-gated. Use Shell for governed calls.</span>
+            <button id="view-agent-sessions" class="btn btn-sm hidden" type="button">View live agent output</button>
             <button id="open-ide" class="btn btn-sm hidden" type="button" title="Open browser IDE (code-server; experimental)">Open IDE</button>
             <a id="ide-link" class="btn btn-sm hidden">Open prepared IDE link</a>
             <span id="ide-agents-hint" class="note hidden"></span>
@@ -452,6 +453,31 @@
                     <tr><td colspan="6" class="empty-note">No tasks yet.</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                Agent sessions
+                <span class="card-head-hint">live stdout/stderr · reconnectable · redacted</span>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr><th>Agent</th><th>Task</th><th>Citadel</th><th>Status</th><th>Started</th><th></th></tr>
+                  </thead>
+                  <tbody id="agent-session-body">
+                    <tr><td colspan="6" class="empty-note">No agent sessions yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="agent-transcript" class="agent-transcript hidden">
+                <div class="agent-transcript-head">
+                  <span id="agent-transcript-id" class="mono">—</span>
+                  <span id="agent-transcript-status" class="conn-status conn-off">disconnected</span>
+                  <button id="agent-transcript-reconnect" class="btn btn-sm">Reconnect</button>
+                </div>
+                <pre id="agent-transcript-output" class="agent-transcript-output" aria-live="polite"></pre>
               </div>
             </div>
           </div>

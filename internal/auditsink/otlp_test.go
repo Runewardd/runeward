@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -26,9 +26,9 @@ func TestEventRecordMapsFieldsAndContextTrace(t *testing.T) {
 		t.Fatalf("event name = %q, want runeward.audit", rec.EventName())
 	}
 
-	attrs := map[string]log.Value{}
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
-		attrs[kv.Key] = kv.Value
+	attrs := map[string]attribute.Value{}
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+		attrs[string(kv.Key)] = kv.Value
 		return true
 	})
 

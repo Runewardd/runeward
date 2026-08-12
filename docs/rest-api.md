@@ -80,6 +80,11 @@ parent run, timestamps, and terminal status.
 | `GET` | `/v1/citadels/{id}/conversation` | Bounded, redacted Live chat history (`after_id`, `limit`). |
 | `POST` | `/v1/citadels/{id}/conversation` | Publish a `user`, `assistant`, `tool`, or `system` turn. |
 | `GET` | `/v1/citadels/{id}/conversation/stream` | Read-only Live chat WebSocket; use a scoped `conversation` ticket. |
+| `POST` | `/v1/citadels/{id}/agent-sessions` | Launch a durable, observable agent command. |
+| `GET` | `/v1/agent-sessions` | List agent sessions, optionally filtered by `cohort_id`. |
+| `GET` | `/v1/agent-sessions/{id}` | Read agent-session metadata and terminal status. |
+| `GET` | `/v1/agent-sessions/{id}/events` | Read reconnectable redacted stdout/stderr events after a sequence cursor. |
+| `GET` | `/v1/agent-sessions/{id}/stream` | Follow agent-session events over server-sent events. |
 | `GET` | `/v1/citadels/{id}/ide` / `/ide/{path...}` | Experimental browser IDE reverse proxy (HTTP + WebSocket). |
 | `POST` | `/v1/citadels/{id}/ide-ticket` | Mint a short-lived IDE ticket. |
 
@@ -87,7 +92,7 @@ parent run, timestamps, and terminal status.
 
 Opt-in GUI against `/workspace` via in-cell code-server. Requires
 `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide] enabled = true`, and an
-IDE-capable image (`deploy/Dockerfile.ide` or `Dockerfile.ide-agents`). Mint
+IDE-capable target (`ide` or `ide-agents`) from `deploy/Dockerfile.ide`. Mint
 `kind=ide` via `POST /v1/tickets` (or `/ide-ticket`), then open
 `/v1/citadels/{id}/ide?ticket=…`. The ticket is single-use; a session cookie
 covers subsequent asset loads. List/get may include `ide` / `ide_agents`.

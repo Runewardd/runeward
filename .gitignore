@@ -19,6 +19,10 @@ __pycache__/
 # Local scratch / runtime state
 /.tmp/
 /.runeward-fleet
+/.runeward-release-*/
+/.runeward-test-artifacts/
+/shot.png
+/session-shot.png
 
 # Ledger / signing keys / runtime state (should only live under $RUNEWARD_STATE_DIR)
 *.key

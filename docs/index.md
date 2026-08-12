@@ -58,6 +58,7 @@ configuration fields for compatibility. See [Naming](naming.md).
 - :material-toy-brick: **[Adapters](adapters.md)** — local Python and TypeScript SDKs.
 - :material-shield-account: **[Agent harnessing](agent-harness.md)** — govern agents and delegated subagents.
 - :material-account-group: **[Agent groups](fleets.md)** — coordinate governed workers.
+- :material-record-rec: **[Live escape-denial demo](agent-session-escape-demo.md)** — stream and record a real agent, then verify isolation failures.
 - :material-chart-line: **[Observability](observability.md)** — metrics, logs, and telemetry.
 
 </div>

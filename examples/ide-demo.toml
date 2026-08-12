@@ -2,7 +2,7 @@
 #
 # Docs (setup + limitations): docs/browser-ide.md
 #
-#   docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+#   docker build --target ide -f deploy/Dockerfile.ide -t runeward-ide:latest .
 #   RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 runeward --config-dir examples serve
 #   POST /v1/citadels {"profile":"ide-demo"}
 #   POST /v1/tickets {"kind":"ide","sandbox_id":"<id>"}

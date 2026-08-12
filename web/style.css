@@ -772,6 +772,44 @@ body {
 .state-tag.claimed { background: rgba(240, 180, 41, 0.15); color: var(--amber); }
 .state-tag.done { background: rgba(62, 207, 142, 0.15); color: var(--green); }
 .state-tag.failed { background: rgba(242, 109, 109, 0.15); color: var(--red); }
+.state-tag.running, .state-tag.queued { background: rgba(240, 180, 41, 0.15); color: var(--amber); }
+.state-tag.completed { background: rgba(62, 207, 142, 0.15); color: var(--green); }
+.state-tag.denied, .state-tag.canceled, .state-tag.interrupted { background: rgba(242, 109, 109, 0.15); color: var(--red); }
+
+.selected-row td { background: var(--accent-soft); }
+.agent-transcript {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #05070d;
+}
+.agent-transcript-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-input);
+}
+.agent-transcript-head .mono {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-transcript-output {
+  height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
 
 /* ---------- Task row actions ---------- */
 .task-actions {

@@ -327,13 +327,15 @@ func (k *K8s) Exec(ctx context.Context, id string, req ExecRequest) (*ExecResult
 	}
 	command := wrapCommand(req.Workdir, req.Env, req.Command)
 	var stdout, stderr bytes.Buffer
+	stdoutWriter := execOutputWriter(&stdout, req.Stdout, req.StreamOnly)
+	stderrWriter := execOutputWriter(&stderr, req.Stderr, req.StreamOnly)
 	start := time.Now()
 	err := k.stream(ctx, containerName(id), corev1.PodExecOptions{
 		Container: k8sContainer,
 		Command:   command,
 		Stdout:    true,
 		Stderr:    true,
-	}, remotecommand.StreamOptions{Stdout: &stdout, Stderr: &stderr})
+	}, remotecommand.StreamOptions{Stdout: stdoutWriter, Stderr: stderrWriter})
 
 	res := &ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), Duration: time.Since(start)}
 	if err != nil {

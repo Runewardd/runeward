@@ -208,38 +208,38 @@ func eventRecord(ev ledger.Event) otlplog.Record {
 	}
 	rec.SetObservedTimestamp(time.Now().UTC())
 	rec.SetEventName("runeward.audit")
-	rec.SetBody(otlplog.StringValue(ev.Action))
+	rec.SetBody(attribute.StringValue(ev.Action))
 
 	sev, sevText := severityForVerdict(ev.Verdict)
 	rec.SetSeverity(sev)
 	rec.SetSeverityText(sevText)
 
-	attrs := make([]otlplog.KeyValue, 0, 12+len(ev.Meta)+len(ev.Args))
+	attrs := make([]attribute.KeyValue, 0, 12+len(ev.Meta)+len(ev.Args))
 	attrs = append(attrs,
-		otlplog.Int("runeward.audit.seq", ev.Seq),
-		otlplog.String("runeward.session_id", ev.SessionID),
-		otlplog.String("runeward.sandbox", ev.Sandbox),
-		otlplog.String("runeward.profile", ev.Profile),
-		otlplog.String("runeward.tool", ev.Tool),
-		otlplog.String("runeward.action", ev.Action),
-		otlplog.String("runeward.verdict", ev.Verdict),
-		otlplog.Int("runeward.exit_code", ev.ExitCode),
-		otlplog.Int64("runeward.duration_ms", ev.DurationMS),
-		otlplog.String("runeward.hash", ev.Hash),
-		otlplog.String("runeward.prev_hash", ev.PrevHash),
+		attribute.Int("runeward.audit.seq", ev.Seq),
+		attribute.String("runeward.session_id", ev.SessionID),
+		attribute.String("runeward.sandbox", ev.Sandbox),
+		attribute.String("runeward.profile", ev.Profile),
+		attribute.String("runeward.tool", ev.Tool),
+		attribute.String("runeward.action", ev.Action),
+		attribute.String("runeward.verdict", ev.Verdict),
+		attribute.Int("runeward.exit_code", ev.ExitCode),
+		attribute.Int64("runeward.duration_ms", ev.DurationMS),
+		attribute.String("runeward.hash", ev.Hash),
+		attribute.String("runeward.prev_hash", ev.PrevHash),
 	)
 	if reason := strings.TrimSpace(ev.Meta["reason"]); reason != "" {
-		attrs = append(attrs, otlplog.String("runeward.reason", reason))
+		attrs = append(attrs, attribute.String("runeward.reason", reason))
 	}
 	if len(ev.Args) > 0 {
-		vals := make([]otlplog.Value, 0, len(ev.Args))
+		vals := make([]attribute.Value, 0, len(ev.Args))
 		for _, arg := range ev.Args {
-			vals = append(vals, otlplog.StringValue(arg))
+			vals = append(vals, attribute.StringValue(arg))
 		}
-		attrs = append(attrs, otlplog.Slice("runeward.args", vals...))
+		attrs = append(attrs, attribute.Slice("runeward.args", vals...))
 	}
 	for _, k := range sortedKeys(ev.Meta) {
-		attrs = append(attrs, otlplog.String("runeward.meta."+k, ev.Meta[k]))
+		attrs = append(attrs, attribute.String("runeward.meta."+k, ev.Meta[k]))
 	}
 	rec.AddAttributes(attrs...)
 

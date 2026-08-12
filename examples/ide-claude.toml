@@ -3,7 +3,7 @@
 # Claude Desktop has no self-hosted browser GUI — Open IDE is code-server;
 # run `claude` in the IDE terminal (or dashboard Terminal tab).
 #
-#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+#   docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
 #   printf '%s' "$ANTHROPIC_API_KEY" > ~/.runeward-anthropic.key
 #   RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 ./bin/runeward --config-dir examples serve
 #   Create charter "ide-claude" → Open IDE → terminal: claude

@@ -1636,18 +1636,18 @@ embeds code-server inside the Citadel and reverse-proxies it from `serve`. Keyst
 **not** per-command policy (same caveat as the interactive terminal).
 
 Cursor Desktop / Claude Desktop / Codex do **not** ship a self-hosted browser GUI. To test
-those CLIs through the same Open-IDE spin-off, build `deploy/Dockerfile.ide-agents` and use
+those CLIs through the same Open-IDE spin-off, build the `ide-agents` target from `deploy/Dockerfile.ide` and use
 `ide-claude` / `ide-codex` / `ide-cursor` Charters; run `claude`, `codex`, or `agent` in the
 IDE terminal. GitHub Copilot is not first-class on code-server (Open VSX marketplace).
 
 ```bash
 # Build the IDE image and enable the feature flag:
-docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+docker build --target ide -f deploy/Dockerfile.ide -t runeward-ide:latest .
 export RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
 # Charter: examples/ide-demo.toml ([ide] enabled = true)
 
 # Or IDE + coding CLIs:
-docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
 # Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each;
 # write CODEX_API_KEY to ~/.runeward-openai.key for ide-codex)
 

@@ -185,6 +185,27 @@ func TestApprovalsEmpty(t *testing.T) {
 	}
 }
 
+func TestAgentSessionsEmpty(t *testing.T) {
+	h := newTestServer(t)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/agent-sessions", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"sessions":[]`) {
+		t.Fatalf("expected empty sessions array, got %s", rr.Body.String())
+	}
+}
+
+func TestAgentSessionEventCursorValidation(t *testing.T) {
+	h := newTestServer(t)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/agent-sessions/missing/events?after=-1", nil))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
 func TestCreateSandboxUnknownProfile(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()

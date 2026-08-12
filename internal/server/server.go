@@ -146,6 +146,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/policy/simulate", s.handlePolicySimulate)
 	mux.HandleFunc("GET /v1/runs", s.handleListRuns)
 	mux.HandleFunc("GET /v1/runs/{id}", s.handleGetRun)
+	mux.HandleFunc("GET /v1/agent-sessions", s.handleListAgentSessions)
+	mux.HandleFunc("GET /v1/agent-sessions/{id}", s.handleGetAgentSession)
+	mux.HandleFunc("GET /v1/agent-sessions/{id}/events", s.handleAgentSessionEvents)
+	mux.HandleFunc("GET /v1/agent-sessions/{id}/stream", s.handleAgentSessionStream)
 
 	mux.HandleFunc("POST /v1/citadels", s.handleCreateSandbox)
 	mux.HandleFunc("GET /v1/citadels", s.handleListSandboxes)
@@ -168,6 +172,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/citadels/{id}/conversation", s.handleConversationHistory)
 	mux.HandleFunc("POST /v1/citadels/{id}/conversation", s.handleConversationPublish)
 	mux.HandleFunc("GET /v1/citadels/{id}/conversation/stream", s.handleConversationStream)
+	mux.HandleFunc("POST /v1/citadels/{id}/agent-sessions", s.handleStartAgentSession)
 
 	mux.HandleFunc("POST /v1/cohorts", s.handleCreateFleet)
 	mux.HandleFunc("GET /v1/cohorts", s.handleListFleets)
