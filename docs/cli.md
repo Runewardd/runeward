@@ -16,7 +16,7 @@ for `enter <charter>`.
 | Variable | Purpose |
 | --- | --- |
 | `RUNEWARD_CONFIG_DIR` | Default Charter directory. |
-| `RUNEWARD_STATE_DIR` | Where the ledger, keys, agent transcripts, terminal recordings, and Cohort state live. **Use a distinct value per running instance.** |
+| `RUNEWARD_STATE_DIR` | Where the ledger, keys, terminal recordings, and Cohort state live. **Use a distinct value per running instance.** |
 | `RUNEWARD_API_TOKEN` | Bearer token required on every control-plane request (see `--token`). |
 | `RUNEWARD_AUTHZ_FILE` | JSON file of named RBAC principals (per-token profile/approval scopes); upgrades the single shared token to multi-principal auth. |
 | `RUNEWARD_OIDC_ISSUER` / `RUNEWARD_OIDC_AUDIENCE` | Verify OIDC bearer JWTs and map signed Runeward tenant/role claims. |
@@ -33,6 +33,13 @@ for `enter <charter>`.
 | `RUNEWARD_DNS_RESOLVERS` | Comma-separated resolver IPs to confine DNS to under strict egress. |
 | `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER` | Set to `1` to enable the experimental browser surface in a trusted deployment; disabled by default. |
 | `RUNEWARD_ENABLE_EXPERIMENTAL_IDE` | Set to `1` to enable the optional in-Citadel browser IDE (code-server) + ticketed reverse proxy; disabled by default. See [Browser IDE](browser-ide.md). |
+| `GITHUB_TOKEN` | Optional GitHub credential for an agent running inside a Citadel. Runeward injects it only when the Charter explicitly references `op = "env://GITHUB_TOKEN"`; use a least-privilege token and never place it in an MCP config or committed file. Host `gh` authentication is not passed into a Citadel automatically. |
+| `OPENAI_BASE_URL` | Optional OpenAI-compatible API endpoint for agents or SDKs. It is used only when a Charter explicitly injects it; leave it unset for the provider's default endpoint. For Docker-hosted gateways use a container-reachable address such as `http://host.docker.internal:11434/v1` and allow the hostname in the Charter's network policy. |
+
+Provider and source-control variables are not ambient Citadel credentials. They
+remain on the host unless a Charter deliberately imports them with an `env://`
+secret source, where they become subject to readiness validation, redaction,
+and the Charter's egress policy.
 
 ## Commands
 
@@ -41,7 +48,7 @@ for `enter <charter>`.
 | `runeward auth login\|status\|logout` | Save or remove a client credential using OIDC device flow or `--token-stdin`. |
 | `runeward init [project-dir]` | Create `.runeward/quickstart.toml` without overwriting an existing policy. |
 | `runeward quickstart [project-dir]` | Prove allow, pre-execution denial, and signed audit. |
-| `runeward doctor [charter] [--json]` | Check policy, runtime, image, and state readiness. |
+| `runeward doctor [charter] [--json]` | Check policy, runtime, required secret sources, image, and state readiness. |
 | `runeward enter <charter> [-- cmd...]` | Create a Citadel and open a shell, or run a one-shot command. |
 | `runeward serve [--token ... --tls-cert ... --tls-key ...]` | Start the control plane: REST API + web dashboard (default `127.0.0.1:8080`). |
 | `runeward mcp [--http --tls-cert ... --tls-key ...]` | Run stdio or streamable-HTTP MCP exposing governed tools to an IDE/agent. |

@@ -37,6 +37,7 @@ type Spec struct {
 	Image        string
 	Workdir      string
 	User         string
+	Command      []string
 	Env          map[string]string
 	Labels       map[string]string
 	Files        []profile.File

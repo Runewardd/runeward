@@ -16,7 +16,8 @@ import (
 
 // fakeBackend echoes commands so tests can run without a container runtime.
 type fakeBackend struct {
-	execs int
+	execs  int
+	result *backend.ExecResult
 }
 
 func (f *fakeBackend) Name() string { return "fake" }
@@ -27,6 +28,9 @@ func (f *fakeBackend) Create(ctx context.Context, spec backend.Spec) (*backend.S
 
 func (f *fakeBackend) Exec(ctx context.Context, id string, req backend.ExecRequest) (*backend.ExecResult, error) {
 	f.execs++
+	if f.result != nil {
+		return f.result, nil
+	}
 	if len(req.Command) > 0 && req.Command[0] == "false" {
 		return &backend.ExecResult{ExitCode: 1, Stderr: "failed", Duration: time.Millisecond}, nil
 	}
@@ -95,6 +99,63 @@ func TestGovernAllow(t *testing.T) {
 	}
 	if err := m.Ledger().Verify(); err != nil {
 		t.Fatalf("ledger verify: %v", err)
+	}
+}
+
+func TestCodeCapabilityIsEnforcedBeforeExecution(t *testing.T) {
+	m, fb := newTestManager(t, nil, time.Second)
+	if _, err := m.Python(context.Background(), "fake-1", "print(1)"); err == nil || !strings.Contains(err.Error(), "not declared") {
+		t.Fatalf("Python without capability error = %v", err)
+	}
+	if fb.execs != 0 {
+		t.Fatalf("unsupported runtime executed %d times", fb.execs)
+	}
+	m.sessions["fake-1"].Profile.Capabilities = []string{"python"}
+	res, err := m.Python(context.Background(), "fake-1", "print(1)")
+	if err != nil || res.ExitCode != 0 || fb.execs != 1 {
+		t.Fatalf("Python with capability: result=%+v execs=%d err=%v", res, fb.execs, err)
+	}
+}
+
+func TestProfileCapabilitiesInferOfficialImages(t *testing.T) {
+	p := &profile.Profile{Host: profile.Host{Image: "ghcr.io/runewardd/runeward-sandbox:latest"}}
+	got := profileCapabilities(p)
+	for _, want := range []string{"python", "node", "browser"} {
+		if !hasCapability(p, want) {
+			t.Fatalf("capabilities %v missing %q", got, want)
+		}
+	}
+	if hasCapability(&profile.Profile{Host: profile.Host{Image: "debian:stable-slim"}}, "python") {
+		t.Fatal("plain Debian must not claim Python")
+	}
+	if hasCapability(&profile.Profile{Host: profile.Host{Image: "runeward-ide:latest"}}, "python") {
+		t.Fatal("lean IDE image must not claim optional language runtimes")
+	}
+}
+
+func TestRuntimeCapabilityVerificationAndDiscovery(t *testing.T) {
+	missing := &fakeBackend{result: &backend.ExecResult{ExitCode: 127}}
+	p := &profile.Profile{Host: profile.Host{Image: "custom:1"}, Capabilities: []string{"python"}}
+	if err := verifyRuntimeCapabilities(context.Background(), missing, "fake-1", p); err == nil || !strings.Contains(err.Error(), "does not provide") {
+		t.Fatalf("missing declared runtime error = %v", err)
+	}
+
+	discovered := &fakeBackend{result: &backend.ExecResult{ExitCode: 0, Stdout: "python\nnode\n"}}
+	p = &profile.Profile{Host: profile.Host{Image: "custom:1"}}
+	if err := verifyRuntimeCapabilities(context.Background(), discovered, "fake-1", p); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(p.Capabilities, ",") != "python,node" {
+		t.Fatalf("discovered capabilities = %v", p.Capabilities)
+	}
+}
+
+func TestCheckProfilePrerequisitesRejectsMissingEnv(t *testing.T) {
+	name := "RUNEWARD_TEST_MISSING_PREREQUISITE"
+	t.Setenv(name, "")
+	p := &profile.Profile{Env: []profile.EnvVar{{Name: "TOKEN", Op: "env://" + name}}}
+	if err := CheckProfilePrerequisites(p); err == nil || !strings.Contains(err.Error(), name) {
+		t.Fatalf("missing prerequisite error = %v", err)
 	}
 }
 

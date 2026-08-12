@@ -221,6 +221,8 @@ func (s *Server) runCommand(ctx context.Context, argv []string, workdir string, 
 		defer cancel()
 	}
 
+	// #nosec G702 -- executing the caller's argv is this in-Citadel agent's
+	// purpose; no shell is used and the process remains inside the sandbox.
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = workdir
 	if len(env) > 0 {
@@ -338,6 +340,7 @@ func (s *Server) handleFileEdit(w http.ResponseWriter, r *http.Request) {
 		replacements = 1
 	}
 
+	// #nosec G703 -- abs was confined to the workspace root by Server.resolve above.
 	if err := os.WriteFile(abs, []byte(updated), 0o644); err != nil {
 		writeError(w, http.StatusInternalServerError, "write failed: "+err.Error())
 		return

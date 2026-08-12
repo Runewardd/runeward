@@ -113,6 +113,11 @@ func writeDirTar(w io.Writer, srcDir string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("seed source %q is not a directory", srcDir)
 	}
+	root, err := os.OpenRoot(srcDir)
+	if err != nil {
+		return fmt.Errorf("seed source root %q: %w", srcDir, err)
+	}
+	defer root.Close()
 
 	tw := tar.NewWriter(w)
 	walkErr := filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
@@ -138,7 +143,7 @@ func writeDirTar(w io.Writer, srcDir string) error {
 		case d.IsDir():
 			return tw.WriteHeader(&tar.Header{Name: name + "/", Typeflag: tar.TypeDir, Mode: mode})
 		case fi.Mode()&fs.ModeSymlink != 0:
-			link, err := os.Readlink(path)
+			link, err := root.Readlink(rel)
 			if err != nil {
 				return err
 			}
@@ -147,7 +152,7 @@ func writeDirTar(w io.Writer, srcDir string) error {
 			if err := tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: mode, Size: fi.Size()}); err != nil {
 				return err
 			}
-			f, err := os.Open(path)
+			f, err := root.Open(rel)
 			if err != nil {
 				return err
 			}
@@ -168,6 +173,15 @@ func writeDirTar(w io.Writer, srcDir string) error {
 // extractTar writes a tar stream's files, directories, and symlinks into
 // destDir. Paths are sanitized so a malicious archive can't escape destDir.
 func extractTar(r io.Reader, destDir string) error {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return fmt.Errorf("export: create destination root: %w", err)
+	}
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("export: open destination root: %w", err)
+	}
+	defer root.Close()
+
 	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()
@@ -177,21 +191,18 @@ func extractTar(r io.Reader, destDir string) error {
 		if err != nil {
 			return fmt.Errorf("export: read archive: %w", err)
 		}
-		target, err := safeJoin(destDir, hdr.Name)
-		if err != nil {
-			return err
-		}
-		mode := fs.FileMode(hdr.Mode).Perm()
+		entry := archiveEntryPath(hdr.Name)
+		mode := hdr.FileInfo().Mode().Perm()
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, mode|0o700); err != nil {
+			if err := root.MkdirAll(entry, mode|0o700); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(entry), 0o755); err != nil {
 				return err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode|0o600)
+			f, err := root.OpenFile(entry, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode|0o600)
 			if err != nil {
 				return err
 			}
@@ -203,14 +214,16 @@ func extractTar(r io.Reader, destDir string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			if !symlinkWithinBase(destDir, target, hdr.Linkname) {
+			if !symlinkWithinArchive(entry, hdr.Linkname) {
 				return fmt.Errorf("export: unsafe symlink %q -> %q in archive", hdr.Name, hdr.Linkname)
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(entry), 0o755); err != nil {
 				return err
 			}
-			_ = os.Remove(target)
-			if err := os.Symlink(hdr.Linkname, target); err != nil {
+			if err := root.Remove(entry); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			if err := root.Symlink(hdr.Linkname, entry); err != nil {
 				return err
 			}
 		default:
@@ -219,31 +232,25 @@ func extractTar(r io.Reader, destDir string) error {
 	}
 }
 
-// safeJoin joins name onto base, guaranteeing the result stays within base
-// (a crafted entry like "../../etc/passwd" must not escape).
-func safeJoin(base, name string) (string, error) {
-	clean := filepath.Clean("/" + filepath.ToSlash(name))
-	target := filepath.Join(base, clean)
-	if !withinBase(base, target) {
-		return "", fmt.Errorf("export: unsafe path %q in archive", name)
+// archiveEntryPath returns a relative path suitable for os.Root. Prefixing
+// with a slash before cleaning contains absolute names and parent traversal at
+// the extraction root while preserving the established extraction behavior.
+func archiveEntryPath(name string) string {
+	clean := path.Clean("/" + filepath.ToSlash(name))
+	clean = strings.TrimPrefix(clean, "/")
+	if clean == "" {
+		return "."
 	}
-	return target, nil
+	return filepath.FromSlash(clean)
 }
 
-// symlinkWithinBase reports whether a symlink at linkPath pointing at linkname
-// resolves to a location inside base. Absolute targets are resolved as-is;
-// relative ones are resolved against the link's own directory.
-func symlinkWithinBase(base, linkPath, linkname string) bool {
-	var resolved string
-	if filepath.IsAbs(linkname) {
-		resolved = filepath.Clean(linkname)
-	} else {
-		resolved = filepath.Clean(filepath.Join(filepath.Dir(linkPath), linkname))
+// symlinkWithinArchive reports whether a link target resolves inside the
+// archive root. os.Root then enforces the same boundary during later opens,
+// including when a path component is replaced concurrently.
+func symlinkWithinArchive(entry, linkname string) bool {
+	if filepath.IsAbs(linkname) || filepath.VolumeName(linkname) != "" {
+		return false
 	}
-	return withinBase(base, resolved)
-}
-
-// withinBase reports whether target is base itself or nested under it.
-func withinBase(base, target string) bool {
-	return target == base || strings.HasPrefix(target, base+string(os.PathSeparator))
+	resolved := path.Clean(path.Join(path.Dir(filepath.ToSlash(entry)), filepath.ToSlash(linkname)))
+	return resolved != ".." && !strings.HasPrefix(resolved, "../") && !strings.HasPrefix(resolved, "/")
 }

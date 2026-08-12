@@ -2,7 +2,7 @@ GO ?= go
 PYTHON ?= python3
 NPM ?= npm
 
-.PHONY: build ci fmt fmt-check helm profiles sdk-test security test vet
+.PHONY: build ci fleet-driver-test fmt fmt-check helm kind-e2e profiles sdk-test security test vet
 
 build:
 	$(GO) build ./...
@@ -21,6 +21,12 @@ vet:
 test:
 	$(GO) test ./... -count=1
 
+fleet-driver-test:
+	./scripts/test-fleet-drivers.sh
+
+kind-e2e:
+	./scripts/e2e-kind.sh
+
 profiles:
 	$(GO) run ./cmd/runeward --config-dir examples/safe validate --strict
 
@@ -37,4 +43,4 @@ security:
 
 # Mirrors the source, SDK, Charter, Helm, and reachable-vulnerability checks
 # required before merge. Container scans and runtime E2E tests remain CI gates.
-ci: fmt-check vet test build profiles sdk-test helm security
+ci: fmt-check vet test build profiles fleet-driver-test sdk-test helm security

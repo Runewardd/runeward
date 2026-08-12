@@ -1,102 +1,143 @@
-# Contributing to runeward
+# Contributing to Runeward
 
-Thanks for your interest in improving runeward. This guide covers how to build,
-test, and submit changes.
+Runeward is a governance and isolation boundary for AI agents. Contributions
+are welcome from people who understand and can explain the code they submit.
+By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-By participating you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+## Before writing code
 
-## Prerequisites
+For anything beyond a typo or narrowly scoped documentation fix, open or find
+an issue first. A short design discussion is especially important for changes
+to authentication, tenant isolation, policy evaluation, approvals, egress,
+secrets, archive extraction, task leases, audit signing, or runtime backends.
+Those paths contain security constraints that are easy to miss in a local edit.
 
-- **Go 1.25+** (the toolchain version pinned in `go.mod`).
-- **Docker or OrbStack** (or any docker-compatible CLI) for the container backend.
-- Optional: a **Kubernetes** cluster (OrbStack, kind, k3d, etc.) and `helm` for
-  backend and chart work.
+Security vulnerabilities must not be discussed in public issues or pull
+requests. Follow [SECURITY.md](SECURITY.md) instead.
 
-## Build and run
+## Engineering invariants
+
+Every contribution must preserve these rules:
+
+- Fail closed. An error must never silently broaden a Charter, skip an approval,
+  disable isolation, or downgrade authentication or TLS.
+- Treat paths structurally. Clean, validate, and constrain filesystem paths;
+  never use naive string-prefix checks as a containment boundary.
+- Keep all agent actions that require per-action policy on the governed REST,
+  MCP, dashboard, or SDK path.
+- Keep tenant ownership separate from actor attribution. Shared tenant access
+  must not erase which human or agent performed an action.
+- Never place raw secrets, bearer tokens, signing keys, Chronicles, state files,
+  or generated credentials in commits, logs, fixtures, or screenshots.
+- Check every returned error in security-sensitive code. Document any
+  best-effort cleanup that cannot safely be retried.
+- Add tests for behavior changes. Authorization, policy, archive, network,
+  credential, persistence, and cryptographic changes need negative tests.
+
+## Development setup
+
+Requirements:
+
+- Go 1.26.5, matching `go.mod`;
+- Python 3.9 or newer for the Python adapter tests;
+- Node.js 18 or newer for the TypeScript adapter;
+- Docker, Podman, or OrbStack for local Citadels;
+- Helm and, for Kubernetes work, a disposable kind/k3d/OrbStack cluster.
+
+Build and inspect the project:
 
 ```bash
-# Build the main binary
 go build -o bin/runeward ./cmd/runeward
-
-# Explore example profiles without touching a backend
 ./bin/runeward --config-dir examples list
-./bin/runeward --config-dir examples print ns-auto
+./bin/runeward --config-dir examples/safe validate --strict
 
-# Run the control plane (REST API + dashboard) with an isolated state dir
-RUNEWARD_STATE_DIR=/tmp/rw-dev ./bin/runeward --config-dir examples serve
+RUNEWARD_STATE_DIR=/tmp/runeward-dev \
+  ./bin/runeward --config-dir examples serve
 ```
 
-> Tip: always give a dev instance its own `RUNEWARD_STATE_DIR`. Multiple writers
-> sharing the default ledger will trip the tamper-evident audit chain.
+Always give a development server its own `RUNEWARD_STATE_DIR`. Concurrent
+writers sharing state can invalidate assumptions around persistence and the
+tamper-evident Chronicle.
 
-## Before you open a PR
+## Run checks locally
 
-Run the same checks CI runs, locally:
+The shortest path is:
 
 ```bash
-gofmt -l internal cmd     # must print nothing
-go vet ./...
-go build ./...
-GOOS=linux GOARCH=amd64 go build ./...    # egress/strict build tags
-GOOS=windows GOARCH=amd64 go build ./cmd/runeward   # the CLI is cross-platform
-go test ./... -count=1
+make ci
 ```
 
-If you touch the Helm chart:
+That runs formatting, vet, unit/integration tests, builds, strict Charter
+validation, both SDK suites, Helm rendering, and reachable Go vulnerability
+analysis. Individual targets such as `make test`, `make sdk-test`, `make helm`,
+and `make security` are available while iterating.
 
-```bash
-helm lint deploy/helm/runeward
-helm template runeward deploy/helm/runeward --set server.enabled=true >/dev/null
+Before a release, also run the Docker and Kubernetes end-to-end procedures in
+[docs/E2E-TESTING.md](docs/E2E-TESTING.md), build and scan every release image,
+and require every hosted release workflow to pass.
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) so release notes
+can distinguish features, fixes, security work, documentation, and maintenance:
+
+```text
+<type>(<optional scope>): <short description>
 ```
 
-If you touch a GitHub Actions workflow, keep it valid (CI security scans depend
-on it):
+Accepted types are `feat`, `fix`, `security`, `docs`, `perf`, `refactor`, `test`,
+`ci`, `build`, and `chore`.
 
-```bash
-actionlint .github/workflows/*.yml   # if installed
+Examples:
+
+```text
+feat(cohort): rotate task leases on heartbeat
+fix(authz): preserve actor attribution inside a shared tenant
+security(oidc): rate-limit unknown-key refreshes
 ```
 
-## Security scanning in CI
+Use focused commits and explain the reason for non-obvious changes in the body.
+DCO sign-off with `git commit -s` is encouraged and may become mandatory once
+automated enforcement is enabled.
 
-Beyond build/test, CI runs a set of security scans (see `.github/workflows/`):
+## Pull-request process
 
-- **SAST** — `gosec` and CodeQL (`security-extended`) analyze the Go source.
-- **Dependencies/vulnerabilities** — `govulncheck` plus a Trivy filesystem scan
-  (vuln/secret/misconfig); Dependabot opens weekly update PRs for Go modules,
-  GitHub Actions, and the Docker images.
-- **Image scanning** — Trivy scans each built image (`deploy/Dockerfile*`) for
-  CRITICAL/HIGH CVEs.
-- **DAST** — an OWASP ZAP baseline runs against a locally-started `runeward serve`.
+1. Link the issue or explain why a prior issue is unnecessary.
+2. Create a focused branch and keep unrelated changes out of the PR.
+3. Add tests and documentation with the implementation.
+4. Run `make ci` and any relevant Docker/Kubernetes/browser suites.
+5. Open the PR against `main` and complete the template honestly.
 
-Most scans are currently non-blocking (results upload to the Security tab) so
-findings are visible without gating every PR; `govulncheck` and CodeQL are
-treated as blocking. Please triage anything your change introduces.
+The test plan should distinguish what passed, what was not run, and why. A clear
+statement that an environment-dependent suite remains outstanding is more useful
+than implying complete coverage.
 
-## Coding conventions
+Reviewers may request smaller changes, stronger negative tests, a threat-model
+update, or a release note before merging security-boundary work.
 
-- Keep the code `gofmt`-clean and `go vet`-clean; CI enforces both.
-- Match the surrounding style. Comments should explain intent or non-obvious
-  trade-offs, not narrate what the code plainly does.
-- Add or update tests for behavior changes. Security-sensitive paths (egress,
-  policy, ledger, tar extraction, auth) should always come with tests.
-- Never commit secrets, API keys, ledgers, or built binaries. Check `.gitignore`
-  if you add new generated artifacts.
+## AI-assisted contributions
 
-## Commit and PR guidelines
+AI assistance is allowed, but responsibility stays with the contributor. In the
+PR template, disclose the tools used and confirm that you:
 
-- Write focused commits with clear messages (imperative mood, e.g. "add k8s
-  egress preflight"). Explain the *why* in the body when it isn't obvious.
-- Keep PRs scoped to one logical change; smaller PRs get reviewed faster.
-- In the PR description, note what you changed, why, and how you tested it.
-- Link any related issue.
+- reviewed and understand every submitted change;
+- verified generated claims against code or primary documentation;
+- did not provide secrets or private user data to an external model;
+- ran the reported tests yourself;
+- can maintain and explain the resulting behavior.
 
-## Reporting bugs and requesting features
+Do not submit speculative vulnerability reports or large generated changes that
+you cannot reproduce, review, and support.
 
-Use the GitHub issue templates. For anything security-related, **do not** open a
-public issue — follow [SECURITY.md](SECURITY.md) instead.
+## Scope and security claims
+
+Runeward governs agent actions routed through its control plane and isolates
+Citadels using the configured backend. It does not transparently intercept each
+keystroke in an interactive terminal or IDE, and pre-1.0 guarantees may change.
+Documentation and PR descriptions must not claim protections the implementation
+does not enforce.
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the
-Apache License 2.0, the same license that covers the project (see
-[LICENSE](LICENSE)).
+By contributing, you agree that your contribution is licensed under the
+[Apache License 2.0](LICENSE).

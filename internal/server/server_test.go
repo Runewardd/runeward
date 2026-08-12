@@ -114,6 +114,35 @@ func TestAuthTokenRequired(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersCoverAPIAndAuthenticationFailures(t *testing.T) {
+	h := newTestServerWithToken(t, "s3cret")
+	for _, path := range []string{"/healthz", "/v1/citadels"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("%s missing nosniff header", path)
+		}
+		if rr.Header().Get("X-Frame-Options") != "DENY" {
+			t.Fatalf("%s missing frame denial", path)
+		}
+		if path == "/v1/citadels" && rr.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s missing no-store", path)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/citadels/ide1/ide/", nil))
+	if got := rr.Header().Get("Content-Security-Policy"); got != "" {
+		t.Fatalf("IDE proxy inherited API CSP %q; code-server assets would be blocked", got)
+	}
+	if got := rr.Header().Get("X-Frame-Options"); got != "" {
+		t.Fatalf("IDE proxy unexpectedly denies its browser UI frame: %q", got)
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("IDE proxy responses must remain non-cacheable")
+	}
+}
+
 func TestHealth(t *testing.T) {
 	h := newTestServer(t)
 	rr := httptest.NewRecorder()

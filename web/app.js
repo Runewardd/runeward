@@ -29,6 +29,11 @@ const state = {
   fitAddon: null,
   socket: null,
   termSandbox: null, // which sandbox the current socket belongs to
+  conversationTerm: null,
+  conversationFitAddon: null,
+  conversationSocket: null,
+  conversationSandbox: null,
+  conversationReconnectTimer: null,
   // polling handles
   timers: { global: null, audit: null },
   // policy simulation
@@ -40,6 +45,7 @@ const state = {
 	readiness: null,
 	snapshots: [],
 	runs: [],
+	taskResolution: null,
 };
 
 /* ---------------- DOM helpers ---------------- */
@@ -212,19 +218,27 @@ function preferredProfileName() {
 }
 
 function applyCreateAvailability() {
-	const btn = $("#create-btn");
+	const btn = state.activeView === "fleets" ? $("#fleet-create-btn") : $("#create-btn");
 	if (!btn) return;
 	const ready = !!(state.readiness && state.readiness.ready);
 	btn.disabled = !canLaunch() || !ready;
 	btn.title = !canLaunch()
 		? "Your role is not permitted to launch policies"
-		: ready ? "Create sandbox" : "Selected policy is not ready; see setup status";
+		: ready
+			? (state.activeView === "fleets" ? "Create agent group" : "Create sandbox")
+			: "Selected policy is not ready; see setup status";
+}
+
+function refreshSelectedProfileReadiness() {
+	state.readiness = null;
+	applyCreateAvailability();
+	return refreshReadiness();
 }
 
 async function refreshReadiness() {
-	const select = $("#profile-select");
+	const select = state.activeView === "fleets" ? $("#fleet-profile-select") : $("#profile-select");
 	const name = select && select.value;
-	const note = $("#setup-note");
+	const note = state.activeView === "fleets" ? $("#fleet-setup-note") : $("#setup-note");
 	if (!name) {
 		state.readiness = null;
 		if (note) {
@@ -306,7 +320,11 @@ function fillProfileSelect(sel, text) {
 }
 
 async function loadProfiles() {
-	const previous = $("#profile-select") && $("#profile-select").value;
+	const previous = {
+		sandbox: $("#profile-select") && $("#profile-select").value,
+		fleet: $("#fleet-profile-select") && $("#fleet-profile-select").value,
+		simulation: $("#sim-profile-select") && $("#sim-profile-select").value,
+	};
   try {
     const { data } = await api("GET", "/v1/charters");
     // Server already scopes charters under RBAC; filter again client-side so
@@ -316,11 +334,12 @@ async function loadProfiles() {
     fillProfileSelect($("#profile-select"));
     fillProfileSelect($("#fleet-profile-select"));
     fillProfileSelect($("#sim-profile-select"));
-		const preferred = state.profiles.some((p) => p.name === previous) ? previous : preferredProfileName();
-		if (preferred && $("#profile-select")) $("#profile-select").value = preferred;
-		if (preferred && $("#fleet-profile-select")) $("#fleet-profile-select").value = preferred;
-		if (preferred && $("#sim-profile-select")) $("#sim-profile-select").value = preferred;
-		await refreshReadiness();
+		const fallback = preferredProfileName();
+		const preserved = (name) => state.profiles.some((p) => p.name === name) ? name : fallback;
+		if ($("#profile-select")) $("#profile-select").value = preserved(previous.sandbox);
+		if ($("#fleet-profile-select")) $("#fleet-profile-select").value = preserved(previous.fleet);
+		if ($("#sim-profile-select")) $("#sim-profile-select").value = preserved(previous.simulation);
+		await refreshSelectedProfileReadiness();
   } catch (e) {
     fillProfileSelect($("#profile-select"), "policies unavailable");
     fillProfileSelect($("#fleet-profile-select"), "policies unavailable");
@@ -396,6 +415,8 @@ function openNewSandboxModal() {
   }
   $("#new-modal-profile").textContent = profile;
   $("#new-modal-copyfrom").value = "";
+  $("#new-modal-progress").classList.add("hidden");
+  $("#new-modal-progress").textContent = "";
   $("#new-modal").classList.remove("hidden");
   $("#new-modal-copyfrom").focus();
 }
@@ -412,7 +433,10 @@ async function createSandbox() {
   }
   const copyFrom = $("#new-modal-copyfrom").value.trim();
   const btn = $("#new-modal-create");
+  const progress = $("#new-modal-progress");
   btn.disabled = true;
+  progress.classList.remove("hidden");
+  progress.textContent = `Provisioning ${profile}… the first image pull can take several minutes.`;
   try {
     const body = { profile };
     if (copyFrom) body.copy_from = copyFrom;
@@ -422,7 +446,8 @@ async function createSandbox() {
     await loadSandboxes();
     if (data.id) selectSandbox(data.id);
   } catch (e) {
-    toast(`Could not create the sandbox. Check setup status or run "runeward doctor ${profile}" on the server host.`, "error");
+    progress.textContent = "Provisioning failed.";
+    toast(`Could not create the sandbox: ${e.message}. Check setup status or run "runeward doctor ${profile}" on the server host.`, "error");
   } finally {
     btn.disabled = false;
   }
@@ -440,6 +465,8 @@ async function killSandbox(id) {
 }
 
 function selectSandbox(id) {
+  const changed = state.selected !== id;
+  if (changed) resetSandboxViews();
   state.selected = id;
   renderSandboxList();
 
@@ -449,6 +476,7 @@ function selectSandbox(id) {
     empty.classList.remove("hidden");
     bodyEl.classList.add("hidden");
     teardownTerminalSocket();
+    teardownConversationSocket();
     stopAuditPoll();
     state.egress = [];
     state.budget = null;
@@ -458,6 +486,8 @@ function selectSandbox(id) {
 		renderSnapshots();
     const openIde = $("#open-ide");
     if (openIde) openIde.classList.add("hidden");
+    const ideLink = $("#ide-link");
+    if (ideLink) ideLink.classList.add("hidden");
     const ideHint = $("#ide-agents-hint");
     if (ideHint) {
       ideHint.textContent = "";
@@ -482,6 +512,12 @@ function selectSandbox(id) {
   if (openIde) {
     openIde.classList.toggle("hidden", !sb.ide);
   }
+  const ideLink = $("#ide-link");
+  if (ideLink) {
+    ideLink.removeAttribute("href");
+    ideLink.classList.add("hidden");
+  }
+  applySandboxCapabilities(sb);
   if (ideHint) {
     const agents = Array.isArray(sb.ide_agents) ? sb.ide_agents.filter(Boolean) : [];
     if (sb.ide && agents.length) {
@@ -540,6 +576,56 @@ async function openAgentSessionsForSelectedSandbox() {
   if (latest) await selectAgentSession(latest.id);
 }
 
+function resetSandboxViews() {
+  teardownTerminalSocket();
+  teardownConversationSocket();
+  stopAuditPoll();
+  if (state.term) state.term.reset();
+  if (state.conversationTerm) state.conversationTerm.reset();
+  for (const id of ["list-output", "search-output", "shell-stdout", "shell-stderr", "code-stdout", "code-stderr", "browser-stdout", "browser-stderr"]) {
+    const node = $("#" + id);
+    if (node) node.textContent = "";
+  }
+  for (const id of ["shell-result", "code-result", "browser-result"]) {
+    const node = $("#" + id);
+    if (node) node.classList.add("hidden");
+  }
+  const screenshot = $("#browser-screenshot");
+  if (screenshot) {
+    screenshot.removeAttribute("src");
+    screenshot.classList.add("hidden");
+  }
+  const fileNote = $("#file-note");
+  if (fileNote) fileNote.textContent = "";
+  const audit = $("#audit-body");
+  if (audit) audit.innerHTML = '<tr><td colspan="6" class="empty-note">No events yet.</td></tr>';
+  state.egress = [];
+  state.budget = null;
+  state.snapshots = [];
+  state.runs = [];
+  renderEgress();
+  renderBudget();
+  renderSnapshots();
+}
+
+function applySandboxCapabilities(sb) {
+  const capabilities = new Set(Array.isArray(sb.capabilities) ? sb.capabilities : []);
+  const langs = ["python", "node"].filter((lang) => capabilities.has(lang));
+  const select = $("#code-lang");
+  const card = $("#code-card");
+  const note = $("#code-capability-note");
+  if (select) {
+    select.innerHTML = "";
+    for (const lang of langs) select.appendChild(el("option", { value: lang, text: lang === "python" ? "Python" : "Node" }));
+  }
+  if (card) card.classList.toggle("hidden", langs.length === 0);
+  if (note) note.textContent = langs.length ? `Available in this Charter: ${langs.join(", ")}` : "";
+  const browserAvailable = capabilities.has("browser");
+  const browserTab = $("#browser-tab");
+  if (browserTab) browserTab.classList.toggle("hidden", !browserAvailable);
+  if (!browserAvailable && state.activeTab === "browser") state.activeTab = "terminal";
+}
+
 /* ---------------- View switch (Sandboxes | Fleets) ---------------- */
 function switchView(name) {
   if (name === state.activeView) return;
@@ -555,11 +641,8 @@ function switchView(name) {
   $("#sb-panel").classList.toggle("hidden", name !== "sandboxes");
   $("#fleet-panel").classList.toggle("hidden", name !== "fleets");
 
-  if (name === "fleets") {
-    refreshFleets();
-  } else {
-    stopAgentStream();
-  }
+  refreshSelectedProfileReadiness();
+  if (name === "fleets") refreshFleets();
 }
 
 /* ---------------- Fleets ---------------- */
@@ -963,8 +1046,9 @@ async function claimFleetTask() {
     if (data && data.claimed && data.task) {
       note.className = "note ok";
 	  state.taskLeases[data.task.id] = data.task.lease_token;
-      note.textContent = `Claimed ${data.task.id} by ${owner}: ${data.task.payload || ""}`;
-      toast(`Task claimed by ${owner}`, "success");
+      const authoritativeOwner = data.task.owner || data.owner || owner;
+      note.textContent = `Claimed ${data.task.id} by ${authoritativeOwner}: ${data.task.payload || ""}`;
+      toast(`Task claimed by ${authoritativeOwner}`, "success");
     } else {
       note.className = "note";
       note.textContent = "No pending tasks to claim.";
@@ -978,33 +1062,59 @@ async function claimFleetTask() {
 }
 
 async function completeFleetTask(taskId, owner) {
-  const result = window.prompt("Result for this task:", "ok");
-  if (result === null) return;
-  try {
-	await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/complete`), { owner, lease_token: state.taskLeases[taskId], result });
-	delete state.taskLeases[taskId];
-    toast("Task completed", "success");
-    await refreshFleetDetail();
-  } catch (e) {
-    toast("Complete failed: " + e.message, "error");
-  }
+  openTaskResolutionModal("complete", taskId, owner, false);
 }
 
 async function failFleetTask(taskId, owner, requeue) {
-  const error = window.prompt("Failure reason:", "error");
-  if (error === null) return;
+  openTaskResolutionModal("fail", taskId, owner, requeue);
+}
+
+function openTaskResolutionModal(mode, taskId, owner, requeue) {
+  state.taskResolution = { mode, taskId, owner, requeue: !!requeue };
+  $("#task-modal-title").textContent = mode === "complete" ? "Complete task" : "Fail task";
+  $("#task-modal-label").textContent = mode === "complete" ? "Result" : "Failure reason";
+  $("#task-modal-value").value = mode === "complete" ? "ok" : "error";
+  $("#task-modal-submit").textContent = mode === "complete" ? "Complete" : (requeue ? "Fail and requeue" : "Fail");
+  $("#task-modal").classList.remove("hidden");
+  $("#task-modal-value").focus();
+  $("#task-modal-value").select();
+}
+
+function closeTaskResolutionModal() {
+  $("#task-modal").classList.add("hidden");
+  state.taskResolution = null;
+}
+
+async function submitTaskResolution() {
+  const pending = state.taskResolution;
+  if (!pending) return;
+  const value = $("#task-modal-value").value.trim();
+  if (!value) {
+    toast(pending.mode === "complete" ? "Enter a result." : "Enter a failure reason.", "warn");
+    return;
+  }
+  const button = $("#task-modal-submit");
+  button.disabled = true;
   try {
-	await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/fail`), {
-	  owner,
-	  lease_token: state.taskLeases[taskId],
-      error,
-      requeue: !!requeue,
-    });
-	delete state.taskLeases[taskId];
-    toast(requeue ? "Task failed — requeued" : "Task failed", "info");
+	const suffix = pending.mode === "complete" ? "complete" : "fail";
+	const body = {
+	  owner: pending.owner,
+	  lease_token: state.taskLeases[pending.taskId],
+	};
+	if (pending.mode === "complete") body.result = value;
+	else {
+	  body.error = value;
+	  body.requeue = pending.requeue;
+	}
+	await api("POST", fleetPath(`/tasks/${encodeURIComponent(pending.taskId)}/${suffix}`), body);
+	delete state.taskLeases[pending.taskId];
+	closeTaskResolutionModal();
+	toast(pending.mode === "complete" ? "Task completed" : (pending.requeue ? "Task failed — requeued" : "Task failed"), pending.mode === "complete" ? "success" : "info");
     await refreshFleetDetail();
   } catch (e) {
-    toast("Fail failed: " + e.message, "error");
+    toast((pending.mode === "complete" ? "Complete" : "Fail") + " failed: " + e.message, "error");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1023,6 +1133,13 @@ function activateTab(name, force = false) {
   } else {
     // only keep the socket alive while the terminal tab is visible
     teardownTerminalSocket();
+  }
+
+  if (name === "conversation") {
+    ensureConversationTTY();
+    connectConversation();
+  } else {
+    teardownConversationSocket();
   }
 
   if (name === "audit") {
@@ -1126,18 +1243,20 @@ function connectTerminal(forceReconnect = false) {
     return;
   }
   teardownTerminalSocket();
+	const sandboxID = state.selected;
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   setTermStatus("conn-off", "connecting…");
-  requestTerminalTicket(state.selected)
+  requestTerminalTicket(sandboxID)
     .then((ticket) => {
+	  if (state.selected !== sandboxID) return;
       const url =
-        `${proto}//${location.host}/v1/citadels/${encodeURIComponent(state.selected)}/terminal` +
+		`${proto}//${location.host}/v1/citadels/${encodeURIComponent(sandboxID)}/terminal` +
         `?ticket=${encodeURIComponent(ticket)}`;
       const socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
       state.socket = socket;
-      state.termSandbox = state.selected;
+      state.termSandbox = sandboxID;
 
       socket.onopen = () => {
         setTermStatus("conn-on", "connected");
@@ -1145,6 +1264,7 @@ function connectTerminal(forceReconnect = false) {
         state.term.focus();
       };
       socket.onmessage = (ev) => {
+		if (state.socket !== socket || state.selected !== sandboxID) return;
         if (typeof ev.data === "string") {
           state.term.write(ev.data);
         } else if (ev.data instanceof ArrayBuffer) {
@@ -1181,6 +1301,152 @@ async function requestTerminalTicket(sandboxID) {
   return data.ticket;
 }
 
+/* ---------------- Live chat (read-only xterm.js + WebSocket) ---------------- */
+function ensureConversationTTY() {
+  if (state.conversationTerm) return;
+  if (typeof Terminal === "undefined") {
+    toast("xterm.js failed to load (offline CDN?)", "error");
+    return;
+  }
+  const term = new Terminal({
+    convertEol: true,
+    cursorBlink: false,
+    disableStdin: true,
+    screenReaderMode: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 13,
+    scrollback: 5000,
+    theme: {
+      background: "#05070d",
+      foreground: "#dde3ee",
+      cursor: "#05070d",
+      selectionBackground: "#2b3550",
+    },
+  });
+  let fit = null;
+  if (typeof FitAddon !== "undefined" && FitAddon.FitAddon) {
+    fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+  }
+  term.open($("#conversation-terminal"));
+  state.conversationTerm = term;
+  state.conversationFitAddon = fit;
+  window.addEventListener("resize", debounce(fitConversationTTY, 120));
+  $("#conversation-reconnect").addEventListener("click", () => connectConversation(true));
+  fitConversationTTY();
+}
+
+function fitConversationTTY() {
+  if (!state.conversationTerm || !state.conversationFitAddon) return;
+  try { state.conversationFitAddon.fit(); } catch {}
+}
+
+function setConversationStatus(kind, label) {
+  const node = $("#conversation-status");
+  if (!node) return;
+  node.className = "conn-status " + kind;
+  node.textContent = label;
+}
+
+function teardownConversationSocket() {
+  if (state.conversationReconnectTimer) {
+    clearTimeout(state.conversationReconnectTimer);
+    state.conversationReconnectTimer = null;
+  }
+  if (state.conversationSocket) {
+    try { state.conversationSocket.close(); } catch {}
+    state.conversationSocket = null;
+  }
+  state.conversationSandbox = null;
+  setConversationStatus("conn-off", "disconnected");
+}
+
+function scheduleConversationReconnect(sandboxID) {
+  if (state.conversationReconnectTimer || state.selected !== sandboxID || state.activeTab !== "conversation") return;
+  setConversationStatus("conn-off", "reconnecting…");
+  state.conversationReconnectTimer = setTimeout(() => {
+    state.conversationReconnectTimer = null;
+    connectConversation();
+  }, 1500);
+}
+
+function conversationColor(role) {
+  if (role === "user") return "\x1b[36m";
+  if (role === "assistant") return "\x1b[32m";
+  if (role === "tool") return "\x1b[33m";
+  return "\x1b[35m";
+}
+
+function renderConversationTurn(msg) {
+  const term = state.conversationTerm;
+  if (!term || !msg) return;
+  const role = String(msg.role || "system").toLowerCase();
+  const author = String(msg.author || role);
+  const when = fmtTime(msg.created_at);
+  const redacted = msg.redacted ? " · redacted" : "";
+  term.write(`${conversationColor(role)}[${when}] ${role} · ${author}${redacted}\x1b[0m\r\n`);
+  term.write(String(msg.content || "").replace(/\r?\n/g, "\r\n"));
+  term.write("\r\n\r\n");
+}
+
+function connectConversation(forceReconnect = false) {
+  if (!state.selected || !state.conversationTerm) return;
+  if (
+    !forceReconnect &&
+    state.conversationSocket &&
+    state.conversationSandbox === state.selected &&
+    (state.conversationSocket.readyState === WebSocket.OPEN || state.conversationSocket.readyState === WebSocket.CONNECTING)
+  ) return;
+
+  teardownConversationSocket();
+  const sandboxID = state.selected;
+  state.conversationTerm.reset();
+  state.conversationTerm.writeln("\x1b[90m[runeward] waiting for published conversation turns…\x1b[0m");
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  setConversationStatus("conn-off", "connecting…");
+  requestConversationTicket(sandboxID)
+    .then((ticket) => {
+      if (state.selected !== sandboxID || state.activeTab !== "conversation") return;
+      const url = `${proto}//${location.host}/v1/citadels/${encodeURIComponent(sandboxID)}/conversation/stream?ticket=${encodeURIComponent(ticket)}`;
+      const socket = new WebSocket(url);
+      state.conversationSocket = socket;
+      state.conversationSandbox = sandboxID;
+      socket.onopen = () => {
+        if (state.conversationSocket !== socket) return;
+        state.conversationTerm.reset();
+        setConversationStatus("conn-on", "following live");
+        fitConversationTTY();
+      };
+      socket.onmessage = (ev) => {
+        if (state.conversationSocket !== socket || state.selected !== sandboxID) return;
+        try { renderConversationTurn(JSON.parse(ev.data)); } catch {}
+      };
+      socket.onerror = () => setConversationStatus("conn-err", "error");
+      socket.onclose = () => {
+        if (state.conversationSocket === socket) {
+          state.conversationSocket = null;
+          state.conversationSandbox = null;
+          scheduleConversationReconnect(sandboxID);
+        }
+      };
+    })
+    .catch((e) => {
+      if (state.selected !== sandboxID || state.activeTab !== "conversation") return;
+      console.warn("Live chat connect failed:", e);
+      scheduleConversationReconnect(sandboxID);
+    });
+}
+
+async function requestConversationTicket(sandboxID) {
+  const { data } = await api("POST", "/v1/tickets", {
+    kind: "conversation",
+    sandbox_id: sandboxID,
+    ttl_seconds: 30,
+  });
+  if (!data || !data.ticket) throw new Error("conversation ticket unavailable");
+  return data.ticket;
+}
+
 async function openIDE() {
   if (!state.selected) return;
   const sb = state.sandboxes.find((s) => s.id === state.selected) || {};
@@ -1200,7 +1466,12 @@ async function openIDE() {
     const url =
       `/v1/citadels/${encodeURIComponent(state.selected)}/ide` +
       `?ticket=${encodeURIComponent(data.ticket)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    const link = $("#ide-link");
+    link.href = url;
+    link.classList.remove("hidden");
+    const opened = window.open(url, "_blank");
+    if (opened) opened.opener = null;
+    if (!opened) toast("The browser blocked the new tab. Use the prepared IDE link.", "warn");
   } catch (e) {
     toast("Open IDE failed: " + e.message, "error");
   }
@@ -1361,6 +1632,37 @@ async function runCode() {
     }
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function runBrowser() {
+  if (!state.selected) return;
+  const url = $("#browser-url").value.trim();
+  const mode = $("#browser-mode").value;
+  if (!url) { toast("Enter a URL.", "warn"); return; }
+  const button = $("#browser-run");
+  const screenshot = $("#browser-screenshot");
+  button.disabled = true;
+  screenshot.removeAttribute("src");
+  screenshot.classList.add("hidden");
+  try {
+    const { status, data } = await api("POST", sbPath("/browser"), { url, mode });
+    renderExecResult("browser", status, data);
+    if (mode === "screenshot" && data.stdout && data.verdict === "allow" && data.exit_code === 0) {
+      $("#browser-stdout").textContent = "";
+      screenshot.src = "data:image/png;base64," + data.stdout.replace(/\s/g, "");
+      screenshot.classList.remove("hidden");
+    }
+    refreshEgress();
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 403 || e.status === 202)) {
+      renderExecResult("browser", e.status, e.body);
+    } else {
+      renderExecResult("browser", 500, { verdict: "deny", reason: e.message, stderr: e.message });
+      toast("Browser action failed: " + e.message, "error");
+    }
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1923,7 +2225,8 @@ function wireEvents() {
   $$("[data-close-modal]").forEach((n) => n.addEventListener("click", closeNewSandboxModal));
   $("#new-modal-copyfrom").addEventListener("keydown", (e) => { if (e.key === "Enter") createSandbox(); });
   $("#refresh-btn").addEventListener("click", () => { loadSandboxes(); loadProfiles(); });
-	$("#profile-select").addEventListener("change", refreshReadiness);
+	$("#profile-select").addEventListener("change", refreshSelectedProfileReadiness);
+	$("#fleet-profile-select").addEventListener("change", refreshSelectedProfileReadiness);
 
   // View switch + fleets
   $("#view-sandboxes").addEventListener("click", () => switchView("sandboxes"));
@@ -1953,6 +2256,8 @@ function wireEvents() {
   $("#shell-run").addEventListener("click", runShell);
   $("#shell-cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") runShell(); });
   $("#code-run").addEventListener("click", runCode);
+  $("#browser-run").addEventListener("click", runBrowser);
+  $("#browser-url").addEventListener("keydown", (e) => { if (e.key === "Enter") runBrowser(); });
   $("#sim-run").addEventListener("click", runPolicySimulation);
   $("#sim-actions").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") runPolicySimulation(); });
   $("#egress-refresh").addEventListener("click", refreshEgress);
@@ -1964,7 +2269,10 @@ function wireEvents() {
 
   $("#approvals-btn").addEventListener("click", openDrawer);
   $$("[data-close-drawer]").forEach((n) => n.addEventListener("click", closeDrawer));
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); closeNewSandboxModal(); } });
+  $$("[data-close-task-modal]").forEach((n) => n.addEventListener("click", closeTaskResolutionModal));
+  $("#task-modal-submit").addEventListener("click", submitTaskResolution);
+  $("#task-modal-value").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitTaskResolution(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); closeNewSandboxModal(); closeTaskResolutionModal(); } });
 }
 
 /* ---------------- Login / identity ---------------- */

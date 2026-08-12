@@ -29,6 +29,9 @@ Please disclose privately; do not open a public issue.
   `host.seccomp` / `host.apparmor` pin a seccomp/AppArmor profile (Docker
   `--security-opt`; Kubernetes Localhost profiles), and Kubernetes pods default
   to the runtime's seccomp profile rather than Unconfined.
+  A Charter can explicitly override an application image's entrypoint with
+  `host.command`; Docker/Podman creation requires the process to remain alive
+  across post-start checks before the Citadel is reported as running.
 - **Control-plane authentication.** `runeward serve` binds `127.0.0.1` by
   default and refuses any non-loopback `--bind` unless authentication is set (an
   API token via `--token` / `RUNEWARD_API_TOKEN`, or an RBAC store). When set it
@@ -56,6 +59,9 @@ Please disclose privately; do not open a public issue.
   same per-request principal and ownership rules as REST; stdio MCP binds one
   process to the principal selected by `RUNEWARD_MCP_DEFAULT_TOKEN` or the
   credential saved by `runeward auth login`.
+- **HTTP hardening.** Responses set `nosniff`, frame denial, no-referrer, and a
+  restrictive Permissions Policy. API/MCP responses are no-store and use a
+  deny-all content policy; dashboard assets use the explicit dashboard CSP.
 - **OIDC authentication.** `RUNEWARD_OIDC_ISSUER` plus
   `RUNEWARD_OIDC_AUDIENCE` enables RS256 JWT verification from the provider's
   JWKS. Runeward maps only signed claims: `runeward_tenant`,
@@ -103,11 +109,13 @@ Please disclose privately; do not open a public issue.
 - **Terminal session recording.** With `RUNEWARD_RECORD_TERMINALS=1`, governed
   terminal sessions are captured as asciinema v2 casts under the state dir and
   can be replayed with `runeward replay` as part of the audit trail.
-- **Agent-session transcripts.** Cohort agent stdout/stderr is scrubbed before
-  delivery, appended to private (`0600`) JSONL files under the state directory,
-  and exposed only within the session's tenant. Unlike terminal casts, these
-  non-interactive transcripts are retained automatically (up to 64 MiB per
-  session) so live viewers can reconnect.
+- **Read-only Live chat.** Conversation turns are opt-in messages published by
+  an agent harness, not automatic capture of private agent UI text. Runeward
+  bounds each Citadel's in-memory history, applies declared-secret and
+  credential-pattern redaction, strips terminal controls, and streams through
+  an ownership-checked, same-origin WebSocket using a short-lived scoped ticket.
+  The observer socket accepts no application input. Live chat is operational
+  visibility; the signed Chronicle remains the authoritative action evidence.
 - **No host mounts.** `copy_from` copies into the sandbox; the host tree is never
   mounted. Request-time overrides are administrator-only. Set
   `RUNEWARD_COPY_FROM_ROOTS` (a colon-separated allowlist) to confine which host
@@ -126,7 +134,9 @@ Please disclose privately; do not open a public issue.
 - **Supply-chain assurance.** Releases are cosign-signed (keyless) with SBOMs,
   and CI runs SAST (gosec, CodeQL), dependency/vuln scanning (govulncheck, Trivy),
   per-image CVE scans, and a DAST baseline, with Dependabot keeping dependencies
-  current.
+  current. Gosec uploads the complete SARIF report for triage and blocks releases
+  on every unsuppressed HIGH-severity result; accepted architecture findings use
+  narrow, source-local `#nosec` comments with justification.
 
 ## In scope (please report)
 
@@ -147,8 +157,7 @@ Please disclose privately; do not open a public issue.
 - Secrets you place in Charters; runeward redacts *declared* secret values from
   the ledger and additionally masks common credential shapes (API keys, bearer
   tokens, PEM keys, `password=`/`token=` pairs) wherever they appear, but
-  pattern matching is best-effort and can't catch every custom format. The same
-  warning applies to persisted agent-session transcripts.
+  pattern matching is best-effort and can't catch every custom format.
 - Network exposure of `runeward serve`. It binds `127.0.0.1` and requires an API
   token before any non-loopback bind, but you still choose the token strength,
   terminate TLS appropriately, and configure static RBAC or OIDC rather than a

@@ -15,6 +15,8 @@ runeward --config-dir examples print <charter>
 ## Anatomy
 
 ```toml
+capabilities = ["python", "node"] # optional tools actually present in the image
+
 [host]
 type      = "container"          # or "k8s"
 image     = "ghcr.io/runewardd/runeward-agent:latest"
@@ -24,6 +26,7 @@ copy_from = "~/Documents/my-project"   # optional: seed /workspace at create
 # read_only  = true              # read-only rootfs (writable /tmp + workspace)
 # seccomp    = "/etc/seccomp/strict.json"   # Docker --security-opt seccomp / k8s Localhost profile
 # apparmor   = "runtime/default"            # AppArmor profile
+# command    = ["/bin/sh", "-c", "sleep infinity"] # override image entrypoint/keepalive
 
 [network]
 default = "deny"                 # deny-by-default egress
@@ -61,8 +64,9 @@ max_cost_usd    = 25.0           # cap reported spend in USD (0 = unlimited)
 
 | Section | Purpose |
 | --- | --- |
-| `[host]` | Backend (`container` or `k8s`), image, workdir, optional `copy_from` to seed the workspace, optional `runtime_class` to select a hardened runtime like `gvisor`/`kata` for VM-grade isolation (maps to `--runtime` on Docker and `runtimeClassName` on Kubernetes), optional `read_only = true` to mount the root filesystem read-only (writable `/tmp` + workspace), and optional `seccomp` / `apparmor` to pin a seccomp/AppArmor profile (Docker `--security-opt`; k8s Localhost profiles — k8s pods default to the runtime's seccomp profile). |
-| `[network]` + `[[network.rule]]` | Egress policy. `default = "deny"` plus one `[[network.rule]]` per `verdict`/`hostname` (or `cidr`) entry; hostnames support `*.wildcard` and comma-separated lists. |
+| `capabilities` | Optional top-level list of tools actually present in the image: `python`, `node`, and/or `browser`. Creation verifies declared tools, the API rejects unavailable code/browser actions, and the dashboard hides unavailable controls. Official Runeward and obvious language images are inferred; older custom Charters are probed once after creation for backward compatibility. |
+| `[host]` | Backend (`container` or `k8s`), image, workdir, optional `copy_from` to seed the workspace, optional `command` to override an image entrypoint and keep the Citadel alive, optional `runtime_class` to select a hardened runtime like `gvisor`/`kata` for VM-grade isolation (maps to `--runtime` on Docker and `runtimeClassName` on Kubernetes), optional `read_only = true` to mount the root filesystem read-only (writable `/tmp` + workspace), and optional `seccomp` / `apparmor` to pin a seccomp/AppArmor profile (Docker `--security-opt`; k8s Localhost profiles — k8s pods default to the runtime's seccomp profile). |
+| `[network]` + `[[network.rule]]` | Egress policy. `default = "deny"` plus one `[[network.rule]]` per `verdict`/`hostname` (or `cidr`) entry; hostnames support `*.wildcard`. Use a separate rule for each hostname. |
 | `[[env]]` | Environment/secret injection: literal `value`, from a `file`, or an `op` scheme reference — `env://NAME` (host env var), `vault://<mount>/<path>#<field>` (Vault KV v2 via `VAULT_ADDR`/`VAULT_TOKEN`), `aws://<secret-id>[#json-key]` (AWS Secrets Manager), `gcp://<name>[#version]` (GCP Secret Manager), or `op://…` (1Password, not built in). Resolution is fail-closed; known secrets are redacted from the ledger. |
 | `[[file]]` | Files written into the Citadel at create. |
 | `[[policy]]` / `[[cel]]` / `[rego]` | Per-action verdicts. Choose the engine with top-level `policy_engine`. |
@@ -106,7 +110,25 @@ The `op` key takes a scheme reference resolved fresh at Citadel creation:
 Secret Manager — `GOOGLE_CLOUD_PROJECT` plus `GOOGLE_OAUTH_ACCESS_TOKEN` or the
 GCE metadata server), or `op://…` (1Password, not built in — always fails
 closed). Resolution is fail-closed: an unresolvable reference aborts Citadel
-creation rather than starting without the secret.
+creation rather than starting without the secret. `runeward doctor` and
+`GET /v1/readiness?profile=...` perform the same prerequisite check without
+returning secret values.
+
+## Image entrypoints and startup liveness
+
+Runeward normally overrides the image entrypoint with `sleep infinity`. For an
+application image whose own entrypoint interprets those words (for example a
+headless-Chrome image), declare the executable and arguments explicitly:
+
+```toml
+[host]
+image = "zenika/alpine-chrome:124"
+command = ["/bin/sh", "-c", "sleep infinity"]
+```
+
+Docker/Podman Citadels must stay running across post-start liveness checks; an
+image that exits during startup now fails creation instead of appearing as
+`running`. Kubernetes uses the same Charter command in the Pod spec.
 
 ## Seeding and exporting workspaces
 

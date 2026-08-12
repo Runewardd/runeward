@@ -62,6 +62,7 @@ func SpecFromProfile(p *profile.Profile, env map[string]string) Spec {
 		Image:        p.Host.Image,
 		Workdir:      p.Host.Workdir,
 		User:         p.Host.User,
+		Command:      p.Host.Command,
 		Env:          env,
 		Files:        p.Files,
 		SeedDir:      expandHome(p.Host.CopyFrom),

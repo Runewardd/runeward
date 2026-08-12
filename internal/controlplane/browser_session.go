@@ -46,6 +46,9 @@ func (m *Manager) BrowserOpen(ctx context.Context, id string) (sessionID string,
 	if err != nil {
 		return "", nil, err
 	}
+	if !hasCapability(sess.Profile, "browser") {
+		return "", nil, badInputError("browser is not declared by this Charter; add capabilities = [\"browser\"] and use an image with the Runeward browser driver")
+	}
 
 	sid := randID()
 	socket := fmt.Sprintf("/tmp/rw-browser-%s.sock", sid)

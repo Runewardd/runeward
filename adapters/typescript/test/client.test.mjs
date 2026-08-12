@@ -64,3 +64,22 @@ test("run lineage and Cohort completion use the v1 endpoints", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("conversation turns publish to the Citadel live feed", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url, init });
+    return new Response(JSON.stringify({ id: 1, role: "assistant" }), { status: 201 });
+  };
+  try {
+    const client = new RunewardClient();
+    await client.publishConversation("cit/1", "assistant", "Working on it", "run-1");
+    assert.equal(requests[0].url, "http://localhost:8080/v1/citadels/cit%2F1/conversation");
+    assert.deepEqual(JSON.parse(requests[0].init.body), {
+      role: "assistant", content: "Working on it", run_id: "run-1",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

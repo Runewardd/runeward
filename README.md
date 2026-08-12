@@ -33,6 +33,9 @@ The command creates `.runeward/quickstart.toml`, checks the policy, runtime, ima
 runs an allowed command, proves a destructive command is denied before execution, and verifies the
 signed audit trail. It never overwrites an existing policy unless `--force` is passed.
 
+`doctor` and dashboard readiness also resolve required secret sources. A Charter that references an
+unset `env://` value is not presented as launch-ready.
+
 ```bash
 runeward doctor quickstart                     # explain setup problems safely
 runeward --config-dir .runeward serve          # dashboard + governed REST API
@@ -86,10 +89,40 @@ Choose the package that matches how you use Runeward:
 | [PyPI](https://pypi.org/project/runeward/) | Python client and agent-framework adapters | `python -m pip install runeward` |
 | [npm](https://www.npmjs.com/package/@runeward/sdk) | TypeScript client and agent-framework tools | `npm install @runeward/sdk` |
 
-Homebrew installs the CLI/runtime; local Citadels also require Docker, OrbStack,
-or Podman. The Python and TypeScript packages connect integrations to a running
-Runeward API. See [Install](docs/install.md) for verified installers and source
-builds, and [Adapters](docs/adapters.md) for framework-specific packages.
+For normal local use, install the CLI with Homebrew. For an agent integration, install the SDK for
+its language as well. The pip and npm packages connect to a running Runeward API; they do not
+replace the CLI/runtime.
+
+### Homebrew — CLI
+
+Local sandboxes require a running Docker, OrbStack, or Podman engine.
+
+```bash
+brew install Runewardd/tap/runeward
+runeward version
+runeward quickstart
+```
+
+### pip — Python SDK
+
+Requires Python 3.9 or newer. The base client has no third-party runtime dependencies.
+
+```bash
+python -m pip install runeward
+python -c "import runeward; print(runeward.__version__)"
+```
+
+### npm — TypeScript SDK
+
+Requires Node.js 18 or newer.
+
+```bash
+npm install @runeward/sdk
+npm ls @runeward/sdk
+```
+
+See [Adapters](docs/adapters.md) for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands,
+Vercel AI SDK, and LangChain.js installation options.
 
 ### Other CLI installation options
 
@@ -132,12 +165,15 @@ Or place an agent CLI inside a sandbox and run one or many governed workers:
 runeward cohort --agent claude --model sonnet build "Build a tested API"
 ```
 
-Cohort agents run as durable observable sessions: stdout/stderr streams live,
-redacted transcripts survive completion, and dashboard or API clients can
-reconnect from the last event sequence they received.
-
 Adapters are included for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands, Vercel AI SDK,
 and LangChain.js. See [Adapters](docs/adapters.md) and [agent groups](docs/fleets.md).
+
+The dashboard also has a read-only **Live chat** TTY for each Citadel. Agent harnesses publish
+`user`, `assistant`, `tool`, and `system` turns with `runeward_publish_conversation` (or the REST,
+Python, and TypeScript equivalents), and authorized teammates can follow the redacted conversation
+without terminal input access. Runeward cannot infer private UI chat text that the agent client does
+not publish; wire the publish call into the harness turn callback. The publisher must connect to the
+same `runeward serve` control plane as the dashboard (through `/mcp`, REST, or an SDK).
 
 ## Harness agents and subagents
 
@@ -175,9 +211,11 @@ actions, produces exact matches, and requires a human to review and broaden them
   same authorization model, and embedded HTTP MCP shares the REST ownership checks.
 - Browser automation is experimental and disabled by default. Enable it only in a trusted deployment
   with `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` after reviewing the [security model](docs/security-model.md).
+  Browser-capable Charters declare `capabilities = ["browser"]`; the dashboard then exposes governed
+  rendered-text and screenshot actions and their policy/egress results.
 - An optional browser IDE (code-server in-cell + ticketed reverse proxy) is similarly experimental:
-  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, and the `ide` or `ide-agents`
-  target in `Dockerfile.ide`; examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
+  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, `Dockerfile.ide` targets
+  `ide` / `ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
   Limits: not per-keystroke policy; no Cursor/Claude Desktop/Codex GUIs in-cell; no
   first-class GitHub Copilot on code-server. See [Browser IDE](docs/browser-ide.md) and the
   [security model](docs/security-model.md).
@@ -187,8 +225,7 @@ actions, produces exact matches, and requires a human to review and broaden them
   recording, but its individual commands are not intercepted for approval. Use governed tool calls
   when command-level policy and signed verdicts are required.
 - Report vulnerabilities privately using [SECURITY.md](SECURITY.md). Runeward remains pre-1.0;
-  release gates and residual limitations are tracked in
-  [release readiness](docs/release-readiness.md) and [ROADMAP.md](ROADMAP.md).
+  residual limitations are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 

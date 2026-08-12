@@ -294,6 +294,21 @@ class RunewardClient:
     def report_usage(self, sandbox: str, tokens: int, cost_usd: float) -> Dict[str, Any]:
         return self._request("POST", f"/v1/citadels/{self._segment(sandbox)}/usage", {"tokens": tokens, "cost_usd": cost_usd})
 
+    def publish_conversation(self, sandbox: str, role: str, content: str,
+                             run_id: str = "") -> Dict[str, Any]:
+        """Publish one turn to the dashboard's read-only Live chat TTY."""
+        return self._request(
+            "POST", f"/v1/citadels/{self._segment(sandbox)}/conversation",
+            {"role": role, "content": content, "run_id": run_id},
+        )
+
+    def list_conversation(self, sandbox: str, *, after_id: int = 0,
+                          limit: int = 500) -> List[Dict[str, Any]]:
+        query = urllib.parse.urlencode({"after_id": after_id, "limit": limit})
+        return self._request(
+            "GET", f"/v1/citadels/{self._segment(sandbox)}/conversation?{query}"
+        ).get("messages", [])
+
     def perimeter(self, sandbox: str) -> List[Dict[str, Any]]:
         return self._request("GET", f"/v1/citadels/{self._segment(sandbox)}/perimeter").get("decisions", [])
 

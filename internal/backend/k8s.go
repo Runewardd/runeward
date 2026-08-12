@@ -83,6 +83,10 @@ func (k *K8s) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	if image == "" {
 		image = "debian:stable-slim"
 	}
+	command := spec.Command
+	if len(command) == 0 {
+		command = []string{"sleep", "infinity"}
+	}
 
 	labels := map[string]string{
 		labelKey(labelManaged): "true",
@@ -255,7 +259,7 @@ func (k *K8s) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 			Containers: []corev1.Container{{
 				Name:            k8sContainer,
 				Image:           image,
-				Command:         []string{"sleep", "infinity"},
+				Command:         command,
 				WorkingDir:      workdir,
 				Env:             env,
 				Resources:       resources,

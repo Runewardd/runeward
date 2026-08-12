@@ -7,12 +7,15 @@
 #   docker pull zenika/alpine-chrome
 #   runeward --config-dir examples serve
 #   POST /v1/sandboxes {"profile":"browser"}
-#   POST /v1/sandboxes/{id}/browser {"url":"https://example.com","mode":"text"}
+#   POST /v1/citadels/{id}/browser {"url":"https://example.com","mode":"text"}
+
+capabilities = ["browser"]
 
 [host]
 type    = "container"
 image   = "zenika/alpine-chrome:124"
 workdir = "/tmp"
+command = ["/bin/sh", "-c", "sleep infinity"]
 # zenika/alpine-chrome runs as user "chrome"; --no-sandbox is already applied.
 
 [network]

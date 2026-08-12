@@ -81,9 +81,10 @@ type ticketScope struct {
 }
 
 const (
-	ticketKindTerminal = "terminal"
-	ticketKindDownload = "download"
-	ticketKindIDE      = "ide"
+	ticketKindTerminal     = "terminal"
+	ticketKindConversation = "conversation"
+	ticketKindDownload     = "download"
+	ticketKindIDE          = "ide"
 )
 
 // principalFrom returns the RBAC principal attached to the request, or nil when
@@ -156,7 +157,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/citadels/{id}", s.handleKillSandbox)
 
 	mux.HandleFunc("POST /v1/citadels/{id}/shell/exec", s.handleShell)
-	mux.HandleFunc("POST /v1/citadels/{id}/agent-sessions", s.handleStartAgentSession)
 	mux.HandleFunc("POST /v1/citadels/{id}/browser", s.handleBrowser)
 	mux.HandleFunc("POST /v1/citadels/{id}/browser/sessions", s.handleBrowserOpen)
 	mux.HandleFunc("POST /v1/citadels/{id}/browser/sessions/{sid}/act", s.handleBrowserAct)
@@ -169,6 +169,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/citadels/{id}/file/search", s.handleFileSearch)
 	mux.HandleFunc("POST /v1/citadels/{id}/usage", s.handleReportUsage)
 	mux.HandleFunc("GET /v1/citadels/{id}/perimeter", s.handleEgressLog)
+	mux.HandleFunc("GET /v1/citadels/{id}/conversation", s.handleConversationHistory)
+	mux.HandleFunc("POST /v1/citadels/{id}/conversation", s.handleConversationPublish)
+	mux.HandleFunc("GET /v1/citadels/{id}/conversation/stream", s.handleConversationStream)
+	mux.HandleFunc("POST /v1/citadels/{id}/agent-sessions", s.handleStartAgentSession)
 
 	mux.HandleFunc("POST /v1/cohorts", s.handleCreateFleet)
 	mux.HandleFunc("GET /v1/cohorts", s.handleListFleets)
@@ -227,7 +231,32 @@ func (s *Server) Handler() http.Handler {
 	if lim := newRateLimiter(); lim != nil {
 		h = lim.middleware(h)
 	}
+	h = securityHeaders(h)
 	return logRequests(s.logger, recoverPanic(s.logger, h))
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isIDE := isIDEPath(r.URL.Path)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		if !isIDE {
+			w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			w.Header().Set("X-Frame-Options", "DENY")
+		}
+		if isIDE {
+			// The authenticated reverse proxy must not inherit the API-only
+			// default-src 'none' policy: code-server needs its own scripts,
+			// styles, workers, and WebSocket connection. Preserve upstream CSP.
+			w.Header().Set("Cache-Control", "no-store")
+		} else if strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/") {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+			w.Header().Set("Cache-Control", "no-store")
+		} else {
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; connect-src 'self' ws: wss:; base-uri 'self'; object-src 'none'; frame-ancestors 'none'")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // authenticate wraps next with the active authentication scheme: multi-principal
@@ -257,7 +286,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					return
 				}
 				if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
-					s.attachIDESession(w, sandboxID, tp)
+					s.attachIDESession(w, r, sandboxID, tp)
 				}
 				next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), tp)))
 				return
@@ -284,7 +313,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 			if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
-				s.attachIDESession(w, sandboxID, tp)
+				s.attachIDESession(w, r, sandboxID, tp)
 			}
 			next.ServeHTTP(w, r)
 			return
@@ -562,7 +591,24 @@ func terminalSandboxID(path string) (string, bool) {
 	return id, id != ""
 }
 
+func conversationStreamSandboxID(path string) (string, bool) {
+	const prefix = "/v1/citadels/"
+	const suffix = "/conversation/stream"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	id := strings.TrimSuffix(rest, suffix)
+	if id == "" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
+}
+
 func (s *Server) consumeRequestTicket(r *http.Request) (*authz.Principal, bool, bool) {
+	if sandboxID, ok := conversationStreamSandboxID(r.URL.Path); ok {
+		return s.consumeTicket(r, ticketScope{Kind: ticketKindConversation, SandboxID: sandboxID})
+	}
 	if sandboxID, ok := terminalSandboxID(r.URL.Path); ok {
 		return s.consumeTicket(r, ticketScope{Kind: ticketKindTerminal, SandboxID: sandboxID})
 	}
@@ -594,7 +640,7 @@ func (s *Server) consumeTicket(r *http.Request, want ticketScope) (*authz.Princi
 		return nil, false, true
 	}
 	switch want.Kind {
-	case ticketKindTerminal, ticketKindIDE:
+	case ticketKindTerminal, ticketKindConversation, ticketKindIDE:
 		if t.Scope.SandboxID == "" || t.Scope.SandboxID != want.SandboxID {
 			return nil, false, true
 		}
@@ -625,6 +671,10 @@ func (s *Server) issueTicket(scope ticketScope, p *authz.Principal, ttl time.Dur
 	case ticketKindTerminal:
 		if strings.TrimSpace(scope.SandboxID) == "" {
 			return "", time.Time{}, errors.New("terminal ticket requires sandbox scope")
+		}
+	case ticketKindConversation:
+		if strings.TrimSpace(scope.SandboxID) == "" {
+			return "", time.Time{}, errors.New("conversation ticket requires sandbox scope")
 		}
 	case ticketKindIDE:
 		if strings.TrimSpace(scope.SandboxID) == "" {

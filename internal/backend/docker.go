@@ -216,7 +216,15 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 		image = "debian:stable-slim"
 	}
 
-	args = append(args, image, "sleep", "infinity")
+	command := spec.Command
+	if len(command) == 0 {
+		command = []string{"sleep", "infinity"}
+	}
+	// Image entrypoints receive positional command arguments. Override the
+	// entrypoint so profiles can select the actual keepalive executable; this
+	// is required for application images such as headless Chrome.
+	args = append(args, "--entrypoint", command[0], image)
+	args = append(args, command[1:]...)
 
 	if err := d.run(ctx, args...); err != nil {
 		hp.stop()
@@ -228,6 +236,22 @@ func (d *Docker) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 			return nil, fmt.Errorf("run container with runtime %q: is it registered with the docker engine? (see docs/security-model.md): %w", spec.RuntimeClass, err)
 		}
 		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	// A detached run can succeed even when its process exits immediately.
+	// Verify liveness before exposing the sandbox as running.
+	if err := d.waitRunning(ctx, name); err != nil {
+		logs, _ := d.output(context.Background(), "logs", "--tail", "50", name)
+		_ = d.run(context.Background(), "rm", "-f", name)
+		hp.stop()
+		if egressCtrName != "" {
+			_ = d.run(context.Background(), "rm", "-f", egressCtrName)
+		}
+		_ = d.run(context.Background(), "volume", "rm", "-f", vol)
+		if detail := strings.TrimSpace(logs); detail != "" {
+			return nil, fmt.Errorf("container exited during startup: %w: %s", err, detail)
+		}
+		return nil, fmt.Errorf("container exited during startup: %w", err)
 	}
 
 	if hp != nil {
@@ -593,11 +617,6 @@ func (d *Docker) startEgressContainer(ctx context.Context, id string, net profil
 		"--name", name,
 		"--label", kv(labelManaged, "true"),
 		"--label", kv(labelID, id),
-		// The image defaults to USER 10001 for its Kubernetes sidecar mode.
-		// Docker's combined mode must start as root so it can install the
-		// redirect rules; runeward-egress immediately drops to StrictProxyUID
-		// before it accepts traffic.
-		"--user", "0:0",
 		"--cap-add", "NET_ADMIN",
 		"--cap-add", "NET_RAW",
 		"-e", "RUNEWARD_EGRESS_POLICY=" + string(polJSON),
@@ -629,26 +648,18 @@ func (d *Docker) startEgressContainer(ctx context.Context, id string, net profil
 func (d *Docker) waitEgressReady(ctx context.Context, name string) error {
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		logs, _ := d.combinedOutput(ctx, "logs", name)
+		logs, _ := d.output(ctx, "logs", name)
 		if strings.Contains(logs, "transparent proxy listening") {
 			return nil
 		}
 		if st, err := d.output(ctx, "inspect", "-f", "{{.State.Running}}", name); err == nil {
 			if strings.TrimSpace(st) == "false" {
-				state, _ := d.output(ctx, "inspect", "-f",
-					"status={{.State.Status}} exit_code={{.State.ExitCode}} error={{.State.Error}}", name)
-				detail := strings.TrimSpace(logs)
-				if detail == "" {
-					detail = "no container logs"
-				}
-				return fmt.Errorf("egress sidecar exited before it was ready (%s): %s",
-					strings.TrimSpace(state), detail)
+				return fmt.Errorf("egress sidecar exited before it was ready: %s", strings.TrimSpace(logs))
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	logs, _ := d.combinedOutput(ctx, "logs", name)
-	return fmt.Errorf("timed out waiting for transparent egress proxy to become ready: %s", strings.TrimSpace(logs))
+	return fmt.Errorf("timed out waiting for transparent egress proxy to become ready")
 }
 
 // ContainerIP returns the Docker-network IP of the sandbox (or its egress
@@ -720,7 +731,32 @@ func (d *Docker) run(ctx context.Context, args ...string) error {
 	return err
 }
 
+func (d *Docker) waitRunning(ctx context.Context, name string) error {
+	var last string
+	// Require the process to remain alive across several observations. This
+	// catches entrypoints that start successfully and then fail immediately.
+	for attempt := 0; attempt < 3; attempt++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+		out, err := d.output(ctx, "inspect", "--format", "{{.State.Running}}", name)
+		if err != nil {
+			return err
+		}
+		last = strings.TrimSpace(out)
+		if last == "true" {
+			continue
+		}
+		return fmt.Errorf("runtime reported running=%q", last)
+	}
+	return nil
+}
+
 func (d *Docker) output(ctx context.Context, args ...string) (string, error) {
+	// #nosec G702 -- d.bin is resolved by exec.LookPath during backend setup and
+	// args are passed directly to exec without shell interpretation.
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -729,18 +765,6 @@ func (d *Docker) output(ctx context.Context, args ...string) (string, error) {
 		return stdout.String(), fmt.Errorf("%s %s: %w: %s", d.Name(), args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
-}
-
-// combinedOutput returns both stdout and stderr. Container processes commonly
-// log to stderr, so readiness checks must not use output, which intentionally
-// keeps stderr out of machine-readable Docker command results.
-func (d *Docker) combinedOutput(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, d.bin, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("%s %s: %w: %s", d.Name(), args[0], err, strings.TrimSpace(string(out)))
-	}
-	return string(out), nil
 }
 
 func (d *Docker) hostGatewayName() string {

@@ -1,5 +1,21 @@
 # runeward — end-to-end local testing
 
+## Automated authenticated release gate
+
+CI runs `scripts/e2e-rbac.sh` against a real Docker-backed Runeward server. It
+exercises six roles, Charter scoping, shared-tenant and cross-tenant access,
+missing-secret readiness, governed execution, capability errors, authoritative
+Cohort ownership, and task completion. Run the same gate locally with:
+
+```bash
+go build -o runeward-e2e ./cmd/runeward
+RUNEWARD_E2E_BINARY="$PWD/runeward-e2e" ./scripts/e2e-rbac.sh
+```
+
+The script creates only temporary credentials/state and removes its Citadel and
+Cohort. The manual provider/Kubernetes/browser sections below remain required
+where CI does not have those external services.
+
 A hands-on walkthrough for exercising the whole stack on your laptop: the
 **Docker** and **Kubernetes** backends, deny-by-default and **strict (L3)**
 egress, the governed REST API, snapshots, multi-agent Cohorts, and wiring the
@@ -28,10 +44,6 @@ and **build-time supply-chain hardening** (32). Sections 1–8 are the base stac
 Everything below assumes macOS + [OrbStack](https://orbstack.dev) (which gives
 you both Docker and a one-click Kubernetes cluster), but any Docker + kubectl
 setup works.
-
-For a focused, recordable scenario that launches a real agent, follows its
-durable output, and verifies failed host/socket/rootfs/egress escape probes, use
-the [live agent-session and escape-denial demo](agent-session-escape-demo.md).
 
 ---
 
@@ -76,7 +88,14 @@ go build -o bin/runeward-egress ./cmd/runeward-egress   # only needed for k8s eg
 | `RUNEWARD_K8S_NAMESPACE` | namespace for sandbox pods                        | `runeward`                  |
 | `RUNEWARD_EGRESS_IMAGE`  | egress sidecar/init image ref                     | `runeward-egress:latest`    |
 | `RUNEWARD_API_TOKEN`     | bearer token for `serve --token` and REST clients | (unset; open local serve)   |
+| `GITHUB_TOKEN`           | optional GitHub credential explicitly imported by a Charter | unset |
+| `OPENAI_BASE_URL`        | optional OpenAI-compatible gateway explicitly imported by a Charter | provider default |
 
+
+`gh auth login` authenticates the host CLI but does not automatically expose a
+GitHub token to a Citadel. Use `op = "env://GITHUB_TOKEN"` only in Charters that
+need GitHub operations. An `OPENAI_BASE_URL` override is also opt-in and its
+hostname must be allowed by the Charter's egress policy.
 
 > The **backend is chosen per profile** by `[host].type` (`container` →
 > Docker, `kubernetes` → K8s). There is no global backend switch — you pick by
@@ -461,6 +480,20 @@ Point runeward at your cluster (OrbStack exposes it as context
 `orbstack`). Create the namespace and, for **strict egress**, allow the
 privileged capabilities the iptables init container needs:
 
+For a disposable kind release gate covering two workers, shared-tenant actors,
+cross-tenant isolation, governed exec, signed task leases, replay rejection,
+and cleanup, run:
+
+```bash
+RUNEWARD_KUBE_CONTEXT=kind-logjedi ./scripts/e2e-kind.sh
+```
+
+The dashboard exercises the same backend. Start `runeward serve` with
+`RUNEWARD_KUBE_CONTEXT` set, open **Agent groups**, and select `fleet-k8s`.
+The selected Charter's readiness result appears beside the picker and disables
+**New** when the cluster is unavailable, so a Docker readiness result cannot be
+mistaken for Kubernetes readiness.
+
 ```bash
 export RUNEWARD_KUBE_CONTEXT=orbstack        # or: kind-kind, minikube, ...
 kubectl create namespace runeward
@@ -754,6 +787,7 @@ clients) or **streamable HTTP** (mounted at `/mcp` on `serve`, or standalone via
 - Citadels: `runeward_create_citadel`, `runeward_shell`, `runeward_python`,
 `runeward_node`, `runeward_browser`, `runeward_read_file`, `runeward_write_file`,
 `runeward_list_files`, `runeward_search_files`, `runeward_list_conclave`,
+`runeward_publish_conversation`, `runeward_list_conversation`,
 `runeward_kill_citadel`.
 - Cohorts: `runeward_create_cohort`, `runeward_list_cohorts`, `runeward_list_tasks`,
 `runeward_add_task`, `runeward_claim_task`, `runeward_complete_task`,
@@ -1602,7 +1636,7 @@ embeds code-server inside the Citadel and reverse-proxies it from `serve`. Keyst
 **not** per-command policy (same caveat as the interactive terminal).
 
 Cursor Desktop / Claude Desktop / Codex do **not** ship a self-hosted browser GUI. To test
-those CLIs through the same Open-IDE spin-off, build the `ide-agents` target and use
+those CLIs through the same Open-IDE spin-off, build the `ide-agents` target from `deploy/Dockerfile.ide` and use
 `ide-claude` / `ide-codex` / `ide-cursor` Charters; run `claude`, `codex`, or `agent` in the
 IDE terminal. GitHub Copilot is not first-class on code-server (Open VSX marketplace).
 
@@ -1614,7 +1648,8 @@ export RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
 
 # Or IDE + coding CLIs:
 docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
-# Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each)
+# Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each;
+# write CODEX_API_KEY to ~/.runeward-openai.key for ide-codex)
 
 CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"ide-demo"}' | jq -r .id)
 TICKET=$(curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"ide","sandbox_id":"'$CID'"}' | jq -r .ticket)
@@ -1751,7 +1786,8 @@ helm template runeward deploy/helm/runeward | grep -E 'kind: (ServiceAccount|Clu
 helm template runeward deploy/helm/runeward | grep -c 'ValidatingWebhookConfiguration'   # => 1 (enabled by default)
 
 # install.sh verifies the cosign signature over checksums.txt (bypass only via an
-# explicit RUNEWARD_INSECURE_SKIP_* env); CI scanners (gosec/Trivy/CodeQL) now gate.
+# explicit RUNEWARD_INSECURE_SKIP_* env); CI uploads complete scanner reports,
+# while gosec gates HIGH and Trivy gates HIGH/CRITICAL release findings.
 grep -n 'cosign verify-blob' install.sh
 ```
 

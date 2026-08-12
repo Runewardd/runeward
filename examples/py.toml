@@ -1,4 +1,12 @@
+capabilities = ["python"]
+policy_default = "deny"
+
 [host]
 type="container"
 image="python:3.12-slim"
 workdir="/workspace"
+
+[[policy]]
+tool = "python"
+match = "*"
+verdict = "allow"

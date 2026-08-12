@@ -219,7 +219,7 @@ func (s *Server) issueIDETicket(sandboxID string, p *authz.Principal, ttl time.D
 	return s.issueTicket(ticketScope{Kind: ticketKindIDE, SandboxID: sandboxID}, p, ttl)
 }
 
-func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *authz.Principal) {
+func (s *Server) attachIDESession(w http.ResponseWriter, r *http.Request, sandboxID string, p *authz.Principal) {
 	var raw [16]byte
 	if _, err := crand.Read(raw[:]); err != nil {
 		return
@@ -238,19 +238,50 @@ func (s *Server) attachIDESession(w http.ResponseWriter, sandboxID string, p *au
 	}
 	s.ideSessions.mu.Unlock()
 
-	http.SetCookie(w, &http.Cookie{
+	// #nosec G124 -- Secure is relaxed only after dual loopback validation below.
+	cookie := &http.Cookie{
 		Name:     ideCookieName,
 		Value:    sid,
 		Path:     "/v1/citadels/" + sandboxID + "/ide",
 		HttpOnly: true,
-		// IDE sessions grant browser access to the sandbox, so never permit the
-		// cookie to travel over a plaintext connection. Loopback development
-		// origins are treated as potentially trustworthy by modern browsers;
-		// remote serving already requires TLS or an explicitly trusted proxy.
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		Expires:  expires,
-	})
+	}
+	if !ideCookieSecure(r) {
+		// Loopback HTTP is the supported local-development exception. Some
+		// browsers reject Secure cookies from http://127.0.0.1, which leaves the
+		// ticket-authenticated HTML unable to load its IDE assets or WebSocket.
+		// ideCookieSecure requires both the request host and the connected peer
+		// to be loopback, so a spoofed Host header cannot enable this exception.
+		cookie.Secure = false
+	}
+	// The only non-Secure path is the direct, dual-validated loopback exception
+	// above; every deployable HTTPS or non-loopback request retains Secure.
+	http.SetCookie(w, cookie)
+}
+
+func ideCookieSecure(r *http.Request) bool {
+	if r == nil {
+		return true
+	}
+	if r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+		return true
+	}
+	return !(isLoopbackAddress(r.Host) && isLoopbackAddress(r.RemoteAddr))
+}
+
+func isLoopbackAddress(address string) bool {
+	host := strings.TrimSpace(address)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) ideSessionFromCookie(r *http.Request, sandboxID string) (*authz.Principal, bool) {
