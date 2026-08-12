@@ -467,7 +467,12 @@ func (m *Manager) persistAgentEventLocked(id string, ev AgentEvent) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, id+".jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	f, err := root.OpenFile(id+".jsonl", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -497,8 +502,16 @@ func (m *Manager) loadAgentEventsLocked(id string) ([]AgentEvent, error) {
 }
 
 func (m *Manager) loadAllAgentEventsLocked(id string) ([]AgentEvent, error) {
-	path := filepath.Join(m.stateDir, agentSessionDirName, id+".jsonl")
-	f, err := os.Open(path)
+	dir := filepath.Join(m.stateDir, agentSessionDirName)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer root.Close()
+	f, err := root.Open(id + ".jsonl")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
