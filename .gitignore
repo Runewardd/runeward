@@ -19,6 +19,10 @@ __pycache__/
 # Local scratch / runtime state
 /.tmp/
 /.runeward-fleet
+/.runeward-release-*/
+/.runeward-test-artifacts/
+/shot.png
+/session-shot.png
 
 # Ledger / signing keys / runtime state (should only live under $RUNEWARD_STATE_DIR)
 *.key
@@ -28,8 +32,10 @@ fleets.json
 .env
 .env.*
 
-# Editor/local config with machine-specific absolute paths
-/.cursor/
+# Editor/local config with machine-specific absolute paths. Keep the portable
+# project MCP declaration so Cursor receives the same governed tool surface.
+/.cursor/*
+!/.cursor/mcp.json
 
 # Release build outputs (produced in CI)
 /dist-bin/

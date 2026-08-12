@@ -16,29 +16,35 @@ for `enter <charter>`.
 | Variable | Purpose |
 | --- | --- |
 | `RUNEWARD_CONFIG_DIR` | Default Charter directory. |
-| `RUNEWARD_STATE_DIR` | Where the ledger, keys, terminal recordings, and Cohort state live. **Use a distinct value per running instance.** |
+| `RUNEWARD_STATE_DIR` | Where the ledger, keys, agent transcripts, terminal recordings, and Cohort state live. **Use a distinct value per running instance.** |
 | `RUNEWARD_API_TOKEN` | Bearer token required on every control-plane request (see `--token`). |
 | `RUNEWARD_AUTHZ_FILE` | JSON file of named RBAC principals (per-token profile/approval scopes); upgrades the single shared token to multi-principal auth. |
-| `RUNEWARD_RATE_LIMIT` | Requests/sec per client IP; unset disables rate limiting. |
+| `RUNEWARD_OIDC_ISSUER` / `RUNEWARD_OIDC_AUDIENCE` | Verify OIDC bearer JWTs and map signed Runeward tenant/role claims. |
+| `RUNEWARD_OIDC_JWKS_URL` | Optional explicit JWKS endpoint; normally discovered from the issuer. HTTPS required except on loopback. |
+| `RUNEWARD_CREDENTIALS_FILE` | Optional path for the private client credential written by `runeward auth login`. |
+| `RUNEWARD_RATE_LIMIT` | Requests/sec per client IP; defaults to `50`. Set `0`/`off` only for trusted benchmarks. |
 | `RUNEWARD_RECORD_TERMINALS` | `1` records governed terminal sessions as asciinema casts under the state dir. |
 | `RUNEWARD_AUDIT_WEBHOOK_URL` / `RUNEWARD_AUDIT_FILE` | Stream Chronicle events to a webhook and/or file sink in real time. |
 | `RUNEWARD_COPY_FROM_ROOTS` | Colon-separated allowlist restricting `copy_from`/seed source directories. |
+| `RUNEWARD_MCP_DEFAULT_TOKEN` | Selects the principal for a stdio MCP process; falls back to `runeward auth login`. |
 | `RUNEWARD_K8S_NAMESPACE` | Namespace for k8s Citadel pods (default `runeward`). |
 | `RUNEWARD_K8S_PSA_ENFORCE` | Pod Security Admission enforce level for the managed namespace (`privileged`\|`baseline`\|`restricted`; default `privileged`). |
 | `RUNEWARD_K8S_NETWORK_POLICY` | Truthy creates a default-deny (DNS-only egress) NetworkPolicy in the managed namespace. |
 | `RUNEWARD_DNS_RESOLVERS` | Comma-separated resolver IPs to confine DNS to under strict egress. |
 | `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER` | Set to `1` to enable the experimental browser surface in a trusted deployment; disabled by default. |
+| `RUNEWARD_ENABLE_EXPERIMENTAL_IDE` | Set to `1` to enable the optional in-Citadel browser IDE (code-server) + ticketed reverse proxy; disabled by default. See [Browser IDE](browser-ide.md). |
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
+| `runeward auth login\|status\|logout` | Save or remove a client credential using OIDC device flow or `--token-stdin`. |
 | `runeward init [project-dir]` | Create `.runeward/quickstart.toml` without overwriting an existing policy. |
 | `runeward quickstart [project-dir]` | Prove allow, pre-execution denial, and signed audit. |
 | `runeward doctor [charter] [--json]` | Check policy, runtime, image, and state readiness. |
 | `runeward enter <charter> [-- cmd...]` | Create a Citadel and open a shell, or run a one-shot command. |
 | `runeward serve [--token ... --tls-cert ... --tls-key ...]` | Start the control plane: REST API + web dashboard (default `127.0.0.1:8080`). |
-| `runeward mcp` | Run the MCP server exposing governed tools to an IDE/agent. |
+| `runeward mcp [--http --tls-cert ... --tls-key ...]` | Run stdio or streamable-HTTP MCP exposing governed tools to an IDE/agent. |
 | `runeward list` | List reachable Charters. |
 | `runeward print <charter>` | Print a Charter's resolved, secret-redacted policy. |
 | `runeward validate <charter> [--strict]` | Statically lint a Charter (missing images, unresolved secrets, unreachable rules, duplicate env). |
@@ -84,10 +90,15 @@ runeward archive push oci://ghcr.io/acme/runeward-policies:v3 \
 
 # Authenticated control plane on a non-loopback bind
 RUNEWARD_API_TOKEN=$(openssl rand -hex 32) \
-  runeward --config-dir examples serve --bind 0.0.0.0 --port 8080
+  runeward --config-dir examples serve --bind 0.0.0.0 --port 8443 \
+  --tls-cert ./tls/server.crt --tls-key ./tls/server.key
+
+# OIDC device login for Cohort CLI and stdio MCP clients
+runeward auth login --issuer https://id.example.com \
+  --client-id runeward-cli --audience runeward
 
 # Lint a Charter and unit-test its policy
-runeward --config-dir examples validate ns-auto --strict
+runeward --config-dir examples/safe validate --strict
 runeward --config-dir examples policy test ns-auto \
   --case "tool=shell,action=rm -rf /,expect=deny"
 

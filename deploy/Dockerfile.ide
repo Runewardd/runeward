@@ -1,0 +1,54 @@
+# Optional Citadel image with code-server for the experimental browser IDE.
+# Keep the default sandbox/agent images lean; build this when you want GUI access:
+#
+#   docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+#
+# Charter: examples/ide-demo.toml  (+ RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 on serve)
+#
+# PID 1 stays `sleep infinity` so the control plane can Exec-start code-server
+# after create (same pattern as other long-lived in-cell helpers).
+FROM codercom/code-server:4.130.0-noble@sha256:d39c88f837f78465b4cf99f54b76eadf52440dc9ffb589e2ddc5d2fd9d0592d2 AS code-server-security-patches
+
+# code-server 4.130.0 bundles five JavaScript packages with published
+# HIGH/CRITICAL fixes. Build the replacements away from the final image so npm
+# and its dependency tree do not enlarge the runtime attack surface.
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends npm \
+    && npm install --prefix /tmp/security-patches --omit=dev --ignore-scripts --no-package-lock \
+        undici@7.29.0 tar@7.5.19 shell-quote@1.9.0 js-yaml@4.3.1 ip-address@10.3.1
+
+FROM codercom/code-server:4.130.0-noble@sha256:d39c88f837f78465b4cf99f54b76eadf52440dc9ffb589e2ddc5d2fd9d0592d2
+
+USER root
+COPY --from=code-server-security-patches /tmp/security-patches/node_modules /tmp/security-patches/node_modules
+RUN rm -rf \
+        /usr/lib/code-server/lib/vscode/node_modules/undici \
+        /usr/lib/code-server/lib/vscode/node_modules/tar \
+        /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
+        /usr/lib/code-server/lib/vscode/node_modules/ip-address \
+        /usr/lib/code-server/node_modules/js-yaml \
+        /usr/lib/code-server/node_modules/ip-address \
+    && cp -a /tmp/security-patches/node_modules/undici /usr/lib/code-server/lib/vscode/node_modules/undici \
+    && cp -a /tmp/security-patches/node_modules/tar /usr/lib/code-server/lib/vscode/node_modules/tar \
+    && cp -a /tmp/security-patches/node_modules/shell-quote /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
+    && cp -a /tmp/security-patches/node_modules/ip-address /usr/lib/code-server/lib/vscode/node_modules/ip-address \
+    && cp -a /tmp/security-patches/node_modules/js-yaml /usr/lib/code-server/node_modules/js-yaml \
+    && cp -a /tmp/security-patches/node_modules/ip-address /usr/lib/code-server/node_modules/ip-address \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"7\.29\.0"' /usr/lib/code-server/lib/vscode/node_modules/undici/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"7\.5\.19"' /usr/lib/code-server/lib/vscode/node_modules/tar/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"1\.9\.0"' /usr/lib/code-server/lib/vscode/node_modules/shell-quote/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"4\.3\.1"' /usr/lib/code-server/node_modules/js-yaml/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"10\.3\.1"' /usr/lib/code-server/lib/vscode/node_modules/ip-address/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"10\.3\.1"' /usr/lib/code-server/node_modules/ip-address/package.json \
+    && rm -rf /tmp/security-patches /usr/local/bin/fixuid /etc/fixuid \
+    && mkdir -p /workspace \
+    && chown -R coder:coder /workspace
+
+USER coder
+ENV HOME=/home/coder
+WORKDIR /workspace
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["code-server", "--version"]
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

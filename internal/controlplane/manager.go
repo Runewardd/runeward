@@ -57,17 +57,44 @@ type Manager struct {
 	sessions map[string]*Session
 
 	snapMu    sync.Mutex
+	snapOpMu  sync.Mutex
 	snapshots map[string]backend.SnapshotRef
 	// snapshotOwners keeps recovery artifacts tenant-scoped under RBAC.
 	snapshotOwners map[string]string
 
 	fleetMu sync.Mutex
 	fleets  map[string]*Fleet
+	// fleetOpMu makes each Command Board mutation + durable state replacement
+	// one control-plane transaction, including rollback on write failure.
+	fleetOpMu sync.Mutex
+	// persistMu serializes atomic state-file replacement across resource types.
+	persistMu sync.Mutex
+	runMu     sync.Mutex
+	runOpMu   sync.Mutex
+	runs      map[string]Run
 
-	stateDir   string        // ledger, keys, fleets.json
+	agentMu          sync.Mutex
+	agentSessions    map[string]*AgentSession
+	agentSubscribers map[string]map[chan AgentEvent]struct{}
+	agentCancels     map[string]context.CancelFunc
+	agentWG          sync.WaitGroup
+
+	stateDir   string        // ledger, keys, durable resources, agent transcripts
 	fleetLease time.Duration // claim lease for dead-worker recovery
+	leaseKey   []byte        // HMAC key for signed Cohort task leases
 	sweepStop  chan struct{}
 	sweepDone  chan struct{}
+}
+
+type actorContextKey struct{}
+
+// WithActor attributes Chronicle events produced during ctx to the currently
+// authenticated human or agent. Tenant ownership remains attached to Session.
+func WithActor(ctx context.Context, actor string) context.Context {
+	if ctx == nil || strings.TrimSpace(actor) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, actorContextKey{}, strings.TrimSpace(actor))
 }
 
 // Session is the per-sandbox governed state.
@@ -81,10 +108,20 @@ type Session struct {
 	Env     map[string]string
 	Workdir string
 
-	// Owner is the name of the RBAC principal that created the sandbox, used
-	// for per-principal ("multi-user") visibility and access control. Empty
-	// when RBAC is not configured.
+	// Owner is the tenant boundary used for visibility and access control.
+	// It may be shared by several authenticated principals (agents or humans).
+	// Empty when RBAC is not configured.
 	Owner string
+	// Actor is the authenticated principal performing work inside the tenant.
+	// It is distinct from Owner so multiple agents can collaborate safely.
+	Actor string
+
+	// Agent-run lineage makes delegated activity attributable across providers.
+	RunID       string
+	ParentRunID string
+	Agent       string
+	Provider    string
+	Model       string
 
 	// secrets are resolved secret env values, kept so they can be redacted
 	// from ledger payloads.
@@ -94,6 +131,9 @@ type Session struct {
 
 	browserMu sync.Mutex
 	browsers  map[string]*browserSession // live CDP sessions, keyed by session id
+
+	ideMu       sync.Mutex
+	ideEndpoint string // container/pod host:port when experimental IDE is running
 }
 
 func (s *Session) eventScrubber() *ledger.Scrubber {
@@ -137,21 +177,37 @@ func New(configDir string) (*Manager, error) {
 	sink := auditsink.NewMulti(envSink, anomaly.New(nil))
 
 	m := &Manager{
-		configDir:      configDir,
-		ledger:         l,
-		signer:         signer,
-		sink:           sink,
-		accounting:     accounting.New(),
-		approvals:      NewApprovalStore(),
-		approvalWait:   5 * time.Minute,
-		sessions:       make(map[string]*Session),
-		snapshots:      make(map[string]backend.SnapshotRef),
-		snapshotOwners: make(map[string]string),
-		fleets:         make(map[string]*Fleet),
-		stateDir:       filepath.Dir(path),
-		fleetLease:     fleetLeaseFromEnv(),
+		configDir:        configDir,
+		ledger:           l,
+		signer:           signer,
+		sink:             sink,
+		accounting:       accounting.New(),
+		approvals:        NewApprovalStore(),
+		approvalWait:     5 * time.Minute,
+		sessions:         make(map[string]*Session),
+		snapshots:        make(map[string]backend.SnapshotRef),
+		snapshotOwners:   make(map[string]string),
+		fleets:           make(map[string]*Fleet),
+		runs:             make(map[string]Run),
+		agentSessions:    make(map[string]*AgentSession),
+		agentSubscribers: make(map[string]map[chan AgentEvent]struct{}),
+		agentCancels:     make(map[string]context.CancelFunc),
+		stateDir:         filepath.Dir(path),
+		fleetLease:       fleetLeaseFromEnv(),
+	}
+	if m.leaseKey, err = loadOrCreateLeaseKey(m.stateDir); err != nil {
+		return nil, err
 	}
 	if err := m.loadFleets(); err != nil {
+		return nil, err
+	}
+	if err := m.loadSnapshots(); err != nil {
+		return nil, err
+	}
+	if err := m.loadRuns(); err != nil {
+		return nil, err
+	}
+	if err := m.loadAgentSessions(); err != nil {
 		return nil, err
 	}
 	m.startSweeper(30 * time.Second)
@@ -236,6 +292,8 @@ func (m *Manager) VerifyLedger() error {
 // Close stops the sweeper, flushes audit sinks, and releases the ledger handle.
 func (m *Manager) Close() error {
 	m.stopSweeper()
+	m.cancelAgentSessions("")
+	m.agentWG.Wait()
 	if m.sink != nil {
 		_ = m.sink.Close()
 	}
@@ -402,6 +460,16 @@ type CreateOptions struct {
 	// per-principal visibility and access control. Empty means unowned
 	// (RBAC disabled), in which case every caller can see it.
 	Owner string
+	// Actor is the authenticated principal; Owner is its tenant boundary.
+	Actor string
+	// ParentSandbox links a delegated child to an existing parent Citadel. Child
+	// creation is constrained to the parent's tenant and exact Charter, which is
+	// a conservative monotonic-permission rule.
+	ParentSandbox string
+	RunID         string
+	Agent         string
+	Provider      string
+	Model         string
 }
 
 // CreateSandbox loads the named profile, provisions a sandbox on its backend,
@@ -410,6 +478,20 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 	p, err := profile.Load(profileName, profile.Options{ConfigDir: m.configDir})
 	if err != nil {
 		return nil, err
+	}
+	parentRunID := ""
+	if opts.ParentSandbox != "" {
+		parent, err := m.session(opts.ParentSandbox)
+		if err != nil || parent.Owner != opts.Owner {
+			return nil, notFoundError("parent citadel not found")
+		}
+		if parent.Profile.Name != profileName {
+			return nil, fmt.Errorf("delegated child must use parent charter %q", parent.Profile.Name)
+		}
+		parentRunID = parent.RunID
+	}
+	if strings.TrimSpace(opts.RunID) == "" {
+		opts.RunID = newID()
 	}
 	extraScrubPatterns, err := compileAuditScrubPatterns(p.Audit.ScrubPatterns)
 	if err != nil {
@@ -447,24 +529,45 @@ func (m *Manager) CreateSandbox(ctx context.Context, profileName string, opts Cr
 	}
 
 	sess := &Session{
-		Sandbox:  sb,
-		Backend:  be,
-		Profile:  p,
-		Engine:   engine,
-		Guard:    guard,
-		Env:      env,
-		Workdir:  p.Host.Workdir,
-		Owner:    opts.Owner,
-		secrets:  secrets,
-		scrubber: ledger.NewScrubber(extraScrubPatterns...),
+		Sandbox:     sb,
+		Backend:     be,
+		Profile:     p,
+		Engine:      engine,
+		Guard:       guard,
+		Env:         env,
+		Workdir:     p.Host.Workdir,
+		Owner:       opts.Owner,
+		Actor:       firstNonEmpty(strings.TrimSpace(opts.Actor), opts.Owner),
+		RunID:       opts.RunID,
+		ParentRunID: parentRunID,
+		Agent:       strings.TrimSpace(opts.Agent),
+		Provider:    strings.TrimSpace(opts.Provider),
+		Model:       strings.TrimSpace(opts.Model),
+		secrets:     secrets,
+		scrubber:    ledger.NewScrubber(extraScrubPatterns...),
 	}
 
 	m.mu.Lock()
 	m.sessions[sb.ID] = sess
 	m.mu.Unlock()
 
+	if err := m.startIDE(ctx, sess); err != nil {
+		_ = be.Kill(context.Background(), sb.ID)
+		m.mu.Lock()
+		delete(m.sessions, sb.ID)
+		m.mu.Unlock()
+		return nil, fmt.Errorf("start experimental ide: %w", err)
+	}
+	if err := m.registerRun(sess); err != nil {
+		_ = be.Kill(context.Background(), sb.ID)
+		m.mu.Lock()
+		delete(m.sessions, sb.ID)
+		m.mu.Unlock()
+		return nil, fmt.Errorf("persist run: %w", err)
+	}
+
 	obs.IncSandboxCreated()
-	m.record(sess, "sandbox", "create", nil, string(profile.VerdictAllow), 0, 0, "")
+	m.record(ctx, sess, "sandbox", "create", nil, string(profile.VerdictAllow), 0, 0, "")
 	return sb, nil
 }
 
@@ -522,6 +625,7 @@ func (m *Manager) SandboxOwner(id string) (owner string, ok bool) {
 
 // KillSandbox tears down a sandbox and removes its session.
 func (m *Manager) KillSandbox(ctx context.Context, id string) error {
+	m.cancelAgentSessions(id)
 	m.mu.Lock()
 	sess, ok := m.sessions[id]
 	if ok {
@@ -534,8 +638,13 @@ func (m *Manager) KillSandbox(ctx context.Context, id string) error {
 	if m.accounting != nil {
 		m.accounting.Forget(id)
 	}
-	m.record(sess, "sandbox", "kill", nil, string(profile.VerdictAllow), 0, 0, "")
-	return sess.Backend.Kill(ctx, id)
+	m.recordIDEClose(ctx, sess)
+	m.record(ctx, sess, "sandbox", "kill", nil, string(profile.VerdictAllow), 0, 0, "")
+	err := sess.Backend.Kill(ctx, id)
+	if runErr := m.finishRun(sess.RunID, err); runErr != nil && err == nil {
+		err = runErr
+	}
+	return err
 }
 
 // RecordUsage attributes reported model usage (tokens and/or US-dollar spend)
@@ -544,6 +653,11 @@ func (m *Manager) KillSandbox(ctx context.Context, id string) error {
 // the model provider; once the profile's budget is exceeded, govern denies
 // further tool calls. It errors if the sandbox is unknown.
 func (m *Manager) RecordUsage(id string, tokens int64, costUSD float64) error {
+	return m.RecordUsageContext(context.Background(), id, tokens, costUSD)
+}
+
+// RecordUsageContext is RecordUsage with request actor attribution.
+func (m *Manager) RecordUsageContext(ctx context.Context, id string, tokens int64, costUSD float64) error {
 	sess, err := m.session(id)
 	if err != nil {
 		return err
@@ -582,6 +696,17 @@ func (m *Manager) RecordUsage(id string, tokens int64, costUSD float64) error {
 			"cost_usd_tot": strconv.FormatFloat(u.CostUSD, 'f', -1, 64),
 		},
 	}
+	ev.Meta["run_id"] = sess.RunID
+	if sess.Owner != "" {
+		ev.Meta["tenant"] = sess.Owner
+	}
+	actor := sess.Actor
+	if current, ok := ctx.Value(actorContextKey{}).(string); ok && strings.TrimSpace(current) != "" {
+		actor = strings.TrimSpace(current)
+	}
+	if actor != "" {
+		ev.Meta["actor"] = actor
+	}
 	m.appendAudit(ev)
 	return nil
 }
@@ -608,10 +733,10 @@ func (m *Manager) AttachTerminal(ctx context.Context, id string, stream backend.
 	dec := sess.Engine.Evaluate(policy.Action{Tool: "terminal", Arg: "attach"})
 	if dec.Verdict != profile.VerdictAllow {
 		reason := orReason(dec.Reason, "terminal attach denied by policy")
-		m.record(sess, "terminal", "attach", nil, string(profile.VerdictDeny), -1, 0, reason)
+		m.record(ctx, sess, "terminal", "attach", nil, string(profile.VerdictDeny), -1, 0, reason)
 		return fmt.Errorf("%s", reason)
 	}
-	m.record(sess, "terminal", "attach", nil, string(profile.VerdictAllow), 0, 0, "")
+	m.record(ctx, sess, "terminal", "attach", nil, string(profile.VerdictAllow), 0, 0, "")
 	return sess.Backend.AttachPTY(ctx, id, stream)
 }
 
@@ -642,13 +767,13 @@ func (m *Manager) governOut(ctx context.Context, sess *Session, tool, arg string
 	switch dec.Verdict {
 	case profile.VerdictDeny:
 		reason := orReason(dec.Reason, "denied by policy")
-		m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, reason)
+		m.record(ctx, sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, reason)
 		return &ToolResult{Verdict: profile.VerdictDeny, Reason: reason}, nil
 
 	case profile.VerdictRequireApprove:
 		reason := orReason(dec.Reason, "approval required")
 		ap := m.approvals.Create(sess.Sandbox.ID, tool, arg, reason)
-		m.record(sess, "approval", arg, args, string(profile.VerdictRequireApprove), -1, 0, reason)
+		m.record(ctx, sess, "approval", arg, args, string(profile.VerdictRequireApprove), -1, 0, reason)
 
 		wait := ctx
 		var cancel context.CancelFunc
@@ -659,7 +784,7 @@ func (m *Manager) governOut(ctx context.Context, sess *Session, tool, arg string
 		select {
 		case ok := <-ap.decided:
 			if !ok {
-				m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, "denied by approver")
+				m.record(ctx, sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, "denied by approver")
 				return &ToolResult{Verdict: profile.VerdictDeny, Reason: "denied by approver", ApprovalID: ap.ID}, nil
 			}
 			// Approved: fall through to guardrails + execution.
@@ -670,7 +795,7 @@ func (m *Manager) governOut(ctx context.Context, sess *Session, tool, arg string
 	}
 
 	if err := sess.Guard.CheckExec(); err != nil {
-		m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, err.Error())
+		m.record(ctx, sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, err.Error())
 		return &ToolResult{Verdict: profile.VerdictDeny, Reason: err.Error()}, nil
 	}
 
@@ -678,7 +803,7 @@ func (m *Manager) governOut(ctx context.Context, sess *Session, tool, arg string
 	// the profile's limits, further tool calls are denied fail-closed.
 	if m.accounting != nil && !ignoreClientUsageBudget() {
 		if over, why := m.accounting.Over(sess.Sandbox.ID, sess.Profile.Limits.MaxTokens, sess.Profile.Limits.MaxCostUSD); over {
-			m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, why)
+			m.record(ctx, sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, why)
 			return &ToolResult{Verdict: profile.VerdictDeny, Reason: why}, nil
 		}
 	}
@@ -686,7 +811,7 @@ func (m *Manager) governOut(ctx context.Context, sess *Session, tool, arg string
 	// Enforce the egress budget for outbound tools (previously dead code).
 	if isEgressTool(tool) {
 		if err := sess.Guard.CheckEgress(); err != nil {
-			m.record(sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, err.Error())
+			m.record(ctx, sess, tool, arg, args, string(profile.VerdictDeny), -1, 0, err.Error())
 			return &ToolResult{Verdict: profile.VerdictDeny, Reason: err.Error()}, nil
 		}
 	}
@@ -695,11 +820,11 @@ func (m *Manager) governOut(ctx context.Context, sess *Session, tool, arg string
 	loopKey := tool + "|" + arg
 	if err != nil {
 		sess.Guard.RecordOutcome(loopKey, true)
-		m.record(sess, tool, arg, args, "error", -1, 0, err.Error())
+		m.record(ctx, sess, tool, arg, args, "error", -1, 0, err.Error())
 		return nil, err
 	}
 	sess.Guard.RecordOutcome(loopKey, res.ExitCode != 0)
-	m.record(sess, tool, arg, args, string(profile.VerdictAllow), res.ExitCode, res.Duration.Milliseconds(), "")
+	m.record(ctx, sess, tool, arg, args, string(profile.VerdictAllow), res.ExitCode, res.Duration.Milliseconds(), "")
 
 	// Redact secrets from returned output too, not just the ledger, so a leaked
 	// credential in stdout/stderr doesn't reach the API/MCP client in cleartext.
@@ -727,7 +852,7 @@ func isEgressTool(tool string) bool {
 }
 
 // record appends an event to the ledger.
-func (m *Manager) record(sess *Session, tool, action string, args []string, verdict string, exit int, durMS int64, reason string) {
+func (m *Manager) record(ctx context.Context, sess *Session, tool, action string, args []string, verdict string, exit int, durMS int64, reason string) {
 	ev := ledger.Event{
 		SessionID:  sess.Sandbox.ID,
 		Sandbox:    sess.Sandbox.ID,
@@ -739,8 +864,33 @@ func (m *Manager) record(sess *Session, tool, action string, args []string, verd
 		ExitCode:   exit,
 		DurationMS: durMS,
 	}
+	ev.Meta = map[string]string{"run_id": sess.RunID}
+	if sess.Owner != "" {
+		ev.Meta["tenant"] = sess.Owner
+	}
+	actor := sess.Actor
+	if ctx != nil {
+		if current, ok := ctx.Value(actorContextKey{}).(string); ok && strings.TrimSpace(current) != "" {
+			actor = strings.TrimSpace(current)
+		}
+	}
+	if actor != "" {
+		ev.Meta["actor"] = actor
+	}
+	if sess.ParentRunID != "" {
+		ev.Meta["parent_run_id"] = sess.ParentRunID
+	}
+	if sess.Agent != "" {
+		ev.Meta["agent"] = sess.Agent
+	}
+	if sess.Provider != "" {
+		ev.Meta["provider"] = sess.Provider
+	}
+	if sess.Model != "" {
+		ev.Meta["model"] = sess.Model
+	}
 	if reason != "" {
-		ev.Meta = map[string]string{"reason": reason}
+		ev.Meta["reason"] = reason
 	}
 	obs.RecordAction(tool, verdict, durMS)
 	// Scrub declared secret values (hashed) and pattern-detected credentials

@@ -36,22 +36,32 @@ an orchestrator that already supports subagents:
 
 1. Route the parent and every child agent's tool calls through Runeward.
 2. Give each child its own Citadel when workspaces or evidence must be isolated.
-3. Assign the same Charter as the parent or a separately reviewed, stricter Charter.
-4. Preserve the orchestrator's parent/child identifiers alongside the exported Runeward evidence.
+3. Pass `parent_citadel`, `run_id`, `agent`, `provider`, and `model` when creating the child.
+4. Give each child a distinct actor identity in the same tenant. Assign the parent's Charter.
+   Runeward rejects a child that changes either the tenant or Charter.
 5. Never automatically retry a denial or work around an approval gate in a child agent.
 
-This provides governed child execution today, but Runeward does not yet expose a native
-parent/child run tree or automatically prove that a child's Charter is narrower than its parent's.
-Those are explicit boundaries rather than implied guarantees.
+Runeward writes the lineage metadata to the Chronicle and a durable provider-neutral Run record.
+`GET /v1/runs`, `runeward_list_runs`, and the dashboard recovery view expose the run tree even after
+a Citadel is torn down. Runeward does not yet prove arbitrary policy-set subsumption; v1
+deliberately requires the exact parent Charter instead of guessing whether a different Charter is
+narrower.
+
+Cohort task claims are capabilities, not just worker-supplied names. A claim returns a signed,
+expiring `lease_token`; heartbeat refreshes it, and complete/fail must present the current token.
+This prevents one agent in a shared tenant from finishing another worker's task by guessing its id.
 
 ## Integration choices
 
 | Agent surface | Recommended connection |
 | --- | --- |
 | MCP-capable agent or IDE | `runeward mcp` |
+| Browser IDE against `/workspace` (experimental) | `[ide]` + ticketed proxy — [Browser IDE](browser-ide.md) |
 | Python agent framework | `runeward` package and the relevant optional adapter |
 | TypeScript agent framework | `@runeward/sdk` and its framework subpath |
 | Custom orchestrator | REST API or the dependency-light SDK client |
 | Parallel peer workers | Existing `runeward cohort` commands and `/v1/cohorts` API |
+| Live/replayable worker output | Durable agent sessions and `/v1/agent-sessions/{id}/stream` |
 
-See [Adapters](adapters.md), [Cohorts](fleets.md), and the [Security model](security-model.md).
+See [Adapters](adapters.md), [Cohorts](fleets.md), the [Security model](security-model.md), and
+[Browser IDE](browser-ide.md) for the experimental code-server path and its limitations.

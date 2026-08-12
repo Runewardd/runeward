@@ -41,6 +41,14 @@ runeward cohort exec "Add a Dockerfile and a README"
 runeward cohort export ./out
 ```
 
+`cohort run`, `build`, and `exec` create durable agent sessions instead of
+waiting on a buffered shell call. stdout/stderr appears while the agent is
+working, and the dashboard's **Agent sessions** panel can reopen the redacted
+transcript afterward. Each session records its Cohort/task/Citadel association;
+the REST event stream supports reconnect from the last sequence received.
+See the [recorded live agent and escape-denial demo](agent-session-escape-demo.md)
+for a reproducible end-to-end walkthrough.
+
 Switch agent/model any time by changing the env vars.
 
 ### B) Fan-out independent pieces

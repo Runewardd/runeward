@@ -14,10 +14,79 @@ permissions:
 env:
   REGISTRY: ghcr.io
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Verify release source and package versions
+        run: |
+          go test ./...
+          python3 scripts/check-sdk-versions.py "${GITHUB_REF_NAME}"
+          python -m unittest discover -s adapters/python/tests
+          cd adapters/typescript
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm test
+      - name: Reject reachable Go vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
+
+  image-security:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: deploy/Dockerfile
+            image: runeward
+          - dockerfile: deploy/Dockerfile.egress
+            image: runeward-egress
+          - dockerfile: deploy/Dockerfile.agent
+            image: runeward-agent
+          - dockerfile: deploy/Dockerfile.sandbox
+            image: runeward-sandbox
+          - dockerfile: deploy/Dockerfile.ide
+            image: runeward-ide
+          - dockerfile: deploy/Dockerfile.ide-agents
+            image: runeward-ide-agents
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Build candidate image
+        run: docker build -f "${{ matrix.dockerfile }}" -t "${{ matrix.image }}:release-candidate" .
+      - name: Reject high and critical image vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:release-candidate
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
   # GoReleaser builds the cross-platform binaries, archives, checksums.txt and
   # SBOMs, and creates the GitHub Release for the tag.
   goreleaser:
+    # Do not create a partial release when any shipped runtime image fails the
+    # high/critical vulnerability gate.
+    needs: [verify, image-security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -44,6 +113,7 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   images:
+    needs: [verify, image-security]
     runs-on: ubuntu-latest
     # Don't upload the build-record (*.dockerbuild) artifacts; the release job
     # downloads all artifacts and those records can flake the download step.
@@ -76,7 +146,6 @@ jobs:
             VERSION=${{ github.ref_name }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
           cache-from: type=gha,scope=runeward
           cache-to: type=gha,mode=max,scope=runeward
 
@@ -90,7 +159,6 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}-egress:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-egress:latest
           cache-from: type=gha,scope=runeward-egress
           cache-to: type=gha,mode=max,scope=runeward-egress
 
@@ -104,7 +172,6 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}-agent:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-agent:latest
           cache-from: type=gha,scope=runeward-agent
           cache-to: type=gha,mode=max,scope=runeward-agent
 
@@ -118,9 +185,34 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}-sandbox:${{ github.ref_name }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}-sandbox:latest
           cache-from: type=gha,scope=runeward-sandbox
           cache-to: type=gha,mode=max,scope=runeward-sandbox
+
+      - name: Build & push runeward-ide image
+        id: ide
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.ide
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-ide:${{ github.ref_name }}
+          cache-from: type=gha,scope=runeward-ide
+          cache-to: type=gha,mode=max,scope=runeward-ide
+
+      - name: Build & push runeward-ide-agents image
+        id: ide-agents
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.ide-agents
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}-ide-agents:${{ github.ref_name }}
+          cache-from: type=gha,scope=runeward-ide-agents
+          cache-to: type=gha,mode=max,scope=runeward-ide-agents
 
       # Keyless (Fulcio/Rekor) signature over each image by digest. Signing the
       # digest covers every tag that points at it. Verify with:
@@ -134,11 +226,25 @@ jobs:
           EGRESS_DIGEST: ${{ steps.egress.outputs.digest }}
           AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
           SANDBOX_DIGEST: ${{ steps.sandbox.outputs.digest }}
+          IDE_DIGEST: ${{ steps.ide.outputs.digest }}
+          IDE_AGENTS_DIGEST: ${{ steps.ide-agents.outputs.digest }}
         run: |
           cosign sign "${REGISTRY}/${IMAGE}@${RUNEWARD_DIGEST}"
           cosign sign "${REGISTRY}/${IMAGE}-egress@${EGRESS_DIGEST}"
           cosign sign "${REGISTRY}/${IMAGE}-agent@${AGENT_DIGEST}"
           cosign sign "${REGISTRY}/${IMAGE}-sandbox@${SANDBOX_DIGEST}"
+          cosign sign "${REGISTRY}/${IMAGE}-ide@${IDE_DIGEST}"
+          cosign sign "${REGISTRY}/${IMAGE}-ide-agents@${IDE_AGENTS_DIGEST}"
+
+      - name: Promote stable images to latest
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          docker buildx imagetools create -t "${REGISTRY}/${IMAGE}:latest" "${REGISTRY}/${IMAGE}@${{ steps.runeward.outputs.digest }}"
+          docker buildx imagetools create -t "${REGISTRY}/${IMAGE}-egress:latest" "${REGISTRY}/${IMAGE}-egress@${{ steps.egress.outputs.digest }}"
+          docker buildx imagetools create -t "${REGISTRY}/${IMAGE}-agent:latest" "${REGISTRY}/${IMAGE}-agent@${{ steps.agent.outputs.digest }}"
+          docker buildx imagetools create -t "${REGISTRY}/${IMAGE}-sandbox:latest" "${REGISTRY}/${IMAGE}-sandbox@${{ steps.sandbox.outputs.digest }}"
+          docker buildx imagetools create -t "${REGISTRY}/${IMAGE}-ide:latest" "${REGISTRY}/${IMAGE}-ide@${{ steps.ide.outputs.digest }}"
+          docker buildx imagetools create -t "${REGISTRY}/${IMAGE}-ide-agents:latest" "${REGISTRY}/${IMAGE}-ide-agents@${{ steps.ide-agents.outputs.digest }}"
 
   # Package the Helm chart and attach it to the release GoReleaser created.
   chart:
@@ -158,3 +264,26 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: dist-chart/*.tgz
+
+  # Ship the exact versioned Codex plugin directory used by the release tag.
+  codex-plugin:
+    needs: [goreleaser]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Verify plugin and release versions
+        run: python3 scripts/check-sdk-versions.py "${GITHUB_REF_NAME}"
+      - name: Package Codex plugin
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist-plugin
+          tar --exclude='__pycache__' --exclude='*.pyc' \
+            -czf "dist-plugin/runeward-codex-plugin_${version}.tar.gz" \
+            -C dist/codex-plugin runeward
+      - name: Attach Codex plugin to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist-plugin/*.tar.gz

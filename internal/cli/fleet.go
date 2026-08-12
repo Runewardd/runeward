@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Runewardd/runeward/internal/backend"
+	"github.com/Runewardd/runeward/internal/credentials"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +24,7 @@ const fleetStateFile = ".runeward-cohort"
 // newFleetCmd drives a Cohort on a running `runeward serve` over REST: push
 // prompts and run an agent (Cursor, Codex, or Claude) on each, all governed.
 func newFleetCmd() *cobra.Command {
-	var base, agent, model, fleetID string
+	var base, agent, model, fleetID, token string
 
 	cmd := &cobra.Command{
 		Use:   "cohort",
@@ -40,8 +42,10 @@ func newFleetCmd() *cobra.Command {
 		"model slug passed to the agent (or $MODEL)")
 	cmd.PersistentFlags().StringVar(&fleetID, "cohort", "",
 		"Cohort id; defaults to the one saved by `cohort up`")
+	cmd.PersistentFlags().StringVar(&token, "token", firstSet(os.Getenv("RUNEWARD_API_TOKEN"), credentials.LoadToken()),
+		"control-plane bearer token (or $RUNEWARD_API_TOKEN / `runeward auth login`)")
 
-	client := func() *fleetClient { return &fleetClient{base: base, http: &http.Client{}} }
+	client := func() *fleetClient { return &fleetClient{base: base, token: token, http: &http.Client{}} }
 
 	up := &cobra.Command{
 		Use:   "up [charter]",
@@ -149,12 +153,18 @@ func newFleetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out, err := c.shellExec(cmd.Context(), sb, cmdVec)
+			fmt.Fprintf(os.Stderr, "runeward: [%s] %s\n", sb, args[0])
+			session, err := c.agentSessionExec(cmd.Context(), sb, cmdVec, agent, model, id, "", func(ev agentEvent) {
+				if ev.Stream == "stdout" {
+					fmt.Fprint(os.Stdout, ev.Data)
+				} else if ev.Stream == "stderr" {
+					fmt.Fprint(os.Stderr, ev.Data)
+				}
+			})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "runeward: [%s] %s\n", sb, args[0])
-			fmt.Println(out)
+			fmt.Fprintf(os.Stderr, "runeward: agent session %s completed\n", session.ID)
 			return nil
 		},
 	}
@@ -234,8 +244,9 @@ func newFleetCmd() *cobra.Command {
 }
 
 type fleetClient struct {
-	base string
-	http *http.Client
+	base  string
+	token string
+	http  *http.Client
 }
 
 type fleetView struct {
@@ -244,9 +255,10 @@ type fleetView struct {
 }
 
 type task struct {
-	ID      string `json:"id"`
-	Payload string `json:"payload"`
-	State   string `json:"state"`
+	ID         string `json:"id"`
+	Payload    string `json:"payload"`
+	State      string `json:"state"`
+	LeaseToken string `json:"lease_token,omitempty"`
 }
 
 type claimResp struct {
@@ -258,12 +270,22 @@ type tasksResp struct {
 	Tasks []task `json:"tasks"`
 }
 
-type toolResult struct {
-	Verdict  string `json:"verdict"`
-	ExitCode int    `json:"exit_code"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	Reason   string `json:"reason"`
+type agentSession struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	ExitCode *int   `json:"exit_code,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+type agentEvent struct {
+	Seq    int64  `json:"seq"`
+	Stream string `json:"stream"`
+	Data   string `json:"data"`
+}
+
+type agentEventsResp struct {
+	Session agentSession `json:"session"`
+	Events  []agentEvent `json:"events"`
 }
 
 // call issues a JSON request and decodes a 2xx body into out (may be nil).
@@ -283,6 +305,9 @@ func (c *fleetClient) call(ctx context.Context, method, path string, body, out a
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot reach control plane at %s (is `runeward serve` running?): %w", c.base, err)
@@ -301,18 +326,60 @@ func (c *fleetClient) call(ctx context.Context, method, path string, body, out a
 	return nil
 }
 
-// shellExec runs a command vector in one citadel and returns its stdout.
-func (c *fleetClient) shellExec(ctx context.Context, sandbox string, command []string) (string, error) {
-	var res toolResult
-	err := c.call(ctx, http.MethodPost, "/v1/citadels/"+sandbox+"/shell/exec",
-		map[string]any{"command": command}, &res)
-	if err != nil {
-		return "", err
+// agentSessionExec starts an observable agent command, then follows its durable
+// event backlog until the terminal status is visible. Repeated GETs make the CLI
+// reconnect-safe even if an individual request is interrupted.
+func (c *fleetClient) agentSessionExec(ctx context.Context, sandbox string, command []string, agent, model, cohortID, taskID string, onEvent func(agentEvent)) (*agentSession, error) {
+	var started agentSession
+	if err := c.call(ctx, http.MethodPost, "/v1/citadels/"+sandbox+"/agent-sessions", map[string]any{
+		"command": command, "agent": agent, "model": model,
+		"cohort_id": cohortID, "task_id": taskID,
+	}, &started); err != nil {
+		return nil, err
 	}
-	if res.Verdict == "deny" {
-		return "", fmt.Errorf("policy denied: %s", res.Reason)
+	after := int64(0)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var page agentEventsResp
+		path := fmt.Sprintf("/v1/agent-sessions/%s/events?after=%d", started.ID, after)
+		if err := c.call(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return &started, err
+		}
+		for _, ev := range page.Events {
+			if ev.Seq > after {
+				after = ev.Seq
+			}
+			if onEvent != nil {
+				onEvent(ev)
+			}
+		}
+		started = page.Session
+		if agentSessionDone(started.Status) {
+			if started.Status != "completed" {
+				why := started.Error
+				if why == "" {
+					why = "agent session ended with status " + started.Status
+				}
+				return &started, fmt.Errorf("%s", why)
+			}
+			return &started, nil
+		}
+		select {
+		case <-ctx.Done():
+			return &started, ctx.Err()
+		case <-ticker.C:
+		}
 	}
-	return res.Stdout, nil
+}
+
+func agentSessionDone(status string) bool {
+	switch status {
+	case "completed", "failed", "denied", "canceled", "interrupted":
+		return true
+	default:
+		return false
+	}
 }
 
 // drain runs one worker per citadel; each claims and builds pending tasks until
@@ -329,6 +396,17 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 	say := func(format string, a ...any) {
 		mu.Lock()
 		fmt.Fprintf(os.Stderr, format+"\n", a...)
+		mu.Unlock()
+	}
+	sayEvent := func(owner string, ev agentEvent) {
+		if ev.Stream != "stdout" && ev.Stream != "stderr" {
+			return
+		}
+		mu.Lock()
+		fmt.Fprintf(os.Stderr, "[%s/%s] %s", owner, ev.Stream, ev.Data)
+		if !strings.HasSuffix(ev.Data, "\n") {
+			fmt.Fprintln(os.Stderr)
+		}
 		mu.Unlock()
 	}
 
@@ -353,19 +431,18 @@ func (c *fleetClient) drain(ctx context.Context, fleetID, agent, model string) e
 					say("!! [%s] %v", owner, err)
 					return
 				}
-				out, err := c.shellExec(ctx, sb, cmdVec)
+				session, err := c.agentSessionExec(ctx, sb, cmdVec, agent, model, fleetID, claim.Task.ID, func(ev agentEvent) {
+					sayEvent(owner, ev)
+				})
 				if err != nil {
 					_ = c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/tasks/"+claim.Task.ID+"/fail",
-						map[string]any{"error": err.Error(), "requeue": true}, nil)
+						map[string]any{"owner": owner, "lease_token": claim.Task.LeaseToken, "error": err.Error(), "requeue": true}, nil)
 					say("!! [%s] failed (requeued) %s: %v", owner, claim.Task.ID, err)
 					continue
 				}
-				if strings.TrimSpace(out) != "" {
-					say("%s", strings.TrimSpace(out))
-				}
 				_ = c.call(ctx, http.MethodPost, "/v1/cohorts/"+fleetID+"/tasks/"+claim.Task.ID+"/complete",
-					map[string]string{"result": "done by " + owner}, nil)
-				say("<< [%s] done: %s", owner, claim.Task.ID)
+					map[string]string{"owner": owner, "lease_token": claim.Task.LeaseToken, "result": "agent session " + session.ID}, nil)
+				say("<< [%s] done: %s (session %s)", owner, claim.Task.ID, session.ID)
 			}
 		}(sb, fmt.Sprintf("worker-%d", i+1))
 	}

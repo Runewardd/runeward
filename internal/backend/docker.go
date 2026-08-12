@@ -285,8 +285,8 @@ func (d *Docker) Exec(ctx context.Context, id string, req ExecRequest) (*ExecRes
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = execOutputWriter(&stdout, req.Stdout, req.StreamOnly)
+	cmd.Stderr = execOutputWriter(&stderr, req.Stderr, req.StreamOnly)
 	err := cmd.Run()
 
 	res := &ExecResult{
@@ -302,6 +302,19 @@ func (d *Docker) Exec(ctx context.Context, id string, req ExecRequest) (*ExecRes
 		return res, fmt.Errorf("%s exec: %w", d.Name(), err)
 	}
 	return res, nil
+}
+
+func execOutputWriter(capture *bytes.Buffer, stream io.Writer, streamOnly bool) io.Writer {
+	if streamOnly {
+		if stream != nil {
+			return stream
+		}
+		return io.Discard
+	}
+	if stream != nil {
+		return io.MultiWriter(capture, stream)
+	}
+	return capture
 }
 
 func (d *Docker) AttachPTY(ctx context.Context, id string, s PTYStream) error {
@@ -580,6 +593,11 @@ func (d *Docker) startEgressContainer(ctx context.Context, id string, net profil
 		"--name", name,
 		"--label", kv(labelManaged, "true"),
 		"--label", kv(labelID, id),
+		// The image defaults to USER 10001 for its Kubernetes sidecar mode.
+		// Docker's combined mode must start as root so it can install the
+		// redirect rules; runeward-egress immediately drops to StrictProxyUID
+		// before it accepts traffic.
+		"--user", "0:0",
 		"--cap-add", "NET_ADMIN",
 		"--cap-add", "NET_RAW",
 		"-e", "RUNEWARD_EGRESS_POLICY=" + string(polJSON),
@@ -611,18 +629,57 @@ func (d *Docker) startEgressContainer(ctx context.Context, id string, net profil
 func (d *Docker) waitEgressReady(ctx context.Context, name string) error {
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		logs, _ := d.output(ctx, "logs", name)
+		logs, _ := d.combinedOutput(ctx, "logs", name)
 		if strings.Contains(logs, "transparent proxy listening") {
 			return nil
 		}
 		if st, err := d.output(ctx, "inspect", "-f", "{{.State.Running}}", name); err == nil {
 			if strings.TrimSpace(st) == "false" {
-				return fmt.Errorf("egress sidecar exited before it was ready: %s", strings.TrimSpace(logs))
+				state, _ := d.output(ctx, "inspect", "-f",
+					"status={{.State.Status}} exit_code={{.State.ExitCode}} error={{.State.Error}}", name)
+				detail := strings.TrimSpace(logs)
+				if detail == "" {
+					detail = "no container logs"
+				}
+				return fmt.Errorf("egress sidecar exited before it was ready (%s): %s",
+					strings.TrimSpace(state), detail)
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out waiting for transparent egress proxy to become ready")
+	logs, _ := d.combinedOutput(ctx, "logs", name)
+	return fmt.Errorf("timed out waiting for transparent egress proxy to become ready: %s", strings.TrimSpace(logs))
+}
+
+// ContainerIP returns the Docker-network IP of the sandbox (or its egress
+// sidecar when the sandbox shares that netns). Used to reverse-proxy to
+// in-cell HTTP services without publishing host ports.
+func (d *Docker) ContainerIP(ctx context.Context, id string) (string, error) {
+	target := containerName(id)
+	d.proxyMu.Lock()
+	if egress, ok := d.egressCtr[id]; ok && egress != "" {
+		target = egress
+	}
+	d.proxyMu.Unlock()
+
+	out, err := d.output(ctx, "inspect", "-f",
+		"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", target)
+	if err != nil {
+		return "", fmt.Errorf("inspect container IP: %w", err)
+	}
+	ip := strings.TrimSpace(out)
+	if ip == "" {
+		// Fallback: first IPv4 address from NetworkSettings.IPAddress (bridge).
+		out, err = d.output(ctx, "inspect", "-f", "{{.NetworkSettings.IPAddress}}", target)
+		if err != nil {
+			return "", fmt.Errorf("inspect container IP: %w", err)
+		}
+		ip = strings.TrimSpace(out)
+	}
+	if ip == "" {
+		return "", fmt.Errorf("container %s has no network IP", target)
+	}
+	return ip, nil
 }
 
 func (d *Docker) List(ctx context.Context) ([]Sandbox, error) {
@@ -672,6 +729,18 @@ func (d *Docker) output(ctx context.Context, args ...string) (string, error) {
 		return stdout.String(), fmt.Errorf("%s %s: %w: %s", d.Name(), args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
+}
+
+// combinedOutput returns both stdout and stderr. Container processes commonly
+// log to stderr, so readiness checks must not use output, which intentionally
+// keeps stderr out of machine-readable Docker command results.
+func (d *Docker) combinedOutput(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, d.bin, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("%s %s: %w: %s", d.Name(), args[0], err, strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
 }
 
 func (d *Docker) hostGatewayName() string {

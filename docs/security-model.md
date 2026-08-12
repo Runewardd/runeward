@@ -3,11 +3,12 @@
 !!! warning "Interactive sessions are not per-command policy gates"
     Per-action policy and approval decisions apply to calls routed through the
     control plane's governed tool APIs (REST, MCP, dashboard shell/file/code
-    controls, and SDK adapters). The interactive terminal and commands started
-    directly inside a sandbox receive sandbox, network, and resource controls
-    plus terminal recording, but Runeward does not intercept each shell command
-    for a policy verdict. Use governed tool calls when individual command
-    approval and signed verdict evidence are required.
+    controls, and SDK adapters). The interactive terminal, optional browser IDE
+    (code-server), and commands started directly inside a sandbox receive
+    sandbox, network, and resource controls plus terminal recording / Chronicle
+    open-close for IDE sessions, but Runeward does not intercept each shell
+    command or IDE keystroke for a policy verdict. Use governed tool calls when
+    individual command approval and signed verdict evidence are required.
 
 runeward's job is to reduce the blast radius of an autonomous agent. Knowing what
 it does — and does not — protect against is essential to using it safely.
@@ -32,25 +33,43 @@ Please disclose privately; do not open a public issue.
   default and refuses any non-loopback `--bind` unless authentication is set (an
   API token via `--token` / `RUNEWARD_API_TOKEN`, or an RBAC store). When set it
   is required on every request — REST, `/mcp`, the terminal WebSocket, and the
-  dashboard — and optional TLS is available via `--tls-cert`/`--tls-key`.
-  Request bodies are size-capped to bound memory use.
+  dashboard. A non-loopback listener also refuses plaintext HTTP unless TLS is
+  configured with `--tls-cert`/`--tls-key` or the operator explicitly passes
+  `--allow-insecure-http` behind a trusted TLS-terminating proxy. Request bodies
+  are size-capped to bound memory use.
 - **RBAC / multi-principal auth.** Setting `RUNEWARD_AUTHZ_FILE` to a JSON store
   of principals (each with its own token, an allowed-profile glob list, and
-  approval/admin flags) upgrades the single shared token to per-principal
+  launch, approval-profile, and admin scopes) upgrades the single shared token to per-principal
   access: the server enforces which profiles a caller may launch and whether it
   may resolve approvals, and records the principal name as the audit actor.
   `/v1/whoami` reports honest `can_launch` / `can_approve` flags;
   `/v1/charters` and policy simulation are scoped to launchable Charters for
-  non-admins. Each Citadel records its owning principal; a non-admin can see
-  and act on only its own Citadels (an ownership guard enforces this on every
+  non-admins. A principal has a resource-owning `tenant` and an independently
+  attributed actor `name`; several agents can therefore collaborate without
+  sharing one identity. Each Citadel records its owning tenant; a non-admin can see
+  and act on only its tenant's Citadels (an ownership guard enforces this on every
   `/v1/citadels/{id}` route), while admins see all. The dashboard has an
   interactive token login (backed by `/v1/whoami`) that gates create/approve
   controls to what the caller is permitted; the static dashboard shell loads
   without a token so the login screen can render, but the API always requires
-  one. Recovery snapshots are owner-scoped as well. Embedded HTTP MCP is
-  disabled when RBAC is configured because the MCP tool context is not yet
-  unified with per-principal authorization; deploy MCP as a separately scoped
-  single-identity service when needed.
+  one. Recovery snapshots are tenant-scoped and persisted. HTTP MCP uses the
+  same per-request principal and ownership rules as REST; stdio MCP binds one
+  process to the principal selected by `RUNEWARD_MCP_DEFAULT_TOKEN` or the
+  credential saved by `runeward auth login`.
+- **OIDC authentication.** `RUNEWARD_OIDC_ISSUER` plus
+  `RUNEWARD_OIDC_AUDIENCE` enables RS256 JWT verification from the provider's
+  JWKS. Runeward maps only signed claims: `runeward_tenant`,
+  `runeward_profiles`, `runeward_approval_profiles`,
+  `runeward_can_approve`, and `runeward_admin`. Issuer, audience, expiry,
+  not-before, algorithm, key id, and signature are checked. Non-loopback issuer
+  and JWKS endpoints must use HTTPS.
+- **Signed Cohort leases.** Claim returns a short-lived HMAC-signed
+  `lease_token` bound to Cohort, task, actor, and expiry. Heartbeat returns a
+  refreshed token; complete/fail require the current token. Listing a task never
+  exposes its lease capability.
+- **Durable state.** Cohort boards, snapshots, and provider-neutral Run records
+  use private atomic state-file replacement. A run still marked active after a
+  control-plane restart is closed as `interrupted` rather than appearing live.
 - **Cost / token budgets.** Agents or Cohort workers report model usage to
   `POST /v1/citadels/{id}/usage`; usage accrues per Citadel and per Charter
   (surfaced in Prometheus and the Citadel view). A Charter's `rationing.max_tokens`
@@ -84,8 +103,13 @@ Please disclose privately; do not open a public issue.
 - **Terminal session recording.** With `RUNEWARD_RECORD_TERMINALS=1`, governed
   terminal sessions are captured as asciinema v2 casts under the state dir and
   can be replayed with `runeward replay` as part of the audit trail.
+- **Agent-session transcripts.** Cohort agent stdout/stderr is scrubbed before
+  delivery, appended to private (`0600`) JSONL files under the state directory,
+  and exposed only within the session's tenant. Unlike terminal casts, these
+  non-interactive transcripts are retained automatically (up to 64 MiB per
+  session) so live viewers can reconnect.
 - **No host mounts.** `copy_from` copies into the sandbox; the host tree is never
-  mounted, so the agent can't reach beyond what you seeded. Set
+  mounted. Request-time overrides are administrator-only. Set
   `RUNEWARD_COPY_FROM_ROOTS` (a colon-separated allowlist) to confine which host
   directories `copy_from` may read; sources outside the roots fail creation.
 - **Kubernetes multi-tenancy.** The managed namespace carries Pod Security
@@ -110,8 +134,8 @@ Please disclose privately; do not open a public issue.
 - Bypass of the egress allowlist, policy engine, or approval gates.
 - Audit-ledger forgery or silent tampering that verification would miss.
 - Path traversal / writes outside the intended workspace (e.g. tar-slip).
-- Auth/authorization flaws in the REST API, WebSocket terminal, or admission
-  webhook.
+- Auth/authorization flaws in the REST API, WebSocket terminal, browser IDE
+  proxy, or admission webhook.
 - Secret leakage in logs, the ledger, or the dashboard.
 
 ## Operator responsibility (out of scope)
@@ -123,11 +147,12 @@ Please disclose privately; do not open a public issue.
 - Secrets you place in Charters; runeward redacts *declared* secret values from
   the ledger and additionally masks common credential shapes (API keys, bearer
   tokens, PEM keys, `password=`/`token=` pairs) wherever they appear, but
-  pattern matching is best-effort and can't catch every custom format.
+  pattern matching is best-effort and can't catch every custom format. The same
+  warning applies to persisted agent-session transcripts.
 - Network exposure of `runeward serve`. It binds `127.0.0.1` and requires an API
   token before any non-loopback bind, but you still choose the token strength,
-  terminate TLS appropriately, and front it with your own proxy/SSO if you need
-  richer authn/z than a shared token.
+  terminate TLS appropriately, and configure static RBAC or OIDC rather than a
+  shared token for team deployments.
 - Denial of service from workloads you explicitly grant large resource limits.
 
 ## Operational notes
@@ -141,8 +166,16 @@ Please disclose privately; do not open a public issue.
 !!! note "Same-origin WebSocket"
     The dashboard terminal WebSocket enforces a same-origin check to prevent
     cross-site hijacking, and state-changing REST requests reject mismatched
-    browser `Origin`s. Set `RUNEWARD_RATE_LIMIT` (requests/sec per client IP) to
-    enable per-IP rate limiting. Front the control plane with TLS in production.
+    browser `Origin`s. Per-IP rate limiting defaults to 50 requests/sec; tune
+    `RUNEWARD_RATE_LIMIT` or explicitly set it to `off` for trusted benchmarks.
+    Front the control plane with TLS in production.
+
+!!! note "Experimental browser IDE"
+    With `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1` and Charter `[ide] enabled`, serve
+    reverse-proxies in-cell code-server. That session is workspace-equivalent
+    interactive access (not per-keystroke policy). Cursor/Claude Desktop/Codex
+    GUIs are not embedded; GitHub Copilot is not first-class on code-server
+    (Open VSX). Details and limits: [Browser IDE](browser-ide.md).
 
 runeward is defense-in-depth, not a hard isolation boundary. Its default
 container backend shares the host kernel, so a determined escape via a kernel or

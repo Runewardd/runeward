@@ -22,12 +22,21 @@ func (m *Manager) Snapshot(ctx context.Context, id, name string) (*backend.Snaps
 	// Carry the originating profile so a restore can re-derive governance.
 	ref.Profile = sess.Profile.Name
 
+	m.snapOpMu.Lock()
+	defer m.snapOpMu.Unlock()
 	m.snapMu.Lock()
 	m.snapshots[ref.ID] = *ref
 	m.snapshotOwners[ref.ID] = sess.Owner
 	m.snapMu.Unlock()
+	if err := m.saveSnapshots(); err != nil {
+		m.snapMu.Lock()
+		delete(m.snapshots, ref.ID)
+		delete(m.snapshotOwners, ref.ID)
+		m.snapMu.Unlock()
+		return nil, fmt.Errorf("persist snapshot reference: %w", err)
+	}
 
-	m.record(sess, "snapshot", name, nil, string(profile.VerdictAllow), 0, 0, "snapshot "+ref.ID)
+	m.record(ctx, sess, "snapshot", name, nil, string(profile.VerdictAllow), 0, 0, "snapshot "+ref.ID)
 	return ref, nil
 }
 
@@ -37,6 +46,14 @@ func (m *Manager) SnapshotOwner(id string) (string, bool) {
 	defer m.snapMu.Unlock()
 	owner, ok := m.snapshotOwners[id]
 	return owner, ok
+}
+
+// SnapshotRef returns one registered recovery artifact.
+func (m *Manager) SnapshotRef(id string) (backend.SnapshotRef, bool) {
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	ref, ok := m.snapshots[id]
+	return ref, ok
 }
 
 // ExportWorkspace streams a point-in-time tar archive from a governed sandbox.
@@ -62,6 +79,12 @@ func (m *Manager) ListSnapshots() []backend.SnapshotRef {
 // RestoreSnapshot recreates a governed sandbox from a snapshot, re-deriving
 // policy and guardrails from the snapshot's profile.
 func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID, owner string) (*backend.Sandbox, error) {
+	return m.RestoreSnapshotForIdentity(ctx, snapshotID, owner, owner)
+}
+
+// RestoreSnapshotForIdentity restores a tenant-owned snapshot while retaining
+// the individual human or agent actor in run lineage and Chronicle metadata.
+func (m *Manager) RestoreSnapshotForIdentity(ctx context.Context, snapshotID, owner, actor string) (*backend.Sandbox, error) {
 	m.snapMu.Lock()
 	ref, ok := m.snapshots[snapshotID]
 	m.snapMu.Unlock()
@@ -108,12 +131,20 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, snapshotID, owner string)
 		Env:     env,
 		Workdir: p.Host.Workdir,
 		Owner:   owner,
+		Actor:   firstNonEmpty(actor, owner),
+		RunID:   newID(),
 		secrets: secrets,
 	}
 	m.mu.Lock()
 	m.sessions[sb.ID] = sess
 	m.mu.Unlock()
-
-	m.record(sess, "snapshot", "restore", nil, string(profile.VerdictAllow), 0, 0, "from "+snapshotID)
+	if err := m.registerRun(sess); err != nil {
+		_ = be.Kill(context.Background(), sb.ID)
+		m.mu.Lock()
+		delete(m.sessions, sb.ID)
+		m.mu.Unlock()
+		return nil, fmt.Errorf("persist restored run: %w", err)
+	}
+	m.record(ctx, sess, "snapshot", "restore", nil, string(profile.VerdictAllow), 0, 0, "from "+snapshotID)
 	return sb, nil
 }

@@ -166,7 +166,7 @@ func (m *Manager) BrowserClose(ctx context.Context, id, sessionID string) error 
 	sess.browserMu.Lock()
 	delete(sess.browsers, sessionID)
 	sess.browserMu.Unlock()
-	m.record(sess, "browser", "close", []string{"close", sessionID}, string(profile.VerdictAllow), 0, 0, "")
+	m.record(ctx, sess, "browser", "close", []string{"close", sessionID}, string(profile.VerdictAllow), 0, 0, "")
 	return nil
 }
 

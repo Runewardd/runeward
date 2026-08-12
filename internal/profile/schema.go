@@ -51,8 +51,27 @@ type Profile struct {
 	Limits       Limits        `toml:"rationing" json:"rationing"`
 	Fleet        *Fleet        `toml:"cohort" json:"cohort"`
 	Audit        Audit         `toml:"chronicle" json:"chronicle"`
+	// IDE, when enabled, starts an in-citadel browser IDE (code-server) that
+	// the control plane exposes via a ticketed reverse proxy. Opt-in and
+	// gated by RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 at serve time.
+	IDE IDE `toml:"ide" json:"ide"`
 	// Packages are installed only with --provision, never on the run path.
 	Packages []string `toml:"packages" json:"packages"`
+}
+
+// IDE configures an optional in-citadel browser IDE (code-server / OpenVSCode).
+type IDE struct {
+	// Enabled starts the IDE process after Citadel create when the
+	// experimental IDE feature flag is on.
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Port is the container-local listen port (default 8080).
+	Port int `toml:"port" json:"port"`
+	// Path is reserved for a future URL base path; empty means "/".
+	Path string `toml:"path" json:"path"`
+	// Agents lists CLI tools expected in the image (e.g. claude, codex, cursor)
+	// for dashboard hints. These are not separate browser GUIs — they run in
+	// the IDE/terminal after Open IDE.
+	Agents []string `toml:"agents" json:"agents,omitempty"`
 }
 
 // Host declares where and how a session runs.

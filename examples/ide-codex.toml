@@ -1,0 +1,49 @@
+# Browser IDE spin-off with OpenAI Codex CLI in-cell.
+#
+# Codex has no self-hosted browser GUI — Open IDE is code-server;
+# run `codex` in the IDE terminal (or dashboard Terminal tab).
+#
+#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+#   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
+#   RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 ./bin/runeward --config-dir examples serve
+#   Create charter "ide-codex" → Open IDE → terminal: codex
+
+[host]
+type    = "container"
+image   = "runeward-ide-agents:latest"
+user    = "coder"
+workdir = "/workspace"
+
+[ide]
+enabled = true
+port    = 8080
+agents  = ["codex"]
+
+[network]
+default = "deny"
+
+[[network.rule]]
+verdict  = "allow"
+hostname = "api.openai.com"
+
+[[env]]
+name = "OPENAI_API_KEY"
+file = "~/.runeward-openai.key"
+
+[[env]]
+name  = "NODE_USE_ENV_PROXY"
+value = "1"
+
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive delete blocked by policy"
+
+[rationing]
+wall_clock      = "2h"
+max_execs       = 500
+egress_requests = 2000
+
+[chronicle]
+redact = true

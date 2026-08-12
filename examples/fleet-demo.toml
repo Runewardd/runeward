@@ -14,5 +14,17 @@ workdir = "/workspace"
 replicas   = 2
 task_board = ["build module A", "build module B", "run integration tests"]
 
+[[policy]]
+tool    = "shell"
+match   = "rm -rf*"
+verdict = "deny"
+reason  = "destructive recursive deletion is not permitted in the shared Cohort"
+
+[[policy]]
+tool    = "file.write"
+match   = "config/*"
+verdict = "require-approval"
+reason  = "shared Cohort configuration changes require review"
+
 [rationing]
 max_execs = 500

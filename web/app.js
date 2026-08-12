@@ -18,6 +18,12 @@ const state = {
   fleets: [],
   fleetSelected: null, // fleet id
   fleetTasks: [],
+	taskLeases: {},
+  agentSessions: [],
+  agentSessionSelected: null,
+  agentEvents: [],
+  agentLastSeq: 0,
+  agentStreamAbort: null,
   // terminal
   term: null,
   fitAddon: null,
@@ -33,6 +39,7 @@ const state = {
   budget: null,
 	readiness: null,
 	snapshots: [],
+	runs: [],
 };
 
 /* ---------------- DOM helpers ---------------- */
@@ -99,11 +106,26 @@ function profileAllowed(name) {
   for (const pattern of patterns) {
     if (!pattern) continue;
     if (pattern === "*") return true;
-    // path.Match-style: * matches any sequence within a single path segment.
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-    if (new RegExp("^" + escaped + "$").test(name)) return true;
+	if (globMatches(pattern, name)) return true;
   }
   return false;
+}
+
+// Match Go path.Match's useful single-segment glob forms for profile names.
+function globMatches(pattern, value) {
+	let source = "";
+	for (let i = 0; i < pattern.length; i++) {
+		const ch = pattern[i];
+		if (ch === "*") source += "[^/]*";
+		else if (ch === "?") source += "[^/]";
+		else if (ch === "[") {
+			const end = pattern.indexOf("]", i + 1);
+			if (end < 0) return false;
+			source += pattern.slice(i, end + 1);
+			i = end;
+		} else source += ch.replace(/[.+^${}()|\\]/g, "\\$&");
+	}
+	try { return new RegExp("^" + source + "$").test(value); } catch { return false; }
 }
 
 /* ---------------- API layer ---------------- */
@@ -434,6 +456,19 @@ function selectSandbox(id) {
     renderEgress();
     renderBudget();
 		renderSnapshots();
+    const openIde = $("#open-ide");
+    if (openIde) openIde.classList.add("hidden");
+    const ideHint = $("#ide-agents-hint");
+    if (ideHint) {
+      ideHint.textContent = "";
+      ideHint.classList.add("hidden");
+    }
+    const agentSessions = $("#view-agent-sessions");
+    if (agentSessions) {
+      agentSessions.classList.add("hidden");
+      delete agentSessions.dataset.cohortId;
+      delete agentSessions.dataset.sandboxId;
+    }
     return;
   }
   empty.classList.add("hidden");
@@ -442,13 +477,67 @@ function selectSandbox(id) {
   const sb = state.sandboxes.find((s) => s.id === id) || {};
   $("#sel-id").textContent = id;
   $("#sel-meta").textContent = `${sb.profile || "—"} · ${sb.backend || "—"} · ${sb.image || "—"} · ${sb.status || "—"}`;
+  const openIde = $("#open-ide");
+  const ideHint = $("#ide-agents-hint");
+  if (openIde) {
+    openIde.classList.toggle("hidden", !sb.ide);
+  }
+  if (ideHint) {
+    const agents = Array.isArray(sb.ide_agents) ? sb.ide_agents.filter(Boolean) : [];
+    if (sb.ide && agents.length) {
+      const cmds = agents.map((a) => {
+        if (a === "cursor") return "agent";
+        return a;
+      });
+      ideHint.textContent = `In IDE terminal: ${cmds.join(" · ")} (CLI — not Cursor/Claude Desktop GUIs)`;
+      ideHint.classList.remove("hidden");
+    } else {
+      ideHint.textContent = "";
+      ideHint.classList.add("hidden");
+    }
+  }
   const simSel = $("#sim-profile-select");
   if (simSel && sb.profile) {
     simSel.value = sb.profile;
   }
+  updateAgentSessionsLink(id);
 
   // Re-activate the current tab for the new sandbox.
   activateTab(state.activeTab, true);
+}
+
+async function updateAgentSessionsLink(sandboxID) {
+  const button = $("#view-agent-sessions");
+  if (!button) return;
+  button.classList.add("hidden");
+  delete button.dataset.cohortId;
+  delete button.dataset.sandboxId;
+  try {
+    const { data } = await api("GET", "/v1/cohorts");
+    if (state.selected !== sandboxID) return;
+    const cohorts = (data && data.fleets) || [];
+    const cohort = cohorts.find((item) => Array.isArray(item.sandboxes) && item.sandboxes.includes(sandboxID));
+    if (!cohort) return;
+    button.dataset.cohortId = cohort.id;
+    button.dataset.sandboxId = sandboxID;
+    button.classList.remove("hidden");
+  } catch (_) {
+    // The global health indicator covers connectivity; keep this shortcut hidden.
+  }
+}
+
+async function openAgentSessionsForSelectedSandbox() {
+  const button = $("#view-agent-sessions");
+  const cohortID = button && button.dataset.cohortId;
+  const sandboxID = button && button.dataset.sandboxId;
+  if (!cohortID) return;
+  switchView("fleets");
+  await loadFleets();
+  await selectFleet(cohortID);
+  const latest = [...state.agentSessions]
+    .filter((session) => !sandboxID || session.citadel_id === sandboxID)
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+  if (latest) await selectAgentSession(latest.id);
 }
 
 /* ---------------- View switch (Sandboxes | Fleets) ---------------- */
@@ -466,7 +555,11 @@ function switchView(name) {
   $("#sb-panel").classList.toggle("hidden", name !== "sandboxes");
   $("#fleet-panel").classList.toggle("hidden", name !== "fleets");
 
-  if (name === "fleets") refreshFleets();
+  if (name === "fleets") {
+    refreshFleets();
+  } else {
+    stopAgentStream();
+  }
 }
 
 /* ---------------- Fleets ---------------- */
@@ -568,8 +661,13 @@ async function deleteFleet(id) {
 }
 
 function selectFleet(id) {
+  stopAgentStream();
   state.fleetSelected = id;
   state.fleetTasks = [];
+  state.agentSessions = [];
+  state.agentSessionSelected = null;
+  state.agentEvents = [];
+  state.agentLastSeq = 0;
   renderFleetList();
 
   const empty = $("#fleet-empty");
@@ -577,22 +675,24 @@ function selectFleet(id) {
   if (!id) {
     empty.classList.remove("hidden");
     bodyEl.classList.add("hidden");
-    return;
+    return Promise.resolve();
   }
   empty.classList.add("hidden");
   bodyEl.classList.remove("hidden");
   $("#fleet-claim-note").classList.add("hidden");
-  refreshFleetDetail();
+  return refreshFleetDetail();
 }
 
 async function refreshFleetDetail() {
   if (!state.fleetSelected) return;
   try {
-    const [fleetRes, tasksRes] = await Promise.all([
+    const [fleetRes, tasksRes, sessionsRes] = await Promise.all([
       api("GET", fleetPath("")),
       api("GET", fleetPath("/tasks")),
+      api("GET", "/v1/agent-sessions?cohort_id=" + encodeURIComponent(state.fleetSelected)),
     ]);
     state.fleetTasks = (tasksRes.data && tasksRes.data.tasks) || [];
+    state.agentSessions = (sessionsRes.data && sessionsRes.data.sessions) || [];
     renderFleetDetail(fleetRes.data || {});
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
@@ -615,6 +715,7 @@ function renderFleetDetail(fleet) {
   renderFleetStats(fleet.stats || {});
   renderFleetChips(sbs);
   renderFleetTasks();
+  renderAgentSessions();
 }
 
 function renderFleetStats(stats) {
@@ -656,20 +757,20 @@ function renderFleetTasks() {
     const resultOrError = st === "failed" ? t.error || "" : t.result || "";
 
     const actions = el("div", { class: "task-actions" });
-    if (st === "claimed") {
+    if (st === "claimed" && state.taskLeases[t.id]) {
       const requeue = el("input", { type: "checkbox", checked: "checked", class: "requeue-box" });
       actions.appendChild(
         el("button", {
           class: "btn btn-sm btn-approve",
           text: "Complete",
-          onClick: () => completeFleetTask(t.id),
+		  onClick: () => completeFleetTask(t.id, t.owner || ""),
         })
       );
       actions.appendChild(
         el("button", {
           class: "btn btn-sm btn-deny",
           text: "Fail",
-          onClick: () => failFleetTask(t.id, requeue.checked),
+		  onClick: () => failFleetTask(t.id, t.owner || "", requeue.checked),
         })
       );
       actions.appendChild(
@@ -691,6 +792,140 @@ function renderFleetTasks() {
         el("td", {}, actions),
       ])
     );
+  }
+}
+
+function renderAgentSessions() {
+  const body = $("#agent-session-body");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!state.agentSessions.length) {
+    body.appendChild(el("tr", {}, el("td", { colspan: "6", class: "empty-note", text: "No agent sessions yet." })));
+    return;
+  }
+  const sessions = [...state.agentSessions].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  for (const s of sessions) {
+    const status = String(s.status || "unknown").toLowerCase();
+    body.appendChild(el("tr", { class: s.id === state.agentSessionSelected ? "selected-row" : "" }, [
+      el("td", { text: [s.agent || "agent", s.model || ""].filter(Boolean).join(" · ") }),
+      el("td", { class: "mono", text: s.task_id || "—", title: s.task_id || "" }),
+      el("td", { class: "mono", text: s.citadel_id || "—", title: s.citadel_id || "" }),
+      el("td", {}, el("span", { class: "state-tag " + status, text: status })),
+      el("td", { text: fmtTime(s.started_at || s.created_at) }),
+      el("td", {}, el("button", { class: "btn btn-sm", text: "View", onClick: () => selectAgentSession(s.id) })),
+    ]));
+  }
+  if (state.agentSessionSelected && !sessions.some((s) => s.id === state.agentSessionSelected)) {
+    stopAgentStream();
+    state.agentSessionSelected = null;
+    $("#agent-transcript").classList.add("hidden");
+  }
+}
+
+async function selectAgentSession(id) {
+  stopAgentStream();
+  state.agentSessionSelected = id;
+  state.agentEvents = [];
+  state.agentLastSeq = 0;
+  renderAgentSessions();
+  $("#agent-transcript").classList.remove("hidden");
+  $("#agent-transcript-id").textContent = id;
+  $("#agent-transcript-output").textContent = "";
+  setAgentTranscriptStatus("conn-off", "loading…");
+  try {
+    const { data } = await api("GET", `/v1/agent-sessions/${encodeURIComponent(id)}/events?after=0`);
+    appendAgentEvents((data && data.events) || []);
+    const session = (data && data.session) || {};
+    if (agentSessionTerminal(session.status)) {
+      setAgentTranscriptStatus(session.status === "completed" ? "conn-on" : "conn-err", session.status || "finished");
+    } else {
+      startAgentStream(id, state.agentLastSeq);
+    }
+  } catch (e) {
+    setAgentTranscriptStatus("conn-err", "error");
+    toast("Transcript read failed: " + e.message, "error");
+  }
+}
+
+function appendAgentEvents(events) {
+  const out = $("#agent-transcript-output");
+  if (!out) return;
+  for (const ev of events) {
+    if (!ev || Number(ev.seq || 0) <= state.agentLastSeq) continue;
+    state.agentLastSeq = Number(ev.seq || state.agentLastSeq);
+    state.agentEvents.push(ev);
+    if (ev.stream === "status") {
+      out.textContent += `\n[runeward] ${ev.data}\n`;
+      const terminal = agentSessionTerminal(ev.data);
+      setAgentTranscriptStatus(terminal && ev.data !== "completed" ? "conn-err" : "conn-on", ev.data);
+    } else {
+      const prefix = ev.stream === "stderr" ? "[stderr] " : "";
+      out.textContent += prefix + String(ev.data || "");
+    }
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+function setAgentTranscriptStatus(kind, label) {
+  const node = $("#agent-transcript-status");
+  if (!node) return;
+  node.className = "conn-status " + kind;
+  node.textContent = label;
+}
+
+function agentSessionTerminal(status) {
+  return ["completed", "failed", "denied", "canceled", "interrupted"].includes(String(status || ""));
+}
+
+function stopAgentStream() {
+  if (state.agentStreamAbort) {
+    state.agentStreamAbort.abort();
+    state.agentStreamAbort = null;
+  }
+}
+
+async function startAgentStream(id, after) {
+  stopAgentStream();
+  const controller = new AbortController();
+  state.agentStreamAbort = controller;
+  setAgentTranscriptStatus("conn-on", "live");
+  const headers = { Accept: "text/event-stream" };
+  if (auth.token) headers.Authorization = "Bearer " + auth.token;
+  try {
+    const res = await fetch(`/v1/agent-sessions/${encodeURIComponent(id)}/stream?after=${Number(after || 0)}`, {
+      headers,
+      signal: controller.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const dataLines = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart());
+        if (!dataLines.length) continue;
+        try { appendAgentEvents([JSON.parse(dataLines.join("\n"))]); } catch {}
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      setAgentTranscriptStatus("conn-err", "disconnected");
+    }
+  } finally {
+    if (state.agentStreamAbort === controller) state.agentStreamAbort = null;
+    if (!controller.signal.aborted && state.agentSessionSelected === id) {
+      try {
+        const { data } = await api("GET", `/v1/agent-sessions/${encodeURIComponent(id)}`);
+        setAgentTranscriptStatus(data.status === "completed" ? "conn-on" : "conn-err", data.status || "disconnected");
+      } catch {}
+      refreshFleetDetail();
+    }
   }
 }
 
@@ -727,6 +962,7 @@ async function claimFleetTask() {
     note.classList.remove("hidden");
     if (data && data.claimed && data.task) {
       note.className = "note ok";
+	  state.taskLeases[data.task.id] = data.task.lease_token;
       note.textContent = `Claimed ${data.task.id} by ${owner}: ${data.task.payload || ""}`;
       toast(`Task claimed by ${owner}`, "success");
     } else {
@@ -741,11 +977,12 @@ async function claimFleetTask() {
   }
 }
 
-async function completeFleetTask(taskId) {
+async function completeFleetTask(taskId, owner) {
   const result = window.prompt("Result for this task:", "ok");
   if (result === null) return;
   try {
-    await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/complete`), { result });
+	await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/complete`), { owner, lease_token: state.taskLeases[taskId], result });
+	delete state.taskLeases[taskId];
     toast("Task completed", "success");
     await refreshFleetDetail();
   } catch (e) {
@@ -753,14 +990,17 @@ async function completeFleetTask(taskId) {
   }
 }
 
-async function failFleetTask(taskId, requeue) {
+async function failFleetTask(taskId, owner, requeue) {
   const error = window.prompt("Failure reason:", "error");
   if (error === null) return;
   try {
-    await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/fail`), {
+	await api("POST", fleetPath(`/tasks/${encodeURIComponent(taskId)}/fail`), {
+	  owner,
+	  lease_token: state.taskLeases[taskId],
       error,
       requeue: !!requeue,
     });
+	delete state.taskLeases[taskId];
     toast(requeue ? "Task failed — requeued" : "Task failed", "info");
     await refreshFleetDetail();
   } catch (e) {
@@ -841,6 +1081,8 @@ function ensureTerminal() {
 
   window.addEventListener("resize", debounce(fitAndResize, 120));
   $("#term-reconnect").addEventListener("click", () => connectTerminal(true));
+  const openIdeBtn = $("#open-ide");
+  if (openIdeBtn) openIdeBtn.addEventListener("click", openIDE);
 }
 
 function fitAndResize() {
@@ -937,6 +1179,31 @@ async function requestTerminalTicket(sandboxID) {
     throw new Error("terminal ticket unavailable");
   }
   return data.ticket;
+}
+
+async function openIDE() {
+  if (!state.selected) return;
+  const sb = state.sandboxes.find((s) => s.id === state.selected) || {};
+  if (!sb.ide) {
+    toast("Browser IDE is not available for this Citadel.", "warn");
+    return;
+  }
+  try {
+    const { data } = await api("POST", "/v1/tickets", {
+      kind: "ide",
+      sandbox_id: state.selected,
+      ttl_seconds: 30,
+    });
+    if (!data || !data.ticket) {
+      throw new Error("ide ticket unavailable");
+    }
+    const url =
+      `/v1/citadels/${encodeURIComponent(state.selected)}/ide` +
+      `?ticket=${encodeURIComponent(data.ticket)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (e) {
+    toast("Open IDE failed: " + e.message, "error");
+  }
 }
 
 /* ---------------- Files tab ---------------- */
@@ -1466,13 +1733,41 @@ function renderBudget() {
 async function refreshRecovery() {
 	if (!state.selected) return;
 	try {
-		const { data } = await api("GET", "/v1/snapshots");
-		state.snapshots = (data && data.snapshots) || [];
+		const [snapshotResponse, runResponse] = await Promise.all([
+			api("GET", "/v1/snapshots"),
+			api("GET", "/v1/runs"),
+		]);
+		state.snapshots = (snapshotResponse.data && snapshotResponse.data.snapshots) || [];
+		state.runs = (runResponse.data && runResponse.data.runs) || [];
 	} catch (e) {
 		state.snapshots = [];
+		state.runs = [];
 		toast("Could not load recovery snapshots: " + e.message, "error");
 	}
 	renderSnapshots();
+	renderRuns();
+}
+
+function renderRuns() {
+	const body = $("#run-body");
+	if (!body) return;
+	body.innerHTML = "";
+	const runs = state.runs.slice().reverse();
+	if (runs.length === 0) {
+		body.appendChild(el("tr", {}, el("td", { colspan: "6", class: "empty-note", text: "No agent runs yet." })));
+		return;
+	}
+	for (const run of runs) {
+		const selected = run.citadel_id === state.selected;
+		body.appendChild(el("tr", { class: selected ? "selected" : "" }, [
+			el("td", { class: "mono", text: run.id || "—", title: run.id || "" }),
+			el("td", { class: "mono", text: run.parent_run_id || "—", title: run.parent_run_id || "" }),
+			el("td", { text: run.actor || "—" }),
+			el("td", { text: [run.agent, run.provider, run.model].filter(Boolean).join(" · ") || "—" }),
+			el("td", {}, el("span", { class: "v-tag " + (run.status || ""), text: run.status || "—" })),
+			el("td", { text: fmtDateTime(run.created_at) }),
+		]));
+	}
 }
 
 function renderSnapshots() {
@@ -1633,12 +1928,16 @@ function wireEvents() {
   // View switch + fleets
   $("#view-sandboxes").addEventListener("click", () => switchView("sandboxes"));
   $("#view-fleets").addEventListener("click", () => switchView("fleets"));
+  $("#view-agent-sessions").addEventListener("click", openAgentSessionsForSelectedSandbox);
   $("#fleet-create-btn").addEventListener("click", createFleet);
   $("#fleet-refresh-btn").addEventListener("click", () => { loadFleets(); loadProfiles(); });
   $("#fleet-add-task").addEventListener("click", addFleetTask);
   $("#fleet-task-payload").addEventListener("keydown", (e) => { if (e.key === "Enter") addFleetTask(); });
   $("#fleet-claim").addEventListener("click", claimFleetTask);
   $("#fleet-claim-owner").addEventListener("keydown", (e) => { if (e.key === "Enter") claimFleetTask(); });
+  $("#agent-transcript-reconnect").addEventListener("click", () => {
+    if (state.agentSessionSelected) startAgentStream(state.agentSessionSelected, state.agentLastSeq);
+  });
 
   $$(".tab").forEach((t) =>
     t.addEventListener("click", () => activateTab(t.dataset.tab))
@@ -1689,16 +1988,19 @@ function applyPrincipal() {
   if (chip) {
     chip.classList.remove("hidden");
     let name, role;
-    if (auth.rbac) {
-      name = p.name || "(unnamed)";
-      role = p.admin ? "admin" : (p.can_approve ? "approver" : "user");
+	if (auth.rbac) {
+	  name = p.name || "(unnamed)";
+	  role = p.admin ? "admin" : (p.can_approve && !p.can_launch ? "reviewer-only" : (p.can_approve ? "approver" : (p.can_launch ? "operator" : "locked")));
     } else {
       name = "open mode";
       role = "";
     }
     $("#identity-name").textContent = name;
     $("#identity-role").textContent = role;
-    $("#identity-role").classList.toggle("hidden", !role);
+	$("#identity-role").classList.toggle("hidden", !role);
+	const launchScope = p.admin ? "all Charters" : ((p.allowed_profiles || []).join(", ") || "no Charters");
+	const approvalScope = p.admin ? "all approvals" : (p.can_approve ? ((p.approval_profiles || []).join(", ") || "all approvals") : "no approvals");
+	chip.title = `Launch: ${launchScope}; Review: ${approvalScope}`;
     // A sign-out only makes sense when authenticating with a token.
     $("#signout-btn").classList.toggle("hidden", !auth.token);
   }

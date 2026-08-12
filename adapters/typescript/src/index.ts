@@ -13,6 +13,7 @@ export {
   RunewardClient,
   RunewardError,
   RunewardDenied,
+	RunewardAuthorizationError,
   RunewardApprovalRequired,
 } from "./client.js";
 
@@ -22,6 +23,14 @@ export type {
   Profile,
   ExecResult,
   Approval,
+	Principal,
+	Whoami,
+	Usage,
+	Cohort,
+	CohortTask,
+	Snapshot,
+	Run,
+	CreateSandboxOptions,
 } from "./client.js";
 
 export { makeRunewardTools } from "./ai-tools.js";

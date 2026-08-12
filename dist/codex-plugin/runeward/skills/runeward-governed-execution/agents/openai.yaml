@@ -1,0 +1,4 @@
+interface:
+  display_name: "Runeward Governed Execution"
+  short_description: "Run agent actions inside governed Citadels"
+  default_prompt: "Use Runeward to perform this task inside the least-privileged Charter, pause for approvals, and preserve the Chronicle."

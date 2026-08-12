@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "runeward"
-version = "0.2.1"
+version = "0.3.0-rc.1"
 description = "Python SDK for governing AI agent execution with policy, approvals, isolation, budgets, and signed evidence."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Runeward contributors" }]
 keywords = ["ai", "agents", "sandbox", "mcp", "governance", "langchain", "crewai", "llamaindex", "openai-agents", "strands"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",

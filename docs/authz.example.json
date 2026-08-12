@@ -1,0 +1,24 @@
+{
+  "principals": [
+    {
+      "name": "operator",
+      "tenant": "team-alpha",
+      "token": "replace-with-at-least-32-random-characters",
+      "allowed_profiles": ["dev", "governed"]
+    },
+    {
+      "name": "codex-agent",
+      "tenant": "team-alpha",
+      "token": "replace-with-a-distinct-32-character-secret",
+      "allowed_profiles": ["dev", "governed"]
+    },
+    {
+      "name": "reviewer",
+      "tenant": "team-alpha",
+      "token": "replace-with-another-32-character-secret",
+      "allowed_profiles": [],
+      "can_approve": true,
+      "approval_profiles": ["governed"]
+    }
+  ]
+}

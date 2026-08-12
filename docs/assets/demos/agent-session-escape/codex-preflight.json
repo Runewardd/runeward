@@ -1,0 +1,1 @@
+{"verdict":"allow","exit_code":0,"stdout":"HOME=/workspace/.agent-home\nCODEX_HOME=/workspace/.agent-home/.codex\ncodex-cli 0.142.5\n","duration_ms":212}

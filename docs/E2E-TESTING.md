@@ -29,6 +29,10 @@ Everything below assumes macOS + [OrbStack](https://orbstack.dev) (which gives
 you both Docker and a one-click Kubernetes cluster), but any Docker + kubectl
 setup works.
 
+For a focused, recordable scenario that launches a real agent, follows its
+durable output, and verifies failed host/socket/rootfs/egress escape probes, use
+the [live agent-session and escape-denial demo](agent-session-escape-demo.md).
+
 ---
 
 ## 0. Prerequisites
@@ -1589,6 +1593,37 @@ curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"download","path":"/v1/chronic
 # (POST /v1/citadels/{id}/terminal-ticket still works and delegates to this store.)
 ```
 
+### Optional browser IDE (experimental)
+
+Full documentation (additions + limitations): [Browser IDE](browser-ide.md).
+
+Contrast with **host IDE → MCP** (setup 1) and **in-cell CLI agents** (setup 2): this path
+embeds code-server inside the Citadel and reverse-proxies it from `serve`. Keystrokes are
+**not** per-command policy (same caveat as the interactive terminal).
+
+Cursor Desktop / Claude Desktop / Codex do **not** ship a self-hosted browser GUI. To test
+those CLIs through the same Open-IDE spin-off, build `deploy/Dockerfile.ide-agents` and use
+`ide-claude` / `ide-codex` / `ide-cursor` Charters; run `claude`, `codex`, or `agent` in the
+IDE terminal. GitHub Copilot is not first-class on code-server (Open VSX marketplace).
+
+```bash
+# Build the IDE image and enable the feature flag:
+docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+export RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
+# Charter: examples/ide-demo.toml ([ide] enabled = true)
+
+# Or IDE + coding CLIs:
+docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+# Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each)
+
+CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"ide-demo"}' | jq -r .id)
+TICKET=$(curl -s "${AUTH[@]}" $BASE/v1/tickets -d '{"kind":"ide","sandbox_id":"'$CID'"}' | jq -r .ticket)
+# Open in a browser (ticket is single-use; a cookie covers subsequent asset loads):
+open "$BASE/v1/citadels/$CID/ide?ticket=$TICKET"
+# Or: dashboard → select Citadel → Open IDE
+# Chronicle: ide.open on create, ide.close on kill.
+```
+
 ---
 
 ## 26. Policy simulation (dry-run) over the API
@@ -1770,5 +1805,4 @@ rm -rf "$RUNEWARD_STATE_DIR" /tmp/rw-keys /tmp/cases.toml /tmp/authz.json \
 | `unsupported container runtime "…"` at startup                              | `RUNEWARD_CONTAINER_RUNTIME` must be `docker` or `podman` (29).                                                                                                                    |
 | `ledger: "…/ledger.jsonl" is already in use by another runeward process`    | One writer per audit ledger. Another `serve`/`mcp` holds the default state dir — give this instance its own `RUNEWARD_STATE_DIR` (8), or stop the other process.                    |
 | `runeward mcp --http` → `bind: address already in use`                      | A previous `mcp`/`serve` still owns the port. `pkill -f 'runeward.*mcp'` (or stop `serve`), or start with a different `--port`.                                                     |
-
 

@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,6 +18,7 @@ const fleetsFileName = "fleets.json"
 type persistedFleet struct {
 	ID        string       `json:"id"`
 	Profile   string       `json:"profile"`
+	Owner     string       `json:"owner,omitempty"`
 	Sandboxes []string     `json:"sandboxes"`
 	Created   time.Time    `json:"created"`
 	Tasks     []fleet.Task `json:"tasks"`
@@ -46,27 +48,46 @@ func (m *Manager) loadFleets() error {
 	if err := json.Unmarshal(b, &pfs); err != nil {
 		return err
 	}
+	migrated := false
 	m.fleetMu.Lock()
-	defer m.fleetMu.Unlock()
 	for _, pf := range pfs {
+		// Pre-v1 claimed tasks have no lease version and therefore no signed
+		// capability that a worker could present to heartbeat or finish them.
+		// Requeue only those legacy claims so an upgraded control plane cannot
+		// strand work indefinitely. Current signed claims retain their state.
+		for i := range pf.Tasks {
+			if pf.Tasks[i].State == fleet.StateClaimed && pf.Tasks[i].LeaseVersion == 0 {
+				pf.Tasks[i].State = fleet.StatePending
+				pf.Tasks[i].Owner = ""
+				pf.Tasks[i].LeaseExpiry = time.Time{}
+				pf.Tasks[i].Error = "legacy unsigned lease requeued during v1 upgrade"
+				pf.Tasks[i].UpdatedAt = time.Now().UTC()
+				migrated = true
+			}
+		}
 		m.fleets[pf.ID] = &Fleet{
 			ID:        pf.ID,
 			Profile:   pf.Profile,
+			Owner:     pf.Owner,
 			Board:     fleet.Load(pf.Tasks, m.fleetLease),
 			Sandboxes: pf.Sandboxes,
 			Created:   pf.Created,
 			restored:  true,
 		}
 	}
+	m.fleetMu.Unlock()
+	if migrated {
+		return m.saveFleets()
+	}
 	return nil
 }
 
 // saveFleets atomically writes the current fleets to disk (no-op without a
 // state dir). The snapshot is taken under the lock; the write happens outside.
-func (m *Manager) saveFleets() {
+func (m *Manager) saveFleets() error {
 	path := m.fleetsPath()
 	if path == "" {
-		return
+		return nil
 	}
 
 	m.fleetMu.Lock()
@@ -75,6 +96,7 @@ func (m *Manager) saveFleets() {
 		pfs = append(pfs, persistedFleet{
 			ID:        f.ID,
 			Profile:   f.Profile,
+			Owner:     f.Owner,
 			Sandboxes: f.Sandboxes,
 			Created:   f.Created,
 			Tasks:     f.Board.Export(),
@@ -84,13 +106,9 @@ func (m *Manager) saveFleets() {
 
 	data, err := json.MarshalIndent(pfs, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, path)
+	return m.writeStateFile(fleetsFileName, data)
 }
 
 // startSweeper launches the lease-expiry sweeper, which requeues tasks with
@@ -117,6 +135,8 @@ func (m *Manager) startSweeper(interval time.Duration) {
 }
 
 func (m *Manager) sweepOnce() {
+	m.fleetOpMu.Lock()
+	defer m.fleetOpMu.Unlock()
 	now := time.Now().UTC()
 	m.fleetMu.Lock()
 	fleets := make([]*Fleet, 0, len(m.fleets))
@@ -133,7 +153,9 @@ func (m *Manager) sweepOnce() {
 		}
 	}
 	if changed {
-		m.saveFleets()
+		if err := m.saveFleets(); err != nil {
+			log.Printf("runeward: persist requeued cohort tasks: %v", err)
+		}
 	}
 }
 

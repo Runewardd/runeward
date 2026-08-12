@@ -11,6 +11,7 @@ var version = "dev"
 // reserved lists the real subcommands; any other first argument is treated as
 // a charter name to enter.
 var reserved = map[string]bool{
+	"auth":       true,
 	"serve":      true,
 	"mcp":        true,
 	"list":       true,
@@ -87,6 +88,7 @@ func newRootCmd() *cobra.Command {
 		"pin policy-file (Charter) resolution to a directory (or $RUNEWARD_CONFIG_DIR)")
 
 	root.AddCommand(
+		newAuthCmd(),
 		newInitCmd(),
 		newQuickstartCmd(),
 		newDoctorCmd(&configDir),

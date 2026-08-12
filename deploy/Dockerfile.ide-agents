@@ -1,0 +1,90 @@
+# Browser IDE (code-server) plus in-cell coding CLIs for testing.
+#
+# Cursor / Claude Desktop / Codex do NOT ship a self-hosted browser GUI.
+# This image gives the same Open-IDE spin-off as Dockerfile.ide, with the
+# Claude Code / Codex (and optionally Cursor) CLIs available in the IDE terminal.
+#
+#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+#
+# Optional Cursor CLI (pinned installer digest required):
+#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest \
+#     --build-arg INSTALL_CURSOR=true \
+#     --build-arg CURSOR_INSTALLER_SHA256=<digest> .
+#
+# Charters: examples/ide-claude.toml, ide-codex.toml, ide-cursor.toml
+# Flag: RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
+FROM codercom/code-server:4.130.0-noble@sha256:d39c88f837f78465b4cf99f54b76eadf52440dc9ffb589e2ddc5d2fd9d0592d2 AS code-server-security-patches
+
+# Keep patched code-server dependencies in an isolated build stage. The final
+# image receives only the five replacement packages, not this npm toolchain.
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends npm \
+    && npm install --prefix /tmp/security-patches --omit=dev --ignore-scripts --no-package-lock \
+        undici@7.29.0 tar@7.5.19 shell-quote@1.9.0 js-yaml@4.3.1 ip-address@10.3.1
+
+FROM codercom/code-server:4.130.0-noble@sha256:d39c88f837f78465b4cf99f54b76eadf52440dc9ffb589e2ddc5d2fd9d0592d2
+
+USER root
+
+COPY --from=code-server-security-patches /tmp/security-patches/node_modules /tmp/security-patches/node_modules
+
+ARG CODEX_VERSION=0.142.5
+ARG CLAUDE_CODE_VERSION=2.1.201
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl git nodejs npm python3 python3-pip \
+    && npm install -g "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && mkdir -p /workspace \
+    && chown -R coder:coder /workspace \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ENTRYPOINT is cleared below and Runeward starts code-server directly, so the
+# setuid fixuid helper from the base image is unused. Remove it along with the
+# vulnerable bundled packages after installing their fixed patch releases.
+RUN rm -rf \
+        /usr/lib/code-server/lib/vscode/node_modules/undici \
+        /usr/lib/code-server/lib/vscode/node_modules/tar \
+        /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
+        /usr/lib/code-server/lib/vscode/node_modules/ip-address \
+        /usr/lib/code-server/node_modules/js-yaml \
+        /usr/lib/code-server/node_modules/ip-address \
+    && cp -a /tmp/security-patches/node_modules/undici /usr/lib/code-server/lib/vscode/node_modules/undici \
+    && cp -a /tmp/security-patches/node_modules/tar /usr/lib/code-server/lib/vscode/node_modules/tar \
+    && cp -a /tmp/security-patches/node_modules/shell-quote /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
+    && cp -a /tmp/security-patches/node_modules/ip-address /usr/lib/code-server/lib/vscode/node_modules/ip-address \
+    && cp -a /tmp/security-patches/node_modules/js-yaml /usr/lib/code-server/node_modules/js-yaml \
+    && cp -a /tmp/security-patches/node_modules/ip-address /usr/lib/code-server/node_modules/ip-address \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"7\.29\.0"' /usr/lib/code-server/lib/vscode/node_modules/undici/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"7\.5\.19"' /usr/lib/code-server/lib/vscode/node_modules/tar/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"1\.9\.0"' /usr/lib/code-server/lib/vscode/node_modules/shell-quote/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"4\.3\.1"' /usr/lib/code-server/node_modules/js-yaml/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"10\.3\.1"' /usr/lib/code-server/lib/vscode/node_modules/ip-address/package.json \
+    && grep -Eq '"version"[[:space:]]*:[[:space:]]*"10\.3\.1"' /usr/lib/code-server/node_modules/ip-address/package.json \
+    && rm -rf /tmp/security-patches /usr/local/bin/fixuid /etc/fixuid
+
+USER coder
+ENV HOME=/home/coder
+ENV PATH="/home/coder/.local/bin:/home/coder/.cursor/bin:${PATH}"
+
+# Cursor CLI is opt-in (same posture as Dockerfile.agent).
+ARG INSTALL_CURSOR=false
+ARG CURSOR_INSTALLER_SHA256=""
+RUN if [ "$INSTALL_CURSOR" = "true" ]; then \
+      curl -fsS https://cursor.com/install -o /tmp/cursor-install.sh \
+      && if [ -z "$CURSOR_INSTALLER_SHA256" ]; then \
+           echo "CURSOR_INSTALLER_SHA256 is required when INSTALL_CURSOR=true" >&2 ; \
+           exit 1 ; \
+         fi \
+      && echo "${CURSOR_INSTALLER_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
+      && bash /tmp/cursor-install.sh \
+      && rm -f /tmp/cursor-install.sh ; \
+    fi
+
+WORKDIR /workspace
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["code-server", "--version"]
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

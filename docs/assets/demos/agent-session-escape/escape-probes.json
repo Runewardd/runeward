@@ -1,0 +1,38 @@
+{
+  "probes": [
+    {
+      "verdict": "allow",
+      "exit_code": 35,
+      "stderr": "curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading\n",
+      "duration_ms": 96,
+      "probe": "blocked-egress"
+    },
+    {
+      "verdict": "allow",
+      "exit_code": 1,
+      "duration_ms": 85,
+      "probe": "docker-socket"
+    },
+    {
+      "verdict": "allow",
+      "exit_code": 1,
+      "stderr": "cat: can't open '[REDACTED].6lumvt': No such file or directory\n",
+      "duration_ms": 70,
+      "probe": "host-marker"
+    },
+    {
+      "verdict": "allow",
+      "exit_code": 1,
+      "stderr": "sh: can't create /root/runeward-escape-proof: Permission denied\n",
+      "duration_ms": 70,
+      "probe": "read-only-root"
+    },
+    {
+      "verdict": "allow",
+      "exit_code": 0,
+      "stdout": "workspace probe succeeded\n",
+      "duration_ms": 70,
+      "probe": "workspace-positive-control"
+    }
+  ]
+}

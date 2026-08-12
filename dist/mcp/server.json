@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Runewardd/runeward",
   "description": "Agent governance harness with Docker/Kubernetes Citadels, policy, Conclave approvals, budgets, and signed Chronicles.",
-  "version": "0.2.1",
+  "version": "0.3.0-rc.1",
   "repository": {
     "url": "https://github.com/Runewardd/runeward",
     "source": "github"
@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/runewardd/runeward:v0.2.1",
+      "identifier": "ghcr.io/runewardd/runeward:v0.3.0-rc.1",
       "transport": {
         "type": "stdio"
       },
@@ -31,6 +31,32 @@
         {
           "name": "RUNEWARD_STATE_DIR",
           "description": "Directory where the tamper-evident Chronicle (audit ledger) is written (optional).",
+          "isRequired": false
+        },
+        {
+          "name": "RUNEWARD_AUTHZ_FILE",
+          "description": "0600 JSON principal configuration for multi-user RBAC.",
+          "isRequired": false
+        },
+        {
+          "name": "RUNEWARD_MCP_DEFAULT_TOKEN",
+          "description": "Bearer token selecting the principal for this stdio MCP process; `runeward auth login` is the local alternative.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "RUNEWARD_OIDC_ISSUER",
+          "description": "OIDC issuer used to verify signed workload JWTs.",
+          "isRequired": false
+        },
+        {
+          "name": "RUNEWARD_OIDC_AUDIENCE",
+          "description": "Required audience for OIDC workload JWTs.",
+          "isRequired": false
+        },
+        {
+          "name": "RUNEWARD_COPY_FROM_ROOTS",
+          "description": "Colon-separated roots permitted for administrator copy_from operations.",
           "isRequired": false
         }
       ]

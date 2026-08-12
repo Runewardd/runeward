@@ -36,11 +36,12 @@ const maxRequestBodyBytes = 16 << 20 // 16 MiB
 
 // Server is the control-plane HTTP surface.
 type Server struct {
-	mgr       *controlplane.Manager
-	dashboard http.Handler
-	logger    *slog.Logger
-	upgrader  websocket.Upgrader
-	tickets   apiTicketStore
+	mgr         *controlplane.Manager
+	dashboard   http.Handler
+	logger      *slog.Logger
+	upgrader    websocket.Upgrader
+	tickets     apiTicketStore
+	ideSessions ideSessionStore
 
 	// AuthToken, when non-empty, requires every request (except /healthz) to
 	// present it as a bearer token. Empty disables authentication. Ignored when
@@ -82,6 +83,7 @@ type ticketScope struct {
 const (
 	ticketKindTerminal = "terminal"
 	ticketKindDownload = "download"
+	ticketKindIDE      = "ide"
 )
 
 // principalFrom returns the RBAC principal attached to the request, or nil when
@@ -89,6 +91,14 @@ const (
 func principalFrom(ctx context.Context) *authz.Principal {
 	p, _ := ctx.Value(principalCtxKey{}).(*authz.Principal)
 	return p
+}
+
+func withPrincipal(ctx context.Context, p *authz.Principal) context.Context {
+	ctx = context.WithValue(ctx, principalCtxKey{}, p)
+	if p != nil {
+		ctx = controlplane.WithActor(ctx, p.Name)
+	}
+	return ctx
 }
 
 // New builds a Server over mgr. dashboard, when non-nil, is mounted at "/";
@@ -133,6 +143,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/readiness", s.handleReadiness)
 	mux.HandleFunc("POST /v1/tickets", s.handleCreateTicket)
 	mux.HandleFunc("POST /v1/policy/simulate", s.handlePolicySimulate)
+	mux.HandleFunc("GET /v1/runs", s.handleListRuns)
+	mux.HandleFunc("GET /v1/runs/{id}", s.handleGetRun)
+	mux.HandleFunc("GET /v1/agent-sessions", s.handleListAgentSessions)
+	mux.HandleFunc("GET /v1/agent-sessions/{id}", s.handleGetAgentSession)
+	mux.HandleFunc("GET /v1/agent-sessions/{id}/events", s.handleAgentSessionEvents)
+	mux.HandleFunc("GET /v1/agent-sessions/{id}/stream", s.handleAgentSessionStream)
 
 	mux.HandleFunc("POST /v1/citadels", s.handleCreateSandbox)
 	mux.HandleFunc("GET /v1/citadels", s.handleListSandboxes)
@@ -140,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/citadels/{id}", s.handleKillSandbox)
 
 	mux.HandleFunc("POST /v1/citadels/{id}/shell/exec", s.handleShell)
+	mux.HandleFunc("POST /v1/citadels/{id}/agent-sessions", s.handleStartAgentSession)
 	mux.HandleFunc("POST /v1/citadels/{id}/browser", s.handleBrowser)
 	mux.HandleFunc("POST /v1/citadels/{id}/browser/sessions", s.handleBrowserOpen)
 	mux.HandleFunc("POST /v1/citadels/{id}/browser/sessions/{sid}/act", s.handleBrowserAct)
@@ -181,6 +198,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /v1/citadels/{id}/terminal", s.handleTerminal)
 	mux.HandleFunc("POST /v1/citadels/{id}/terminal-ticket", s.handleTerminalTicket)
+	// Method-agnostic so code-server HTTP + WebSocket upgrades all proxy.
+	mux.HandleFunc("/v1/citadels/{id}/ide", s.handleIDE)
+	mux.HandleFunc("/v1/citadels/{id}/ide/{path...}", s.handleIDE)
+	mux.HandleFunc("POST /v1/citadels/{id}/ide-ticket", s.handleIDETicket)
 
 	if s.MCP != nil {
 		mux.Handle("/mcp", s.MCP)
@@ -235,8 +256,17 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					writeError(w, http.StatusUnauthorized, "unauthorized: invalid or expired ticket")
 					return
 				}
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalCtxKey{}, tp)))
+				if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
+					s.attachIDESession(w, sandboxID, tp)
+				}
+				next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), tp)))
 				return
+			}
+			if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
+				if p, ok := s.ideSessionFromCookie(r, sandboxID); ok {
+					next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
+					return
+				}
 			}
 			p, ok := s.Authz.Identify(presentedToken(r, false))
 			if !ok {
@@ -244,17 +274,26 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				writeError(w, http.StatusUnauthorized, "unauthorized: unknown or missing API token")
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalCtxKey{}, p)))
+			next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
 			return
 		}
-		if _, ok, attempted := s.consumeRequestTicket(r); attempted {
+		if tp, ok, attempted := s.consumeRequestTicket(r); attempted {
 			if !ok {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 				writeError(w, http.StatusUnauthorized, "unauthorized: invalid or expired ticket")
 				return
 			}
+			if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
+				s.attachIDESession(w, sandboxID, tp)
+			}
 			next.ServeHTTP(w, r)
 			return
+		}
+		if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
+			if _, ok := s.ideSessionFromCookie(r, sandboxID); ok {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 		if !tokenMatches(r, want, false) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
@@ -310,7 +349,7 @@ func (s *Server) ownershipGuard(next http.Handler) http.Handler {
 				id = rest[:i]
 			}
 			if id != "" {
-				if owner, ok := s.mgr.SandboxOwner(id); !ok || owner != p.Name {
+				if owner, ok := s.mgr.SandboxOwner(id); !ok || owner != p.TenantID() {
 					writeError(w, http.StatusNotFound, "sandbox not found")
 					return
 				}
@@ -322,7 +361,7 @@ func (s *Server) ownershipGuard(next http.Handler) http.Handler {
 			if i := strings.IndexByte(rest, '/'); i >= 0 {
 				id = rest[:i]
 			}
-			if id != "" && !s.fleetOwnedBy(id, p.Name) {
+			if id != "" && !s.fleetOwnedBy(id, p.TenantID()) {
 				writeError(w, http.StatusNotFound, "fleet not found")
 				return
 			}
@@ -396,10 +435,14 @@ type rateLimiter struct {
 }
 
 // newRateLimiter builds a limiter from RUNEWARD_RATE_LIMIT (requests/sec per
-// client IP). Unset/zero disables rate limiting entirely.
+// client IP). The v1-safe default is 50 requests/sec; "0" or "off" explicitly
+// disables it for trusted benchmarks.
 func newRateLimiter() *rateLimiter {
 	v := strings.TrimSpace(os.Getenv("RUNEWARD_RATE_LIMIT"))
 	if v == "" {
+		v = "50"
+	}
+	if strings.EqualFold(v, "off") || v == "0" {
 		return nil
 	}
 	rps, err := strconv.ParseFloat(v, 64)
@@ -520,11 +563,13 @@ func terminalSandboxID(path string) (string, bool) {
 }
 
 func (s *Server) consumeRequestTicket(r *http.Request) (*authz.Principal, bool, bool) {
-	scope := ticketScope{Kind: ticketKindDownload}
 	if sandboxID, ok := terminalSandboxID(r.URL.Path); ok {
-		scope = ticketScope{Kind: ticketKindTerminal, SandboxID: sandboxID}
+		return s.consumeTicket(r, ticketScope{Kind: ticketKindTerminal, SandboxID: sandboxID})
 	}
-	return s.consumeTicket(r, scope)
+	if sandboxID, ok := ideSandboxID(r.URL.Path); ok {
+		return s.consumeTicket(r, ticketScope{Kind: ticketKindIDE, SandboxID: sandboxID})
+	}
+	return s.consumeTicket(r, ticketScope{Kind: ticketKindDownload})
 }
 
 func (s *Server) consumeTicket(r *http.Request, want ticketScope) (*authz.Principal, bool, bool) {
@@ -549,7 +594,7 @@ func (s *Server) consumeTicket(r *http.Request, want ticketScope) (*authz.Princi
 		return nil, false, true
 	}
 	switch want.Kind {
-	case ticketKindTerminal:
+	case ticketKindTerminal, ticketKindIDE:
 		if t.Scope.SandboxID == "" || t.Scope.SandboxID != want.SandboxID {
 			return nil, false, true
 		}
@@ -580,6 +625,10 @@ func (s *Server) issueTicket(scope ticketScope, p *authz.Principal, ttl time.Dur
 	case ticketKindTerminal:
 		if strings.TrimSpace(scope.SandboxID) == "" {
 			return "", time.Time{}, errors.New("terminal ticket requires sandbox scope")
+		}
+	case ticketKindIDE:
+		if strings.TrimSpace(scope.SandboxID) == "" {
+			return "", time.Time{}, errors.New("ide ticket requires sandbox scope")
 		}
 	case ticketKindDownload:
 	default:
@@ -631,7 +680,7 @@ func (s *Server) fleetOwnedBy(id, owner string) bool {
 
 func (s *Server) snapshotVisibleTo(p *authz.Principal, id string) bool {
 	owner, ok := s.mgr.SnapshotOwner(id)
-	return ok && owner != "" && owner == p.Name
+	return ok && owner != "" && owner == p.TenantID()
 }
 
 // limitBody caps every request body at maxRequestBodyBytes to bound memory use.
@@ -651,7 +700,26 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	writeJSON(w, status, map[string]string{"error": msg, "code": errorCode(status)})
+}
+
+func errorCode(status int) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return "authentication_required"
+	case http.StatusForbidden:
+		return "authz_denied"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusTooManyRequests:
+		return "rate_limited"
+	case http.StatusBadRequest, http.StatusMethodNotAllowed:
+		return "invalid_request"
+	default:
+		return "internal_error"
+	}
 }
 
 // writeServerError responds with a generic 500 and a correlation id, logging
@@ -676,6 +744,7 @@ func writeServerError(w http.ResponseWriter, logger *slog.Logger, err error) {
 	}
 	writeJSON(w, http.StatusInternalServerError, map[string]string{
 		"error":      "internal server error",
+		"code":       "internal_error",
 		"request_id": id,
 	})
 }

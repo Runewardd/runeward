@@ -1,0 +1,7 @@
+{
+  "verdict": "allow",
+  "exit_code": 0,
+  "stdout": "workspace probe succeeded\n",
+  "duration_ms": 70,
+  "probe": "workspace-positive-control"
+}

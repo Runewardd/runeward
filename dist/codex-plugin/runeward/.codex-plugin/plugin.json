@@ -1,0 +1,22 @@
+{
+  "name": "runeward",
+  "version": "0.3.0-rc.1",
+  "description": "Govern Codex execution with isolated Citadels, scoped Charters, approvals, budgets, and signed Chronicles.",
+  "author": {
+    "name": "Runeward"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Runeward",
+    "shortDescription": "Run agent actions inside governed Citadels.",
+    "longDescription": "Runeward gives Codex an MCP execution boundary with least-privilege Charters, human Conclave approvals, budgets, tenant ownership, and a signed Chronicle.",
+    "developerName": "Runeward",
+    "category": "Developer Tools",
+    "capabilities": [
+      "mcp",
+      "skills"
+    ],
+    "defaultPrompt": "Use Runeward to complete this task in the least-privileged available Charter. Stop on policy denial, pause on approval, and tear down the Citadel when finished."
+  },
+  "mcpServers": "./.mcp.json"
+}
