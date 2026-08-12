@@ -106,7 +106,7 @@ reached while live delivery continues.
 
 Opt-in GUI against `/workspace` via in-cell code-server. Requires
 `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide] enabled = true`, and an
-IDE-capable image (`deploy/Dockerfile.ide` or `Dockerfile.ide-agents`). Mint
+IDE-capable target (`ide` or `ide-agents`) from `deploy/Dockerfile.ide`. Mint
 `kind=ide` via `POST /v1/tickets` (or `/ide-ticket`), then open
 `/v1/citadels/{id}/ide?ticket=…`. The ticket is single-use; a session cookie
 covers subsequent asset loads. List/get may include `ide` / `ide_agents`.

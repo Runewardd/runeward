@@ -1,7 +1,9 @@
-# Optional Citadel image with code-server for the experimental browser IDE.
-# Keep the default sandbox/agent images lean; build this when you want GUI access:
+# Optional Citadel images for the experimental browser IDE. The `ide` target
+# contains code-server only; `ide-agents` also installs Codex and Claude Code.
+# Keep the default sandbox/agent images lean and build the target you need:
 #
-#   docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+#   docker build --target ide -f deploy/Dockerfile.ide -t runeward-ide:latest .
+#   docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
 #
 # Charter: examples/ide-demo.toml  (+ RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 on serve)
 #
@@ -18,7 +20,7 @@ RUN apt-get update \
     && npm install --prefix /tmp/security-patches --omit=dev --ignore-scripts --no-package-lock \
         undici@7.29.0 tar@7.5.19 shell-quote@1.9.0 js-yaml@4.3.1 ip-address@10.3.1
 
-FROM codercom/code-server:4.130.0-noble@sha256:d39c88f837f78465b4cf99f54b76eadf52440dc9ffb589e2ddc5d2fd9d0592d2
+FROM codercom/code-server:4.130.0-noble@sha256:d39c88f837f78465b4cf99f54b76eadf52440dc9ffb589e2ddc5d2fd9d0592d2 AS ide
 
 USER root
 COPY --from=code-server-security-patches /tmp/security-patches/node_modules /tmp/security-patches/node_modules
@@ -52,3 +54,42 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD ["code-server", "--version"]
 ENTRYPOINT []
 CMD ["sleep", "infinity"]
+
+FROM ide AS agent-cli-builder
+
+USER root
+ARG CODEX_VERSION=0.142.5
+ARG CLAUDE_CODE_VERSION=2.1.201
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends npm \
+    && ln -sf /usr/lib/code-server/lib/node /usr/local/bin/node \
+    && node --version | grep -Eq '^v2[4-9]\.' \
+    && npm install -g --prefix /opt/agent-cli \
+        "@openai/codex@${CODEX_VERSION}" \
+        "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+FROM ide AS ide-agents
+
+USER root
+COPY --from=agent-cli-builder /opt/agent-cli /opt/agent-cli
+RUN ln -sf /usr/lib/code-server/lib/node /usr/local/bin/node \
+    && node --version | grep -Eq '^v2[4-9]\.' \
+    && /opt/agent-cli/bin/codex --version \
+    && /opt/agent-cli/bin/claude --version
+
+USER coder
+ENV PATH="/opt/agent-cli/bin:/home/coder/.local/bin:/home/coder/.cursor/bin:${PATH}"
+
+# Cursor CLI is opt-in and its installer must be pinned by digest.
+ARG INSTALL_CURSOR=false
+ARG CURSOR_INSTALLER_SHA256=""
+RUN if [ "$INSTALL_CURSOR" = "true" ]; then \
+      curl -fsS https://cursor.com/install -o /tmp/cursor-install.sh \
+      && if [ -z "$CURSOR_INSTALLER_SHA256" ]; then \
+           echo "CURSOR_INSTALLER_SHA256 is required when INSTALL_CURSOR=true" >&2 ; \
+           exit 1 ; \
+         fi \
+      && echo "${CURSOR_INSTALLER_SHA256}  /tmp/cursor-install.sh" | sha256sum -c - \
+      && bash /tmp/cursor-install.sh \
+      && rm -f /tmp/cursor-install.sh ; \
+    fi

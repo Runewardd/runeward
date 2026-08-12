@@ -15,14 +15,14 @@ Enable with `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`. Off by default.
 | **2. In-cell CLI agents** | Headless `claude` / `codex` / Cursor `agent` inside the Citadel | `examples/*-agent.toml` |
 | **3. Browser IDE (this page)** | code-server GUI in the browser, optional CLIs in its terminal | `[ide]`, `ide-*.toml` |
 
-## What was added
+## Components
 
 - Charter `[ide]`: `enabled`, `port` (default `8080`), optional `path`, optional
   `agents = ["claude", "codex", "cursor"]` (dashboard hints only).
-- Images:
-  - `deploy/Dockerfile.ide` → `runeward-ide:latest` (lean code-server).
-  - `deploy/Dockerfile.ide-agents` → `runeward-ide-agents:latest` (code-server +
-    Claude Code + Codex CLIs; optional Cursor CLI via build-args).
+- Image targets in `deploy/Dockerfile.ide`:
+  - `ide` → `runeward-ide:latest` (lean code-server).
+  - `ide-agents` → `runeward-ide-agents:latest` (code-server + Claude Code +
+    Codex CLIs; optional Cursor CLI via build arguments).
 - Example Charters: `ide-demo`, `ide-claude`, `ide-codex`, `ide-cursor`.
 - Control plane: starts code-server in-cell, records container/pod IP:port (no
   host `-p` / NodePort on the happy path), ticketed HTTP + WebSocket proxy at
@@ -34,7 +34,7 @@ Enable with `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`. Off by default.
 ### Quick start
 
 ```bash
-docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+docker build --target ide -f deploy/Dockerfile.ide -t runeward-ide:latest .
 
 RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 \
   RUNEWARD_STATE_DIR=/tmp/rw-ide \
@@ -49,7 +49,7 @@ RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 \
 ### IDE + coding CLIs
 
 ```bash
-docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
 
 # Keys as documented in each Charter:
 #   ~/.runeward-anthropic.key  → ide-claude  (terminal: claude)
@@ -63,7 +63,7 @@ Cursor CLI in the agents image is opt-in (same digest-pinned installer as
 `Dockerfile.agent`):
 
 ```bash
-docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest \
+docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest \
   --build-arg INSTALL_CURSOR=true \
   --build-arg CURSOR_INSTALLER_SHA256=<digest> .
 ```

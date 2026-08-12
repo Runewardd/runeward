@@ -1602,18 +1602,18 @@ embeds code-server inside the Citadel and reverse-proxies it from `serve`. Keyst
 **not** per-command policy (same caveat as the interactive terminal).
 
 Cursor Desktop / Claude Desktop / Codex do **not** ship a self-hosted browser GUI. To test
-those CLIs through the same Open-IDE spin-off, build `deploy/Dockerfile.ide-agents` and use
+those CLIs through the same Open-IDE spin-off, build the `ide-agents` target and use
 `ide-claude` / `ide-codex` / `ide-cursor` Charters; run `claude`, `codex`, or `agent` in the
 IDE terminal. GitHub Copilot is not first-class on code-server (Open VSX marketplace).
 
 ```bash
 # Build the IDE image and enable the feature flag:
-docker build -f deploy/Dockerfile.ide -t runeward-ide:latest .
+docker build --target ide -f deploy/Dockerfile.ide -t runeward-ide:latest .
 export RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1
 # Charter: examples/ide-demo.toml ([ide] enabled = true)
 
 # Or IDE + coding CLIs:
-docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
 # Charters: ide-claude / ide-codex / ide-cursor (API key files under ~ as documented in each)
 
 CID=$(curl -s "${AUTH[@]}" $BASE/v1/citadels -d '{"profile":"ide-demo"}' | jq -r .id)
@@ -1805,4 +1805,3 @@ rm -rf "$RUNEWARD_STATE_DIR" /tmp/rw-keys /tmp/cases.toml /tmp/authz.json \
 | `unsupported container runtime "…"` at startup                              | `RUNEWARD_CONTAINER_RUNTIME` must be `docker` or `podman` (29).                                                                                                                    |
 | `ledger: "…/ledger.jsonl" is already in use by another runeward process`    | One writer per audit ledger. Another `serve`/`mcp` holds the default state dir — give this instance its own `RUNEWARD_STATE_DIR` (8), or stop the other process.                    |
 | `runeward mcp --http` → `bind: address already in use`                      | A previous `mcp`/`serve` still owns the port. `pkill -f 'runeward.*mcp'` (or stop `serve`), or start with a different `--port`.                                                     |
-

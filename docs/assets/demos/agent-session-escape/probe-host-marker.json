@@ -1,7 +1,0 @@
-{
-  "verdict": "allow",
-  "exit_code": 1,
-  "stderr": "cat: can't open '[REDACTED].6lumvt': No such file or directory\n",
-  "duration_ms": 70,
-  "probe": "host-marker"
-}

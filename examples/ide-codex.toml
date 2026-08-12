@@ -3,7 +3,7 @@
 # Codex has no self-hosted browser GUI — Open IDE is code-server;
 # run `codex` in the IDE terminal (or dashboard Terminal tab).
 #
-#   docker build -f deploy/Dockerfile.ide-agents -t runeward-ide-agents:latest .
+#   docker build --target ide-agents -f deploy/Dockerfile.ide -t runeward-ide-agents:latest .
 #   printf '%s' "$OPENAI_API_KEY" > ~/.runeward-openai.key
 #   RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1 ./bin/runeward --config-dir examples serve
 #   Create charter "ide-codex" → Open IDE → terminal: codex

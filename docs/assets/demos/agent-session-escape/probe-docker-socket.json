@@ -1,6 +1,0 @@
-{
-  "verdict": "allow",
-  "exit_code": 1,
-  "duration_ms": 85,
-  "probe": "docker-socket"
-}

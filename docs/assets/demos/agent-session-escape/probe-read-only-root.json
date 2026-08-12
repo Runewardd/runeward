@@ -1,7 +1,0 @@
-{
-  "verdict": "allow",
-  "exit_code": 1,
-  "stderr": "sh: can't create /root/runeward-escape-proof: Permission denied\n",
-  "duration_ms": 70,
-  "probe": "read-only-root"
-}

@@ -86,40 +86,10 @@ Choose the package that matches how you use Runeward:
 | [PyPI](https://pypi.org/project/runeward/) | Python client and agent-framework adapters | `python -m pip install runeward` |
 | [npm](https://www.npmjs.com/package/@runeward/sdk) | TypeScript client and agent-framework tools | `npm install @runeward/sdk` |
 
-For normal local use, install the CLI with Homebrew. For an agent integration, install the SDK for
-its language as well. The pip and npm packages connect to a running Runeward API; they do not
-replace the CLI/runtime.
-
-### Homebrew — CLI
-
-Local sandboxes require a running Docker, OrbStack, or Podman engine.
-
-```bash
-brew install Runewardd/tap/runeward
-runeward version
-runeward quickstart
-```
-
-### pip — Python SDK
-
-Requires Python 3.9 or newer. The base client has no third-party runtime dependencies.
-
-```bash
-python -m pip install runeward
-python -c "import runeward; print(runeward.__version__)"
-```
-
-### npm — TypeScript SDK
-
-Requires Node.js 18 or newer.
-
-```bash
-npm install @runeward/sdk
-npm ls @runeward/sdk
-```
-
-See [Adapters](docs/adapters.md) for LangChain, CrewAI, LlamaIndex, OpenAI Agents, Strands,
-Vercel AI SDK, and LangChain.js installation options.
+Homebrew installs the CLI/runtime; local Citadels also require Docker, OrbStack,
+or Podman. The Python and TypeScript packages connect integrations to a running
+Runeward API. See [Install](docs/install.md) for verified installers and source
+builds, and [Adapters](docs/adapters.md) for framework-specific packages.
 
 ### Other CLI installation options
 
@@ -181,11 +151,6 @@ Runeward records the parent/run/provider lineage and prevents a child Citadel fr
 parent's tenant or Charter. Every participating agent can receive its own Citadel and Chronicle.
 See [Agent harnessing](docs/agent-harness.md).
 
-For local OS-native process sandboxing, [nono](https://github.com/nolabs-ai/nono) is a strong,
-lighter-weight tool with a different center of gravity. Runeward is a multi-tenant governance and
-orchestration control plane for container/Kubernetes Citadels, approvals, budgets, Cohorts, and
-portable signed evidence. See the detailed [Runeward and nono comparison](docs/comparison-nono.md).
-
 ## Policy workflow
 
 Policies support built-in glob rules, CEL, OPA/Rego, and signed OCI bundles. Test them in CI, start
@@ -211,8 +176,8 @@ actions, produces exact matches, and requires a human to review and broaden them
 - Browser automation is experimental and disabled by default. Enable it only in a trusted deployment
   with `RUNEWARD_ENABLE_EXPERIMENTAL_BROWSER=1` after reviewing the [security model](docs/security-model.md).
 - An optional browser IDE (code-server in-cell + ticketed reverse proxy) is similarly experimental:
-  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, images `Dockerfile.ide` /
-  `Dockerfile.ide-agents`, examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
+  `RUNEWARD_ENABLE_EXPERIMENTAL_IDE=1`, Charter `[ide]`, and the `ide` or `ide-agents`
+  target in `Dockerfile.ide`; examples `ide-demo` / `ide-claude` / `ide-codex` / `ide-cursor`.
   Limits: not per-keystroke policy; no Cursor/Claude Desktop/Codex GUIs in-cell; no
   first-class GitHub Copilot on code-server. See [Browser IDE](docs/browser-ide.md) and the
   [security model](docs/security-model.md).
@@ -231,7 +196,6 @@ actions, produces exact matches, and requires a human to review and broaden them
 - [Policies / Charters](docs/profiles.md)
 - [REST API](docs/rest-api.md)
 - [Browser IDE](docs/browser-ide.md) (experimental code-server proxy)
-- [Runeward compared with nono](docs/comparison-nono.md)
 - [Security model](docs/security-model.md)
 - [End-to-end testing](docs/E2E-TESTING.md)
 - Published site: [runewardd.github.io/runeward](https://runewardd.github.io/runeward/)

@@ -67,12 +67,21 @@ jobs:
             image: runeward-sandbox
           - dockerfile: deploy/Dockerfile.ide
             image: runeward-ide
-          - dockerfile: deploy/Dockerfile.ide-agents
+            target: ide
+          - dockerfile: deploy/Dockerfile.ide
             image: runeward-ide-agents
+            target: ide-agents
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Build candidate image
-        run: docker build -f "${{ matrix.dockerfile }}" -t "${{ matrix.image }}:release-candidate" .
+        env:
+          TARGET: ${{ matrix.target || '' }}
+        run: |
+          if [ -n "$TARGET" ]; then
+            docker build --target "$TARGET" -f "${{ matrix.dockerfile }}" -t "${{ matrix.image }}:release-candidate" .
+          else
+            docker build -f "${{ matrix.dockerfile }}" -t "${{ matrix.image }}:release-candidate" .
+          fi
       - name: Reject high and critical image vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -194,6 +203,7 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile.ide
+          target: ide
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -206,7 +216,8 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: deploy/Dockerfile.ide-agents
+          file: deploy/Dockerfile.ide
+          target: ide-agents
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |

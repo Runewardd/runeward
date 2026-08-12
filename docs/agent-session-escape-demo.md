@@ -87,20 +87,15 @@ policy rule merely declining to try.
 
 ## Recorded artifacts
 
-Successful recording creates:
+Successful recording creates a small, reviewable artifact set:
 
 | Artifact | Purpose |
 | --- | --- |
 | `docs/assets/demos/agent-session-escape.cast` | Asciinema v2 terminal recording. |
-| `docs/assets/demos/agent-session-escape.mp4` | H.264 video rendered at the cast's recorded pace. |
+| `docs/assets/demos/agent-session-escape.mp4` | Curated H.264 rendering for the documentation site. |
 | `agent-session-escape/session-transcript.txt` | Human-readable, redacted agent output. |
-| `agent-session-escape/session-events.json` | Reconnectable sequenced stdout/stderr/status events. |
-| `agent-session-escape/codex-preflight.json` | Writable-state and installed-CLI readiness result. |
 | `agent-session-escape/escape-probes.json` | Deterministic isolation checks and exit codes. |
-| `agent-session-escape/perimeter.json` | Egress allow/deny decisions. |
-| `agent-session-escape/chronicle.json` | Citadel Chronicle events. |
 | `agent-session-escape/evidence.json` | Portable resolved Charter and signed Chronicle evidence. |
-| `agent-session-escape/server.log` | Control-plane operational log. |
 
 If the scenario fails, the recorder keeps the unsuccessful terminal capture as
 `agent-session-escape.failed.cast` and prints the temporary artifact directory
@@ -112,14 +107,15 @@ Replay the recording locally:
 asciinema play docs/assets/demos/agent-session-escape.cast
 ```
 
-Play the generated video in any standard player, or regenerate it directly:
+Play the generated video in any standard player:
 
 ```bash
 open docs/assets/demos/agent-session-escape.mp4
-./scripts/cast-to-mp4.swift \
-  docs/assets/demos/agent-session-escape.cast \
-  docs/assets/demos/agent-session-escape.mp4
 ```
+
+The recording script updates the portable asciicast. The checked-in MP4 is a
+curated documentation asset and can be regenerated with a standard asciicast
+renderer when the cast changes.
 
 Inspect the machine-readable verdicts:
 

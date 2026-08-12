@@ -6,7 +6,7 @@ We as members, contributors, and leaders pledge to make participation in our
 community a harassment-free experience for everyone, regardless of age, body
 size, visible or invisible disability, ethnicity, sex characteristics, gender
 identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, caste, color, religion, or sexual identity and
+nationality, personal appearance, race, religion, or sexual identity and
 orientation.
 
 We pledge to act and interact in ways that contribute to an open, welcoming,
@@ -51,9 +51,7 @@ decisions when appropriate.
 ## Scope
 
 This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces. That
-includes using an official project account, speaking for the project, or acting
-as an appointed representative at an online or in-person event.
+an individual is officially representing the community in public spaces.
 
 ## Enforcement
 
@@ -64,36 +62,6 @@ promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
-
-Retaliation against a reporter, witness, or person participating in an
-investigation is itself a violation of this Code of Conduct.
-
-## Enforcement Guidelines
-
-Community leaders will consider context, impact, history, and the safety of the
-community when choosing a proportionate response.
-
-### 1. Correction
-
-For isolated unprofessional or unwelcome behavior, a community leader may issue
-a private explanation and request a correction or apology.
-
-### 2. Warning
-
-For a significant incident or repeated behavior, a formal warning may set clear
-conditions and prohibit contact with affected people or maintainers for a stated
-period. Breaking those conditions can result in a ban.
-
-### 3. Temporary Ban
-
-For serious or sustained violations, a person may be temporarily excluded from
-project spaces and prohibited from public or private interaction with community
-members about the project. Violating the ban can make it permanent.
-
-### 4. Permanent Ban
-
-A pattern of violations, harassment, threats, aggression, or disparagement of a
-class of people may result in permanent exclusion from community spaces.
 
 ## Attribution
 

@@ -1,109 +1,69 @@
 # Security Policy
 
-Runeward is designed to reduce the blast radius of untrusted AI-agent activity,
-so vulnerabilities in Runeward itself are treated as high priority. We welcome
-careful security research and coordinated disclosure.
+runeward is a tool for *containing* untrusted AI-agent activity, so its own
+security posture matters. We take vulnerability reports seriously and appreciate
+responsible disclosure.
 
-## Project status
+## Reporting a vulnerability
 
-Runeward is **pre-1.0** and under active development. Interfaces may change and
-security guarantees are not yet stable. The `v0.3.x` line is suitable for
-evaluation and carefully controlled deployments, but it has not completed an
-independent third-party security audit.
+**Please do not open a public issue for security problems.**
 
-Runeward is defense in depth, not an absolute containment guarantee. Do not use
-infrastructure you cannot afford to lose when evaluating genuinely hostile code.
+Report privately via one of:
 
-## Report vulnerabilities privately
+- GitHub's **[Report a vulnerability](https://github.com/Runewardd/runeward/security/advisories/new)**
+  (Security Advisories) — preferred.
+- Email **adefemi171@gmail.com** with the subject line `runeward security`.
 
-**Do not open a public issue, discussion, or pull request for a suspected
-vulnerability.** Use one of these private channels instead:
+Include, where possible:
 
-- GitHub's [private vulnerability reporting](https://github.com/Runewardd/runeward/security/advisories/new)
-  is preferred.
-- Email **adefemi171@gmail.com** with the subject `Runeward security`.
+- affected version / commit (`runeward version`) and backend (Docker or Kubernetes),
+- a description of the issue and its impact,
+- steps to reproduce or a proof of concept,
+- any suggested remediation.
 
-Include, when possible:
+### What to expect
 
-- the affected version or commit and execution backend;
-- a clear impact statement and the boundary that can be crossed;
-- minimal, reproducible steps or a proof of concept;
-- relevant configuration with credentials and personal data removed;
-- any mitigation or remediation you have tested.
+- **Acknowledgement** within 3 business days.
+- An initial assessment and severity rating within 7 business days.
+- We aim to ship a fix for confirmed high/critical issues within 30 days and
+  will keep you updated on progress.
+- With your consent, we will credit you in the release notes and advisory.
 
-Please allow a reasonable remediation window before public disclosure.
-
-## AI-assisted and scanner-generated reports
-
-Reports discovered with an LLM, scanner, or automated agent are welcome, but
-they must be validated by the reporter. Before submitting, confirm that you can:
-
-- reproduce the behavior against a supported revision;
-- explain the trust boundary and realistic impact;
-- distinguish reachable product code from an unused or development dependency;
-- remove speculative claims and duplicate scanner output.
-
-Unverified alert dumps slow response to actionable findings. A concise report
-with a working reproduction is much more useful than a long generated analysis.
-
-## Response expectations
-
-We aim to:
-
-- acknowledge a report within three business days;
-- provide an initial assessment within seven business days;
-- keep the reporter informed during remediation;
-- ship confirmed high or critical fixes as quickly as practical, targeting 30
-  days when a safe fix is available;
-- coordinate publication and credit with the reporter.
-
-Timelines are goals rather than guarantees, especially when remediation depends
-on an upstream runtime, kernel, or dependency.
+Please give us a reasonable window to remediate before any public disclosure.
 
 ## Supported versions
 
-Until 1.0, security fixes are applied to the latest tagged release and `main`.
-Older pre-1.0 releases may not receive backports. GitHub Security Advisories and
-release notes will identify the first fixed version.
+runeward is pre-1.0. Security fixes are applied to the latest tagged release and
+`main`. Once 1.0 ships, this section will list a support matrix.
 
 ## Scope and threat model
 
-Examples of issues that are in scope:
+runeward's job is to reduce the blast radius of an autonomous agent through
+isolation, deny-by-default egress, per-action policy/approvals, guardrails, and a
+tamper-evident audit ledger. Understanding what it does — and does not — protect
+against helps you use it safely.
 
-- escape from a Citadel to the host or another tenant's Citadel;
-- bypass of Charter policy, Conclave approval, Perimeter egress, Rationing, or
-  tenant authorization;
-- forged or silently modified Chronicle records that still verify;
-- traversal or archive extraction outside the intended workspace;
-- unauthorized REST, MCP, browser IDE, terminal, webhook, or Kubernetes access;
-- secret exposure through logs, APIs, the dashboard, evidence, or state files;
-- task-lease replay, cross-actor completion, or run-lineage attribution bypass.
+**In scope (please report):**
 
-Operator-controlled or normally out-of-scope areas include:
+- sandbox escape from a cell to the host or to another cell,
+- bypass of the egress allowlist / policy engine / approval gates,
+- audit-ledger forgery or silent tampering that verification would miss,
+- path traversal / file writes outside the intended workspace (e.g. tar-slip),
+- authentication/authorization flaws in the REST API, WebSocket terminal, or
+  admission webhook,
+- secret leakage in logs, the ledger, or the dashboard.
 
-- vulnerabilities in the host kernel, container runtime, Kubernetes cluster,
-  or third-party agent that do not rely on a Runeward defect;
-- deliberately weakened Charters, oversized resource grants, disabled signing,
-  or `--allow-insecure-http` deployments;
-- untrusted images or secrets supplied directly by an operator;
-- denial of service that remains within limits the operator intentionally gave
-  the workload.
+**Out of scope / operator responsibility:**
 
-We may still help route an upstream issue or improve hardening even when the
-root cause is outside Runeward.
+- the security of the container runtime, host kernel, and Kubernetes cluster
+  runeward is deployed on (keep them patched),
+- the trustworthiness of images referenced by profiles and of the agents/CLIs
+  you choose to run inside a cell,
+- secrets you place in profiles or environment; runeward redacts known secrets
+  from the ledger but cannot know about values it was never told are sensitive,
+- network exposure of `runeward serve` — the control plane should be bound to a
+  trusted interface or placed behind your own auth/proxy in production,
+- denial of service from workloads you explicitly grant large resource limits.
 
-## Safe harbor
-
-We consider good-faith research authorized when it follows this policy, avoids
-privacy violations and unnecessary disruption, uses only the access required to
-demonstrate the issue, and gives us time to remediate. We will not initiate legal
-action for research conducted under those conditions. If you are unsure whether
-a test is safe, contact us privately before proceeding.
-
-## Security work before 1.0
-
-Before claiming stable 1.0 security guarantees, the project intends to complete
-independent review of its threat model and enforcement boundaries, harden native
-and remote execution paths, and publish the resulting guarantees and residual
-risks. Current release gates live in
-[docs/release-readiness.md](docs/release-readiness.md).
+runeward is defense-in-depth, not a guarantee. Do not run genuinely hostile code
+on infrastructure you cannot afford to lose.

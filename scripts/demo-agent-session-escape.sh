@@ -6,7 +6,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ARTIFACT_ROOT="$REPO_ROOT/docs/assets/demos"
 FINAL_ARTIFACT_DIR="$ARTIFACT_ROOT/agent-session-escape"
 CAST_PATH="$ARTIFACT_ROOT/agent-session-escape.cast"
-VIDEO_PATH="$ARTIFACT_ROOT/agent-session-escape.mp4"
 PROFILE="agent-session-escape-demo"
 DEMO_PORT="${RUNEWARD_DEMO_PORT:-18080}"
 BASE="http://127.0.0.1:${DEMO_PORT}"
@@ -52,11 +51,6 @@ if [[ "${1:-record}" == "record" ]]; then
   mv -f "$RECORDING_PATH" "$CAST_PATH"
   echo "Recording written to $CAST_PATH"
   echo "Replay with: asciinema play $CAST_PATH"
-  if command -v swift >/dev/null 2>&1 && command -v ffmpeg >/dev/null 2>&1; then
-    "$SCRIPT_DIR/cast-to-mp4.swift" "$CAST_PATH" "$VIDEO_PATH"
-  else
-    echo "MP4 conversion skipped (requires swift and ffmpeg)."
-  fi
   exit 0
 fi
 
@@ -226,8 +220,6 @@ curl -fsS "$BASE/v1/agent-sessions?cohort_id=$COHORT_ID" > "$ARTIFACT_DIR/sessio
 SESSION_ID="$(jq -r '.sessions[-1].id' "$ARTIFACT_DIR/sessions.json")"
 curl -fsS "$BASE/v1/agent-sessions/$SESSION_ID/events?after=0" > "$ARTIFACT_DIR/session-events.json"
 jq -r '.events[] | "[\(.stream)] \(.data)"' "$ARTIFACT_DIR/session-events.json" > "$ARTIFACT_DIR/session-transcript.txt"
-curl -fsS "$BASE/v1/citadels/$CITADEL_ID/chronicle" > "$ARTIFACT_DIR/chronicle.json"
-curl -fsS "$BASE/v1/citadels/$CITADEL_ID/perimeter" > "$ARTIFACT_DIR/perimeter.json"
 curl -fsS "$BASE/v1/citadels/$CITADEL_ID/evidence" > "$ARTIFACT_DIR/evidence.json"
 
 if grep -Fq "$MARKER_VALUE" "$ARTIFACT_DIR/session-transcript.txt"; then
@@ -257,7 +249,12 @@ kill "$SERVER_PID"
 wait "$SERVER_PID" || true
 SERVER_PID=""
 
+rm -rf "$FINAL_ARTIFACT_DIR"
 mkdir -p "$FINAL_ARTIFACT_DIR"
-cp -f "$ARTIFACT_DIR"/* "$FINAL_ARTIFACT_DIR"/
+cp -f \
+  "$ARTIFACT_DIR/escape-probes.json" \
+  "$ARTIFACT_DIR/evidence.json" \
+  "$ARTIFACT_DIR/session-transcript.txt" \
+  "$FINAL_ARTIFACT_DIR"/
 echo "Transcript: $FINAL_ARTIFACT_DIR/session-transcript.txt"
 echo "Evidence:   $FINAL_ARTIFACT_DIR/evidence.json"
