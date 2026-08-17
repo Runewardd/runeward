@@ -307,6 +307,9 @@ func (d *Docker) Exec(ctx context.Context, id string, req ExecRequest) (*ExecRes
 	}
 
 	start := time.Now()
+	// #nosec G204 G702 -- d.bin is resolved by exec.LookPath during backend setup;
+	// args are argv for `docker|podman exec` (no shell), including an allowlisted
+	// command vector already gated by Charter policy before reaching the backend.
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = execOutputWriter(&stdout, req.Stdout, req.StreamOnly)
@@ -755,7 +758,7 @@ func (d *Docker) waitRunning(ctx context.Context, name string) error {
 }
 
 func (d *Docker) output(ctx context.Context, args ...string) (string, error) {
-	// #nosec G702 -- d.bin is resolved by exec.LookPath during backend setup and
+	// #nosec G204 G702 -- d.bin is resolved by exec.LookPath during backend setup and
 	// args are passed directly to exec without shell interpretation.
 	cmd := exec.CommandContext(ctx, d.bin, args...)
 	var stdout, stderr bytes.Buffer

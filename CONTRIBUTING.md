@@ -38,7 +38,7 @@ Every contribution must preserve these rules:
 
 Requirements:
 
-- Go 1.26.5, matching `go.mod`;
+- Go 1.26.6, matching `go.mod`;
 - Python 3.9 or newer for the Python adapter tests;
 - Node.js 18 or newer for the TypeScript adapter;
 - Docker, Podman, or OrbStack for local Citadels;

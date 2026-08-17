@@ -14,7 +14,7 @@ These settings live in GitHub rather than the repository, so a maintainer must a
 ## Before the next release
 
 - Run `go test ./...`, the security workflow, and the documented quickstart from a clean machine.
-- Confirm the release uses Go 1.26.5 and publishes all four documented container images.
+- Confirm the release uses Go 1.26.6 and publishes all four documented container images.
 - Confirm the tagged CLI contains `quickstart`, `doctor`, `evidence`, and `policy learn` before
   removing the `main`/release distinction from the README.
 - Confirm the Homebrew tap contains the current formula and `brew install Runewardd/tap/runeward`
