@@ -9,7 +9,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <a href="https://github.com/Runewardd/runeward/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Runewardd/runeward/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="go.mod"><img alt="Go 1.26.5" src="https://img.shields.io/badge/go-1.26.5-00ADD8.svg"></a>
+  <a href="go.mod"><img alt="Go 1.26.6" src="https://img.shields.io/badge/go-1.26.6-00ADD8.svg"></a>
   <a href="https://github.com/Runewardd/runeward/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Runewardd/runeward?sort=semver"></a>
 </p>
 
@@ -135,7 +135,7 @@ verifying the checksum manifest. Windows binaries are available from
 curl -fsSL https://raw.githubusercontent.com/Runewardd/runeward/main/install.sh | sh
 ```
 
-To build the current `main` branch, use Go **1.26.5**:
+To build the current `main` branch, use Go **1.26.6**:
 
 ```bash
 git clone https://github.com/Runewardd/runeward

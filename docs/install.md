@@ -67,7 +67,7 @@ binaries because they run inside Docker or Kubernetes.
 
 ## From source
 
-The documentation follows `main`. Build from source with **Go 1.26.5** to use unreleased changes:
+The documentation follows `main`. Build from source with **Go 1.26.6** to use unreleased changes:
 
 ```bash
 git clone https://github.com/Runewardd/runeward
