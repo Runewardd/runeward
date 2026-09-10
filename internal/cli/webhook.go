@@ -81,9 +81,10 @@ func newWebhookCmd(configDir *string) *cobra.Command {
 
 			srv := webhook.NewServer(dyn, logger)
 			httpSrv := &http.Server{
-				Addr:      fmt.Sprintf(":%d", port),
-				Handler:   srv.Handler(),
-				TLSConfig: &tls.Config{Certificates: []tls.Certificate{keyPair}, MinVersion: tls.VersionTLS12},
+				Addr:              fmt.Sprintf(":%d", port),
+				Handler:           srv.Handler(),
+				ReadHeaderTimeout: 10 * time.Second,
+				TLSConfig:         &tls.Config{Certificates: []tls.Certificate{keyPair}, MinVersion: tls.VersionTLS12},
 			}
 
 			errCh := make(chan error, 1)

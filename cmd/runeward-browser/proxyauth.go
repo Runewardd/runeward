@@ -43,7 +43,7 @@ func startProxyAuthForwarder(rawProxy string, logger func(string, ...any)) (loca
 		logger = func(string, ...any) {}
 	}
 	f := &proxyAuthForwarder{upstream: u.Host, auth: auth, logger: logger}
-	srv := &http.Server{Handler: f}
+	srv := &http.Server{Handler: f, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if serr := srv.Serve(ln); serr != nil && serr != http.ErrServerClosed {
 			logger("proxy-auth forwarder: %v", serr)

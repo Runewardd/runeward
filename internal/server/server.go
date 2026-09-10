@@ -333,10 +333,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-// publicDashboardAsset reports whether r targets the static dashboard shell
-// rather than the API. These files carry no secrets and must load without a
-// token so the browser can render the login screen; anything under /v1, /mcp,
-// or /metrics stays protected. Only ever true when a dashboard is mounted.
+// publicDashboardAsset reports whether r targets one of the static dashboard
+// files that must load before the browser can present the login screen. Keep
+// this as an allowlist so a future GET endpoint is authenticated by default.
 func (s *Server) publicDashboardAsset(r *http.Request) bool {
 	if s.dashboard == nil {
 		return false
@@ -344,16 +343,12 @@ func (s *Server) publicDashboardAsset(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
-	p := r.URL.Path
-	switch {
-	case p == "/v1" || strings.HasPrefix(p, "/v1/"):
-		return false
-	case p == "/mcp" || strings.HasPrefix(p, "/mcp/"):
-		return false
-	case p == "/metrics":
+	switch r.URL.Path {
+	case "/", "/index.html", "/app.js", "/style.css", "/logo.png":
+		return true
+	default:
 		return false
 	}
-	return true
 }
 
 // ownershipGuard enforces per-principal sandbox access under RBAC: a non-admin

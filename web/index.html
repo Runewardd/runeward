@@ -60,7 +60,7 @@
     <aside class="sidebar">
       <div class="view-switch" role="tablist" aria-label="Switch view">
         <button id="view-sandboxes" class="view-tab active" role="tab" aria-selected="true">Sandboxes</button>
-        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false">Agent groups</button>
+        <button id="view-fleets" class="view-tab" role="tab" aria-selected="false" tabindex="-1">Agent groups</button>
       </div>
 
       <!-- Sandboxes sidebar -->
@@ -124,22 +124,22 @@
             <span id="sel-id" class="mono">—</span>
             <span id="sel-meta" class="panel-meta"></span>
           </div>
-          <nav class="tabs" id="tabs">
-            <button class="tab active" data-tab="terminal">PTY Terminal</button>
-            <button class="tab" data-tab="conversation">Live chat</button>
-            <button class="tab" data-tab="files">Files</button>
-            <button class="tab" data-tab="shell">Shell</button>
-            <button id="browser-tab" class="tab hidden" data-tab="browser">Browser</button>
-            <button class="tab" data-tab="audit">Audit trail</button>
-            <button class="tab" data-tab="policy">Policy</button>
-            <button class="tab" data-tab="egress">Network</button>
-            <button class="tab" data-tab="budget">Budgets</button>
-            <button class="tab" data-tab="recovery">Recovery</button>
+          <nav class="tabs" id="tabs" role="tablist" aria-label="Sandbox tools">
+            <button id="tab-terminal" class="tab active" data-tab="terminal" role="tab" aria-selected="true" aria-controls="pane-terminal">PTY Terminal</button>
+            <button id="tab-conversation" class="tab" data-tab="conversation" role="tab" aria-selected="false" aria-controls="pane-conversation" tabindex="-1">Live chat</button>
+            <button id="tab-files" class="tab" data-tab="files" role="tab" aria-selected="false" aria-controls="pane-files" tabindex="-1">Files</button>
+            <button id="tab-shell" class="tab" data-tab="shell" role="tab" aria-selected="false" aria-controls="pane-shell" tabindex="-1">Shell</button>
+            <button id="browser-tab" class="tab hidden" data-tab="browser" role="tab" aria-selected="false" aria-controls="pane-browser" tabindex="-1">Browser</button>
+            <button id="tab-audit" class="tab" data-tab="audit" role="tab" aria-selected="false" aria-controls="pane-audit" tabindex="-1">Audit trail</button>
+            <button id="tab-policy" class="tab" data-tab="policy" role="tab" aria-selected="false" aria-controls="pane-policy" tabindex="-1">Policy</button>
+            <button id="tab-egress" class="tab" data-tab="egress" role="tab" aria-selected="false" aria-controls="pane-egress" tabindex="-1">Network</button>
+            <button id="tab-budget" class="tab" data-tab="budget" role="tab" aria-selected="false" aria-controls="pane-budget" tabindex="-1">Budgets</button>
+            <button id="tab-recovery" class="tab" data-tab="recovery" role="tab" aria-selected="false" aria-controls="pane-recovery" tabindex="-1">Recovery</button>
           </nav>
         </div>
 
         <!-- Terminal tab -->
-        <div class="tab-pane active" data-pane="terminal">
+        <div id="pane-terminal" class="tab-pane active" data-pane="terminal" role="tabpanel" aria-labelledby="tab-terminal">
           <div class="term-toolbar">
             <span id="term-status" class="conn-status conn-off">disconnected</span>
             <span class="note">Direct sandbox session: commands are not individually policy-gated. Use Shell for governed calls.</span>
@@ -153,7 +153,7 @@
         </div>
 
         <!-- Read-only agent conversation TTY -->
-        <div class="tab-pane" data-pane="conversation">
+        <div id="pane-conversation" class="tab-pane" data-pane="conversation" role="tabpanel" aria-labelledby="tab-conversation" hidden>
           <div class="term-toolbar">
             <span id="conversation-status" class="conn-status conn-off">disconnected</span>
             <span class="note">Read-only, secret-redacted feed from agents connected to this control plane.</span>
@@ -163,7 +163,7 @@
         </div>
 
         <!-- Files tab -->
-        <div class="tab-pane" data-pane="files">
+        <div id="pane-files" class="tab-pane" data-pane="files" role="tabpanel" aria-labelledby="tab-files" hidden>
           <div class="card">
             <div class="card-head">List directory</div>
             <div class="row">
@@ -196,7 +196,7 @@
         </div>
 
         <!-- Shell tab -->
-        <div class="tab-pane" data-pane="shell">
+        <div id="pane-shell" class="tab-pane" data-pane="shell" role="tabpanel" aria-labelledby="tab-shell" hidden>
           <div class="card">
             <div class="card-head">Run one-off command</div>
             <div class="row">
@@ -253,7 +253,7 @@
         </div>
 
         <!-- Governed browser tab -->
-        <div class="tab-pane" data-pane="browser">
+        <div id="pane-browser" class="tab-pane" data-pane="browser" role="tabpanel" aria-labelledby="browser-tab" hidden>
           <div class="card">
             <div class="card-head">Governed browser <span class="card-head-hint">Citadel egress + policy enforced</span></div>
             <div class="row">
@@ -279,7 +279,7 @@
         </div>
 
         <!-- Audit tab -->
-        <div class="tab-pane" data-pane="audit">
+        <div id="pane-audit" class="tab-pane" data-pane="audit" role="tabpanel" aria-labelledby="tab-audit" hidden>
           <div class="card">
             <div class="card-head">
               Signed audit events <span class="card-head-hint">Chronicle · live</span>
@@ -300,7 +300,7 @@
         </div>
 
         <!-- Policy simulation tab -->
-        <div class="tab-pane" data-pane="policy">
+        <div id="pane-policy" class="tab-pane" data-pane="policy" role="tabpanel" aria-labelledby="tab-policy" hidden>
           <div class="card">
             <div class="card-head">
               Policy simulation <span class="card-head-hint">Oracle · what would happen</span>
@@ -328,7 +328,7 @@
         </div>
 
         <!-- Egress explorer tab -->
-        <div class="tab-pane" data-pane="egress">
+        <div id="pane-egress" class="tab-pane" data-pane="egress" role="tabpanel" aria-labelledby="tab-egress" hidden>
           <div class="card">
             <div class="card-head">
               Network allow/deny explorer
@@ -351,7 +351,7 @@
         </div>
 
         <!-- Budget tab -->
-        <div class="tab-pane" data-pane="budget">
+        <div id="pane-budget" class="tab-pane" data-pane="budget" role="tabpanel" aria-labelledby="tab-budget" hidden>
           <div class="card">
             <div class="card-head">
               Budget and limit usage
@@ -364,7 +364,7 @@
         </div>
 
         <!-- Recovery and evidence tab -->
-        <div class="tab-pane" data-pane="recovery">
+        <div id="pane-recovery" class="tab-pane" data-pane="recovery" role="tabpanel" aria-labelledby="tab-recovery" hidden>
           <div class="card">
             <div class="card-head">Agent run lineage <span class="card-head-hint">provider-neutral · durable</span></div>
             <p class="note">Runs identify the human or agent actor, model, parent run, governing policy, and terminal state across Codex, Claude, Copilot, and other harnesses.</p>

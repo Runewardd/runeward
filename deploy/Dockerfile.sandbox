@@ -1,7 +1,7 @@
 # Default sandbox image: headless Chromium + the runeward-browser CDP driver,
 # so the governed browser tool works out of the box. Any image works as a
 # sandbox; profiles that don't use the browser tool can use any base.
-FROM --platform=$BUILDPLATFORM golang:1.26.6@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.0@sha256:4013ae0f9e7994f8535c58c811f8f863fbed38b72e0d51e6592156f758d66146 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -13,7 +13,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     -o /out/runeward-browser ./cmd/runeward-browser
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-RUN apk add --no-cache chromium ca-certificates curl python3 nodejs
+RUN apk upgrade --no-cache \
+    && apk add --no-cache chromium ca-certificates curl python3 nodejs
 COPY --from=build /out/runeward-browser /usr/local/bin/runeward-browser
 
 RUN adduser -D -u 1000 sandbox \
