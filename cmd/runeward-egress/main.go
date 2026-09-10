@@ -93,8 +93,9 @@ func main() {
 	proxy := &egress.Proxy{Policy: policy, Logger: logger}
 
 	srv := &http.Server{
-		Addr:    *addr,
-		Handler: proxy.Handler(),
+		Addr:              *addr,
+		Handler:           proxy.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errCh := make(chan error, 1)

@@ -57,7 +57,6 @@ function el(tag, attrs = {}, children = []) {
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "class") node.className = v;
     else if (k === "text") node.textContent = v;
-    else if (k === "html") node.innerHTML = v;
     else if (k.startsWith("on") && typeof v === "function") {
       node.addEventListener(k.slice(2).toLowerCase(), v);
     } else if (v !== null && v !== undefined) {
@@ -633,8 +632,10 @@ function switchView(name) {
 
   $("#view-sandboxes").classList.toggle("active", name === "sandboxes");
   $("#view-sandboxes").setAttribute("aria-selected", String(name === "sandboxes"));
+  $("#view-sandboxes").tabIndex = name === "sandboxes" ? 0 : -1;
   $("#view-fleets").classList.toggle("active", name === "fleets");
   $("#view-fleets").setAttribute("aria-selected", String(name === "fleets"));
+  $("#view-fleets").tabIndex = name === "fleets" ? 0 : -1;
 
   $("#sb-sidebar").classList.toggle("hidden", name !== "sandboxes");
   $("#fleet-sidebar").classList.toggle("hidden", name !== "fleets");
@@ -1122,8 +1123,17 @@ async function submitTaskResolution() {
 function activateTab(name, force = false) {
   if (!force && name === state.activeTab) return;
   state.activeTab = name;
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  $$(".tab-pane").forEach((p) => p.classList.toggle("active", p.dataset.pane === name));
+  $$(".tab").forEach((t) => {
+    const active = t.dataset.tab === name;
+    t.classList.toggle("active", active);
+    t.setAttribute("aria-selected", String(active));
+    t.tabIndex = active ? 0 : -1;
+  });
+  $$(".tab-pane").forEach((p) => {
+    const active = p.dataset.pane === name;
+    p.classList.toggle("active", active);
+    p.hidden = !active;
+  });
 
   stopAuditPoll();
 
@@ -1158,6 +1168,25 @@ function activateTab(name, force = false) {
 	if (name === "recovery") {
 		refreshRecovery();
 	}
+}
+
+function enableArrowKeyTabs(selector) {
+  $$(selector).forEach((tab) => {
+    tab.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const tabs = $$(selector).filter((candidate) => !candidate.classList.contains("hidden"));
+      const current = tabs.indexOf(tab);
+      if (current < 0) return;
+      event.preventDefault();
+      let next = current;
+      if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = tabs.length - 1;
+      else if (event.key === "ArrowRight") next = (current + 1) % tabs.length;
+      else next = (current - 1 + tabs.length) % tabs.length;
+      tabs[next].focus();
+      tabs[next].click();
+    });
+  });
 }
 
 /* ---------------- Terminal (xterm.js + WebSocket) ---------------- */
@@ -1414,12 +1443,16 @@ function connectConversation(forceReconnect = false) {
       socket.onopen = () => {
         if (state.conversationSocket !== socket) return;
         state.conversationTerm.reset();
-        setConversationStatus("conn-on", "following live");
+        state.conversationTerm.writeln("\x1b[90m[runeward] connected; waiting for an agent to publish conversation turns…\x1b[0m");
+        setConversationStatus("conn-on", "live · waiting");
         fitConversationTTY();
       };
       socket.onmessage = (ev) => {
         if (state.conversationSocket !== socket || state.selected !== sandboxID) return;
-        try { renderConversationTurn(JSON.parse(ev.data)); } catch {}
+        try {
+          setConversationStatus("conn-on", "following live");
+          renderConversationTurn(JSON.parse(ev.data));
+        } catch {}
       };
       socket.onerror = () => setConversationStatus("conn-err", "error");
       socket.onclose = () => {
@@ -2245,6 +2278,8 @@ function wireEvents() {
   $$(".tab").forEach((t) =>
     t.addEventListener("click", () => activateTab(t.dataset.tab))
   );
+  enableArrowKeyTabs("#tabs .tab");
+  enableArrowKeyTabs(".view-switch .view-tab");
 
   $("#list-btn").addEventListener("click", fileList);
   $("#read-btn").addEventListener("click", fileRead);

@@ -323,8 +323,9 @@ func copyHeader(dst, src http.Header) {
 // ListenAndServe serves the proxy handler on addr until an error occurs.
 func (p *Proxy) ListenAndServe(addr string) error {
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: p.Handler(),
+		Addr:              addr,
+		Handler:           p.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	return srv.ListenAndServe()
 }

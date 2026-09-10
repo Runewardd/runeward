@@ -114,6 +114,42 @@ func TestAuthTokenRequired(t *testing.T) {
 	}
 }
 
+func TestDashboardAuthExemptionIsAnExactAssetAllowlist(t *testing.T) {
+	t.Setenv("RUNEWARD_STATE_DIR", t.TempDir())
+	mgr, err := controlplane.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("controlplane.New: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	dashboard := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := New(mgr, dashboard, nil)
+	srv.AuthToken = "s3cret"
+	h := srv.Handler()
+
+	for _, path := range []string{"/", "/index.html", "/app.js", "/style.css", "/logo.png"} {
+		t.Run("public_"+strings.Trim(path, "/"), func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want 200", path, rr.Code)
+			}
+		})
+	}
+
+	for _, path := range []string{"/future-sensitive", "/debug/pprof", "/app.js/extra"} {
+		t.Run("protected_"+strings.Trim(path, "/"), func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+			if rr.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s status = %d, want 401", path, rr.Code)
+			}
+		})
+	}
+}
+
 func TestSecurityHeadersCoverAPIAndAuthenticationFailures(t *testing.T) {
 	h := newTestServerWithToken(t, "s3cret")
 	for _, path := range []string{"/healthz", "/v1/citadels"} {

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/Runewardd/runeward/internal/egress"
 	"github.com/Runewardd/runeward/internal/profile"
@@ -62,7 +63,7 @@ func startHostProxy(pol egress.Policy, logger *log.Logger) (*hostProxy, error) {
 	user := "runeward"
 	pass := randomToken()
 	p := &egress.Proxy{Policy: pol, Logger: logger, AuthUser: user, AuthPass: pass}
-	srv := &http.Server{Handler: p.Handler()}
+	srv := &http.Server{Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	return &hostProxy{srv: srv, port: ln.Addr().(*net.TCPAddr).Port, user: user, pass: pass}, nil
 }
