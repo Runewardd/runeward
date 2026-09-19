@@ -23,6 +23,37 @@ module graph, Docker build images, and GitHub CodeQL actions. A clean security
 pipeline on the pull request is required before merge. GitHub closes the listed
 code-scanning alerts after the fixed `main` branch publishes fresh SARIF.
 
+## Follow-up review: 19 September 2026
+
+A follow-up covered every repository visible in the `Runewardd` organization:
+`runeward` and `homebrew-tap`. GitHub reported no open Dependabot or code
+scanning alerts in `runeward`, no Dependabot alerts in `homebrew-tap`, and no
+open pull requests in the tap.
+
+The review found and addressed two additional issues:
+
+- `golang.org/x/crypto` 0.55.0 was present through OPA's JWE/PBKDF2 dependency
+  chain. Although Runeward did not call the affected SSH code, the module was
+  subject to GO-2026-6354 and GO-2026-6355, two denial-of-service advisories.
+  The module is upgraded to 0.56.0.
+- GitHub Actions in CI, security scanning, documentation, SDK publishing, and
+  release workflows used mutable version tags. Every external action is now
+  pinned to the verified commit behind its documented version, preventing a
+  moved or compromised tag from silently changing privileged workflow code.
+  A workflow-dispatch value is also passed through an environment variable
+  instead of being interpolated directly into a shell command.
+
+`govulncheck` continues to mention GO-2026-5932 because the `x/crypto` module
+contains the deprecated `openpgp` package. Runeward does not import that package,
+and the advisory has no fixed module version. The scanner reports zero
+vulnerabilities in symbols or packages used by Runeward.
+
+The malware-oriented review found no unexpected executables, encoded payloads,
+download-and-execute paths, or suspicious workflow steps. The Homebrew formula
+contains only versioned HTTPS release URLs and SHA-256 checksums; fresh downloads
+of all four formula archives matched the release checksum manifest and the
+formula.
+
 ## Dashboard UX and accessibility
 
 The desktop information hierarchy is clear: environment health and audit
